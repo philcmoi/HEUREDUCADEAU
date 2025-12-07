@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cadeaux Élégance - Boutique de cadeaux uniques</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Poppins:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <!-- Header -->
+    <header class="header">
+      <div class="container header-container">
+        <!-- Logo -->
+        <a href="index.html" class="logo">
+          <i class="fas fa-gift logo-icon"></i>
+          <span class="logo-text"
+            >Cadeaux<span class="logo-highlight">Élégance</span></span
+          >
+        </a>
+
+        <!-- Navigation principale -->
+        <nav class="nav-main">
+          <ul class="nav-list">
+            <li>
+              <a href="index.html" class="nav-link active"
+                ><i class="fas fa-home"></i> Accueil</a
+              >
+            </li>
+            <li>
+              <a href="produits.html" class="nav-link"
+                ><i class="fas fa-box-open"></i> Cadeaux</a
+              >
+            </li>
+            <li>
+              <a href="apropos.html" class="nav-link"
+                ><i class="fas fa-info-circle"></i> À propos</a
+              >
+            </li>
+            <li>
+              <a href="contact.html" class="nav-link"
+                ><i class="fas fa-envelope"></i> Contact</a
+              >
+            </li>
+            <li>
+              <a href="panier.html" class="nav-link cart-link">
+                <i class="fas fa-shopping-cart"></i> Panier
+                <span class="cart-count">0</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
+
+        <!-- Menu mobile -->
+        <button class="menu-toggle" id="menuToggle">
+          <i class="fas fa-bars"></i>
+        </button>
+      </div>
+
+      <!-- Navigation mobile -->
+      <nav class="nav-mobile" id="navMobile">
+        <ul class="nav-mobile-list">
+          <li>
+            <a href="index.html" class="nav-mobile-link"
+              ><i class="fas fa-home"></i> Accueil</a
+            >
+          </li>
+          <li>
+            <a href="produits.html" class="nav-mobile-link"
+              ><i class="fas fa-box-open"></i> Cadeaux</a
+            >
+          </li>
+          <li>
+            <a href="apropos.html" class="nav-mobile-link"
+              ><i class="fas fa-info-circle"></i> À propos</a
+            >
+          </li>
+          <li>
+            <a href="contact.html" class="nav-mobile-link"
+              ><i class="fas fa-envelope"></i> Contact</a
+            >
+          </li>
+          <li>
+            <a href="panier.html" class="nav-mobile-link"
+              ><i class="fas fa-shopping-cart"></i> Panier</a
+            >
+          </li>
+        </ul>
+      </nav>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="container hero-container">
+        <div class="hero-content">
+          <h1 class="hero-title">Des cadeaux qui marquent les esprits</h1>
+          <p class="hero-subtitle">
+            Découvrez notre sélection exclusive de cadeaux originaux pour toutes
+            les occasions
+          </p>
+          <div class="hero-buttons">
+            <a href="produits.html" class="btn btn-primary"
+              >Explorer la collection</a
+            >
+            <a href="#categories" class="btn btn-secondary"
+              >Voir les catégories</a
+            >
+          </div>
+        </div>
+        <div class="hero-image">
+          <img src="img/hero-banner.jpg" alt="Collection de cadeaux élégants" />
+        </div>
+      </div>
+    </section>
+
+    <!-- Catégories -->
+    <section class="categories" id="categories">
+      <div class="container">
+        <h2 class="section-title">Nos catégories de cadeaux</h2>
+        <p class="section-subtitle">
+          Trouvez le cadeau parfait selon l'occasion
+        </p>
+
+        <div class="categories-grid">
+          <!-- Catégorie 1 -->
+          <div class="category-card">
+            <div class="category-icon">
+              <i class="fas fa-birthday-cake"></i>
+            </div>
+            <h3>Anniversaires</h3>
+            <p>Cadeaux uniques pour célébrer les anniversaires</p>
+            <a href="produits.html?categorie=anniversaire" class="category-link"
+              >Voir les produits →</a
+            >
+          </div>
+
+          <!-- Catégorie 2 -->
+          <div class="category-card">
+            <div class="category-icon">
+              <i class="fas fa-heart"></i>
+            </div>
+            <h3>Saint-Valentin</h3>
+            <p>Romantique et mémorable</p>
+            <a href="produits.html?categorie=valentin" class="category-link"
+              >Voir les produits →</a
+            >
+          </div>
+
+          <!-- Catégorie 3 -->
+          <div class="category-card">
+            <div class="category-icon">
+              <i class="fas fa-glass-cheers"></i>
+            </div>
+            <h3>Mariage</h3>
+            <p>Cadeaux de mariage élégants</p>
+            <a href="produits.html?categorie=mariage" class="category-link"
+              >Voir les produits →</a
+            >
+          </div>
+
+          <!-- Catégorie 4 -->
+          <div class="category-card">
+            <div class="category-icon">
+              <i class="fas fa-baby"></i>
+            </div>
+            <h3>Naissance</h3>
+            <p>Pour accueillir bébé</p>
+            <a href="produits.html?categorie=naissance" class="category-link"
+              >Voir les produits →</a
+            >
+          </div>
+
+          <!-- Catégorie 5 -->
+          <div class="category-card">
+            <div class="category-icon">
+              <i class="fas fa-graduation-cap"></i>
+            </div>
+            <h3>Diplômés</h3>
+            <p>Pour célébrer la réussite</p>
+            <a href="produits.html?categorie=diplome" class="category-link"
+              >Voir les produits →</a
+            >
+          </div>
+
+          <!-- Catégorie 6 -->
+          <div class="category-card">
+            <div class="category-icon">
+              <i class="fas fa-christmas-tree"></i>
+            </div>
+            <h3>Noël</h3>
+            <p>Magie des fêtes de fin d'année</p>
+            <a href="produits.html?categorie=noel" class="category-link"
+              >Voir les produits →</a
+            >
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Produits phares -->
+    <section class="featured-products">
+      <div class="container">
+        <h2 class="section-title">Nos meilleures ventes</h2>
+        <p class="section-subtitle">Découvrez les cadeaux les plus appréciés</p>
+
+        <div class="products-grid" id="featuredProducts">
+          <!-- Les produits seront injectés par JavaScript -->
+        </div>
+
+        <div class="text-center">
+          <a href="produits.html" class="btn btn-primary"
+            >Voir tous les produits</a
+          >
+        </div>
+      </div>
+    </section>
+
+    <!-- Services -->
+    <section class="services">
+      <div class="container">
+        <h2 class="section-title">Pourquoi choisir Cadeaux Élégance ?</h2>
+
+        <div class="services-grid">
+          <!-- Service 1 -->
+          <div class="service-card">
+            <div class="service-icon">
+              <i class="fas fa-gift"></i>
+            </div>
+            <h3>Emballage cadeau offert</h3>
+            <p>Chaque cadeau est emballé avec soin dans un papier élégant</p>
+          </div>
+
+          <!-- Service 2 -->
+          <div class="service-card">
+            <div class="service-icon">
+              <i class="fas fa-shipping-fast"></i>
+            </div>
+            <h3>Livraison rapide</h3>
+            <p>Expédition sous 24-48h en France métropolitaine</p>
+          </div>
+
+          <!-- Service 3 -->
+          <div class="service-card">
+            <div class="service-icon">
+              <i class="fas fa-undo-alt"></i>
+            </div>
+            <h3>Retour facile</h3>
+            <p>30 jours pour changer d'avis, retour gratuit</p>
+          </div>
+
+          <!-- Service 4 -->
+          <div class="service-card">
+            <div class="service-icon">
+              <i class="fas fa-headset"></i>
+            </div>
+            <h3>Service client</h3>
+            <p>Une équipe à votre écoute du lundi au vendredi</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Témoignages -->
+    <section class="testimonials">
+      <div class="container">
+        <h2 class="section-title">Ce que disent nos clients</h2>
+
+        <div class="testimonials-grid">
+          <!-- Témoignage 1 -->
+          <div class="testimonial-card">
+            <div class="testimonial-rating">
+              <i class="fas fa-star"></i>
+              <i class="fas fa-star"></i>
+              <i class="fas fa-star"></i>
+              <i class="fas fa-star"></i>
+              <i class="fas fa-star"></i>
+            </div>
+            <p class="testimonial-text">
+              "Le cadeau pour l'anniversaire de ma femme était parfait !
+              L'emballage était magnifique et la livraison ultra-rapide."
+            </p>
+            <div class="testimonial-author">
+              <div class="author-avatar">PD</div>
+              <div class="author-info">
+                <h4>Pierre D.</h4>
+                <p>Paris</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Témoignage 2 -->
+          <div class="testimonial-card">
+            <div class="testimonial-rating">
+              <i class="fas fa-star"></i>
+              <i class="fas fa-star"></i>
+              <i class="fas fa-star"></i>
+              <i class="fas fa-star"></i>
+              <i class="fas fa-star-half-alt"></i>
+            </div>
+            <p class="testimonial-text">
+              "J'ai trouvé exactement ce qu'il me fallait pour le mariage de mes
+              amis. Service client très réactif !"
+            </p>
+            <div class="testimonial-author">
+              <div class="author-avatar">MS</div>
+              <div class="author-info">
+                <h4>Marie S.</h4>
+                <p>Lyon</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Témoignage 3 -->
+          <div class="testimonial-card">
+            <div class="testimonial-rating">
+              <i class="fas fa-star"></i>
+              <i class="fas fa-star"></i>
+              <i class="fas fa-star"></i>
+              <i class="fas fa-star"></i>
+              <i class="fas fa-star"></i>
+            </div>
+            <p class="testimonial-text">
+              "La qualité des produits est exceptionnelle. Je recommande
+              vivement pour tous vos cadeaux !"
+            </p>
+            <div class="testimonial-author">
+              <div class="author-avatar">TL</div>
+              <div class="author-info">
+                <h4>Thomas L.</h4>
+                <p>Bordeaux</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA Newsletter -->
+    <section class="newsletter">
+      <div class="container newsletter-container">
+        <div class="newsletter-content">
+          <h2>Restez informé</h2>
+          <p>
+            Inscrivez-vous à notre newsletter pour recevoir nos nouveautés et
+            offres spéciales
+          </p>
+        </div>
+        <form class="newsletter-form" id="newsletterForm">
+          <input type="email" placeholder="Votre adresse email" required />
+          <button type="submit" class="btn btn-primary">S'inscrire</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="container footer-container">
+        <!-- Colonne 1 -->
+        <div class="footer-col">
+          <h3>Cadeaux Élégance</h3>
+          <p>
+            Votre boutique de cadeaux en ligne pour toutes les occasions.
+            Qualité, élégance et originalité.
+          </p>
+          <div class="social-links">
+            <a href="#"><i class="fab fa-facebook-f"></i></a>
+            <a href="#"><i class="fab fa-instagram"></i></a>
+            <a href="#"><i class="fab fa-pinterest-p"></i></a>
+            <a href="#"><i class="fab fa-twitter"></i></a>
+          </div>
+        </div>
+
+        <!-- Colonne 2 -->
+        <div class="footer-col">
+          <h3>Liens rapides</h3>
+          <ul class="footer-links">
+            <li><a href="index.html">Accueil</a></li>
+            <li><a href="produits.html">Tous les cadeaux</a></li>
+            <li><a href="apropos.html">À propos</a></li>
+            <li><a href="contact.html">Contact</a></li>
+            <li><a href="panier.html">Mon panier</a></li>
+          </ul>
+        </div>
+
+        <!-- Colonne 3 -->
+        <div class="footer-col">
+          <h3>Informations</h3>
+          <ul class="footer-links">
+            <li><a href="#">Livraison</a></li>
+            <li><a href="#">Retours</a></li>
+            <li><a href="#">Conditions générales</a></li>
+            <li><a href="#">Politique de confidentialité</a></li>
+            <li><a href="#">Mentions légales</a></li>
+          </ul>
+        </div>
+
+        <!-- Colonne 4 -->
+        <div class="footer-col">
+          <h3>Contact</h3>
+          <ul class="footer-contact">
+            <li>
+              <i class="fas fa-map-marker-alt"></i> 123 Rue des Cadeaux, 75000
+              Paris
+            </li>
+            <li><i class="fas fa-phone"></i> 01 23 45 67 89</li>
+            <li><i class="fas fa-envelope"></i> contact@cadeaux-elegance.fr</li>
+            <li><i class="fas fa-clock"></i> Lun-Ven: 9h-18h</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div class="container">
+          <p>&copy; 2023 Cadeaux Élégance. Tous droits réservés.</p>
+          <p>
+            Paiements sécurisés: <i class="fab fa-cc-visa"></i>
+            <i class="fab fa-cc-mastercard"></i>
+            <i class="fab fa-cc-paypal"></i>
+          </p>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Modal Panier (pour ajouts rapides) -->
+    <div class="cart-modal" id="cartModal">
+      <div class="cart-modal-content">
+        <div class="cart-modal-header">
+          <h3>Article ajouté au panier</h3>
+          <button class="cart-modal-close" id="closeCartModal">&times;</button>
+        </div>
+        <div class="cart-modal-body" id="cartModalBody">
+          <!-- Contenu injecté par JavaScript -->
+        </div>
+        <div class="cart-modal-footer">
+          <a href="panier.html" class="btn btn-primary">Voir le panier</a>
+          <button class="btn btn-secondary" id="continueShopping">
+            Continuer mes achats
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/main.js"></script>
+    <script src="js/panier.js"></script>
+  </body>
+</html>

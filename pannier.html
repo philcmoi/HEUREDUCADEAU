@@ -1,0 +1,37 @@
+<section class="cart-page">
+  <div class="container">
+    <h1 class="page-title">Mon panier</h1>
+
+    <div class="cart-layout">
+      <!-- Liste des articles -->
+      <div class="cart-items" id="cartItems">
+        <!-- Articles chargés par JavaScript -->
+      </div>
+
+      <!-- Récapitulatif -->
+      <div class="cart-summary">
+        <h3>Récapitulatif de la commande</h3>
+        <div class="summary-details">
+          <div class="summary-row">
+            <span>Sous-total</span>
+            <span id="subtotal">0.00 €</span>
+          </div>
+          <div class="summary-row">
+            <span>Livraison</span>
+            <span>Gratuite</span>
+          </div>
+          <div class="summary-row total">
+            <span>Total</span>
+            <span id="total">0.00 €</span>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-checkout" onclick="passerCommande()">
+          <i class="fas fa-lock"></i> Procéder au paiement
+        </button>
+        <button class="btn btn-secondary" onclick="viderPanier()">
+          <i class="fas fa-trash"></i> Vider le panier
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
