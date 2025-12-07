@@ -796,8 +796,8 @@ $totalPages = ceil($totalProduits / $filtres['limit']);
                 <?php endif; ?>
                 
                 <a href="produit.php?id=<?= $produit['id_produit'] ?>" class="btn-view">Voir le produit</a>
-                <button class="btn-add-cart" data-id="<?= $produit['id_produit'] ?>">
-                    Ajouter au panier
+                <button class="btn-add-cart" onclick="ajouterAuPanier(<?= $produit['id_produit'] ?>)">
+                <i class="fas fa-cart-plus"></i> Ajouter au panier
                 </button>
             </div>
         </div>
