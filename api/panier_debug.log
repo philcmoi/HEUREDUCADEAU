@@ -1,0 +1,86 @@
+{
+    "timestamp": "2025-12-09 14:56:44",
+    "method": "GET",
+    "uri": "\/sean\/api\/panier.php",
+    "session_id": "none",
+    "get_params": [],
+    "post_params": [],
+    "raw_input": "",
+    "headers": {
+        "Host": "localhost",
+        "Connection": "keep-alive",
+        "Cache-Control": "max-age=0",
+        "sec-ch-ua": "\"Google Chrome\";v=\"143\", \"Chromium\";v=\"143\", \"Not A(Brand\";v=\"24\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "Upgrade-Insecure-Requests": "1",
+        "User-Agent": "Mozilla\/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/143.0.0.0 Safari\/537.36",
+        "Accept": "text\/html,application\/xhtml+xml,application\/xml;q=0.9,image\/avif,image\/webp,image\/apng,*\/*;q=0.8,application\/signed-exchange;v=b3;q=0.7",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-User": "?1",
+        "Sec-Fetch-Dest": "document",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "fr,fr-FR;q=0.9,en-US;q=0.8,en;q=0.7,fr-CA;q=0.6",
+        "Cookie": "heureducadeau_session=2edruagoq1elra3de7jnfblqej; PHPSESSID=ps2lrmapge0fe2tdupf73ck5gs"
+    }
+}
+
+{
+    "timestamp": "2025-12-09 14:59:33",
+    "method": "GET",
+    "uri": "\/sean\/api\/panier.php?action=compter",
+    "session_id": "none",
+    "get_params": {
+        "action": "compter"
+    },
+    "post_params": [],
+    "raw_input": "",
+    "headers": {
+        "Host": "localhost",
+        "Connection": "keep-alive",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "User-Agent": "Mozilla\/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/143.0.0.0 Safari\/537.36",
+        "sec-ch-ua": "\"Google Chrome\";v=\"143\", \"Chromium\";v=\"143\", \"Not A(Brand\";v=\"24\"",
+        "Sec-Purpose": "prefetch;prerender",
+        "sec-ch-ua-mobile": "?0",
+        "Accept": "*\/*",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
+        "Referer": "http:\/\/localhost\/sean\/",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "fr,fr-FR;q=0.9,en-US;q=0.8,en;q=0.7,fr-CA;q=0.6",
+        "Cookie": "heureducadeau_session=2edruagoq1elra3de7jnfblqej; PHPSESSID=ps2lrmapge0fe2tdupf73ck5gs"
+    }
+}
+
+{
+    "timestamp": "2025-12-09 14:59:33",
+    "method": "GET",
+    "uri": "\/sean\/api\/panier.php?action=compter",
+    "session_id": "none",
+    "get_params": {
+        "action": "compter"
+    },
+    "post_params": [],
+    "raw_input": "",
+    "headers": {
+        "Host": "localhost",
+        "Connection": "keep-alive",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "User-Agent": "Mozilla\/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit\/537.36 (KHTML, like Gecko) Chrome\/143.0.0.0 Safari\/537.36",
+        "sec-ch-ua": "\"Google Chrome\";v=\"143\", \"Chromium\";v=\"143\", \"Not A(Brand\";v=\"24\"",
+        "Sec-Purpose": "prefetch;prerender",
+        "sec-ch-ua-mobile": "?0",
+        "Accept": "*\/*",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
+        "Referer": "http:\/\/localhost\/sean\/",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "fr,fr-FR;q=0.9,en-US;q=0.8,en;q=0.7,fr-CA;q=0.6",
+        "Cookie": "heureducadeau_session=2edruagoq1elra3de7jnfblqej; PHPSESSID=ps2lrmapge0fe2tdupf73ck5gs"
+    }
+}
+

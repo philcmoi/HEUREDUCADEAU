@@ -137,6 +137,15 @@
             <!-- Liste des articles -->
             <div class="cart-items-wrapper">
               <div class="cart-items" id="cartItems">
+                <!-- Panier vide par défaut -->
+                <div class="cart-empty" id="cartEmpty">
+                  <i class="fas fa-shopping-cart fa-3x"></i>
+                  <h3>Votre panier est vide</h3>
+                  <p>Ajoutez des produits pour commencer vos achats</p>
+                  <a href="produits.php" class="btn btn-primary">
+                    <i class="fas fa-shopping-bag"></i> Découvrir nos produits
+                  </a>
+                </div>
                 <!-- Les articles seront chargés ici par JavaScript -->
               </div>
             </div>
@@ -257,7 +266,7 @@
         <section class="suggested-products">
           <h3><i class="fas fa-heart"></i> Complétez votre panier</h3>
           <div class="suggested-grid" id="suggestedProducts">
-            <!-- Produits suggérés chargés par JavaScript -->
+            <!-- Les produits suggérés seront chargés ici -->
           </div>
         </section>
       </div>
@@ -333,949 +342,629 @@
 
     <!-- Scripts -->
     <script src="js/main.js"></script>
-    <script src="js/panier.js"></script>
     <script>
-      // Charger les produits suggérés
-      async function loadSuggestedProducts() {
+      // ==============================================
+      // GESTION DU PANIER - VERSION ULTRA SIMPLIFIÉE
+      // ==============================================
+
+      // Configuration - UTILISEZ LE CHEMIN ABSOLU
+      const API_BASE_URL = "http://localhost/sean/api/panier.php";
+      console.log("API URL configurée:", API_BASE_URL);
+
+      // Test immédiat de l'API
+      async function testAPI() {
         try {
-          const response = await fetch(
-            "api/produits.php?action=suggestions&limit=4"
-          );
+          console.log("Test API en cours...");
+          const response = await fetch(API_BASE_URL + "?action=compter");
           const data = await response.json();
-
-          if (data.success) {
-            const container = document.getElementById("suggestedProducts");
-            let html = "";
-
-            data.products.forEach((product) => {
-              html += `
-                            <div class="suggested-product-card">
-                                <div class="suggested-product-image">
-                                    <img src="${
-                                      product.image ||
-                                      "images/default-product.jpg"
-                                    }" alt="${product.nom}">
-                                    ${
-                                      product.promotion
-                                        ? `<span class="discount-badge">-${product.promotion}%</span>`
-                                        : ""
-                                    }
-                                </div>
-                                <div class="suggested-product-info">
-                                    <h4>${product.nom}</h4>
-                                    <div class="suggested-product-price">
-                                        ${
-                                          product.prix_original
-                                            ? `
-                                            <span class="original-price">${product.prix_original}€</span>
-                                            <span class="current-price">${product.prix_ttc}€</span>
-                                        `
-                                            : `
-                                            <span class="current-price">${product.prix_ttc}€</span>
-                                        `
-                                        }
-                                    </div>
-                                    <button class="btn-add-to-cart" onclick="ajouterAuPanier(${
-                                      product.id_produit
-                                    })">
-                                        <i class="fas fa-cart-plus"></i> Ajouter
-                                    </button>
-                                </div>
-                            </div>
-                        `;
-            });
-
-            container.innerHTML = html;
-          }
+          console.log("Test API réussi:", data);
+          return data.success;
         } catch (error) {
-          console.error("Erreur chargement produits suggérés:", error);
+          console.error("Test API échoué:", error);
+          return false;
         }
       }
 
-      // Gestion de l'emballage cadeau
-      document
-        .getElementById("giftWrapToggle")
-        .addEventListener("change", function (e) {
-          const giftWrapPrice = document.getElementById("giftWrapPrice");
-          giftWrapPrice.textContent = e.target.checked ? "3,90 €" : "0,00 €";
-          panierManager.updateTotals();
+      // Fonction pour afficher une notification
+      function showNotification(message, type = "success") {
+        // Supprimer les anciennes notifications
+        const oldNotifications =
+          document.querySelectorAll(".cart-notification");
+        oldNotifications.forEach((n) => n.remove());
+
+        // Créer la notification
+        const notification = document.createElement("div");
+        notification.className = `cart-notification ${type}`;
+
+        const icon =
+          type === "success" ? "check-circle" : "exclamation-triangle";
+        notification.innerHTML = `
+          <i class="fas fa-${icon}"></i>
+          <span>${message}</span>
+          <button class="notification-close"><i class="fas fa-times"></i></button>
+        `;
+
+        // Styles inline pour être sûr
+        notification.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: ${type === "success" ? "#27ae60" : "#e74c3c"};
+          color: white;
+          padding: 12px 20px;
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          z-index: 10000;
+          font-family: 'Poppins', sans-serif;
+          font-size: 14px;
+          animation: notificationSlideIn 0.3s ease;
+        `;
+
+        // Bouton fermer
+        const closeBtn = notification.querySelector(".notification-close");
+        closeBtn.style.cssText = `
+          background: transparent;
+          border: none;
+          color: white;
+          cursor: pointer;
+          font-size: 14px;
+          margin-left: 10px;
+          padding: 2px 6px;
+          border-radius: 50%;
+          transition: background 0.2s;
+        `;
+
+        closeBtn.addEventListener("mouseover", () => {
+          closeBtn.style.background = "rgba(255,255,255,0.2)";
         });
 
-      // Code promotionnel
-      document
-        .getElementById("applyPromoBtn")
-        .addEventListener("click", function () {
-          const promoCode = document
-            .getElementById("promoCodeInput")
-            .value.trim();
-          if (promoCode) {
-            // Simulation d'application de code promo
-            const promoSuccess = document.getElementById("promoSuccess");
-            promoSuccess.style.display = "flex";
+        closeBtn.addEventListener("mouseout", () => {
+          closeBtn.style.background = "transparent";
+        });
+
+        closeBtn.addEventListener("click", () => {
+          notification.style.animation = "notificationSlideOut 0.3s ease";
+          setTimeout(() => notification.remove(), 300);
+        });
+
+        document.body.appendChild(notification);
+
+        // Auto-suppression après 4 secondes
+        setTimeout(() => {
+          if (notification.parentElement) {
+            notification.style.animation = "notificationSlideOut 0.3s ease";
             setTimeout(() => {
-              promoSuccess.style.display = "none";
-            }, 3000);
+              if (notification.parentElement) {
+                notification.remove();
+              }
+            }, 300);
           }
-        });
+        }, 4000);
+      }
 
-      // Charger les produits suggérés au chargement
-      document.addEventListener("DOMContentLoaded", () => {
-        loadSuggestedProducts();
-      });
-    </script>
-  </body>
-</html>
-<!DOCTYPE html>
-<html lang="fr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mon Panier - Cadeaux Élégance</title>
-    <link rel="stylesheet" href="css/style.css" />
-    <link rel="stylesheet" href="css/panier.css" />
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-    />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Poppins:wght@300;400;500;600&display=swap"
-      rel="stylesheet"
-    />
-  </head>
-  <body>
-    <!-- Header -->
-    <header class="header">
-      <div class="container header-container">
-        <a href="index.html" class="logo">
-          <i class="fas fa-gift logo-icon"></i>
-          <span class="logo-text"
-            >Cadeaux<span class="logo-highlight">Élégance</span></span
-          >
-        </a>
+      // Mettre à jour le compteur du panier
+      async function mettreAJourCompteur() {
+        try {
+          console.log("📊 Mise à jour compteur...");
+          const response = await fetch(API_BASE_URL + "?action=compter");
 
-        <nav class="nav-main">
-          <ul class="nav-list">
-            <li>
-              <a href="index.html" class="nav-link"
-                ><i class="fas fa-home"></i> Accueil</a
-              >
-            </li>
-            <li>
-              <a href="produits.php" class="nav-link"
-                ><i class="fas fa-box-open"></i> Cadeaux</a
-              >
-            </li>
-            <li>
-              <a href="apropos.html" class="nav-link"
-                ><i class="fas fa-info-circle"></i> À propos</a
-              >
-            </li>
-            <li>
-              <a href="contact.html" class="nav-link"
-                ><i class="fas fa-envelope"></i> Contact</a
-              >
-            </li>
-            <li>
-              <a href="panier.html" class="nav-link cart-link">
-                <i class="fas fa-shopping-cart"></i> Panier
-                <span class="cart-count">0</span>
-              </a>
-            </li>
-          </ul>
-        </nav>
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
 
-        <button class="menu-toggle" id="menuToggle">
-          <i class="fas fa-bars"></i>
-        </button>
-      </div>
+          const data = await response.json();
+          console.log("✅ Données compteur:", data);
 
-      <!-- Navigation mobile -->
-      <nav class="nav-mobile" id="navMobile">
-        <ul class="nav-mobile-list">
-          <li>
-            <a href="index.html" class="nav-mobile-link"
-              ><i class="fas fa-home"></i> Accueil</a
-            >
-          </li>
-          <li>
-            <a href="produits.php" class="nav-mobile-link"
-              ><i class="fas fa-box-open"></i> Cadeaux</a
-            >
-          </li>
-          <li>
-            <a href="apropos.html" class="nav-mobile-link"
-              ><i class="fas fa-info-circle"></i> À propos</a
-            >
-          </li>
-          <li>
-            <a href="contact.html" class="nav-mobile-link"
-              ><i class="fas fa-envelope"></i> Contact</a
-            >
-          </li>
-          <li>
-            <a href="panier.html" class="nav-mobile-link"
-              ><i class="fas fa-shopping-cart"></i> Panier</a
-            >
-          </li>
-        </ul>
-      </nav>
-    </header>
+          if (data.success) {
+            const cartCountElements = document.querySelectorAll(".cart-count");
+            cartCountElements.forEach((el) => {
+              el.textContent = data.total;
+              el.style.display = data.total > 0 ? "inline-flex" : "none";
 
-    <!-- Section Panier -->
-    <section class="cart-hero">
-      <div class="container">
-        <div class="cart-hero-content">
-          <h1><i class="fas fa-shopping-cart"></i> Mon Panier</h1>
-          <p class="cart-subtitle">
-            Révisez vos articles et finalisez votre commande
-          </p>
-          <div class="cart-progress">
-            <div class="progress-step active">
-              <span class="step-number">1</span>
-              <span class="step-text">Panier</span>
-            </div>
-            <div class="progress-line"></div>
-            <div class="progress-step">
-              <span class="step-number">2</span>
-              <span class="step-text">Livraison</span>
-            </div>
-            <div class="progress-line"></div>
-            <div class="progress-step">
-              <span class="step-number">3</span>
-              <span class="step-text">Paiement</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+              // Animation pulse
+              if (data.total > 0) {
+                el.classList.add("pulse");
+                setTimeout(() => el.classList.remove("pulse"), 600);
+              }
+            });
+            return data.total;
+          }
+        } catch (error) {
+          console.error("❌ Erreur compteur:", error);
+          return 0;
+        }
+      }
 
-    <main class="cart-page">
-      <div class="container">
-        <div class="cart-layout">
-          <!-- Section principale - Articles du panier -->
-          <div class="cart-main">
-            <div class="cart-header">
-              <h2><i class="fas fa-box"></i> Votre sélection</h2>
-              <button class="btn-clear-cart" id="clearCartBtn">
-                <i class="fas fa-trash-alt"></i> Vider le panier
+      // Charger les articles du panier
+      async function chargerPanier() {
+        console.log("🛒 Chargement panier...");
+        try {
+          const response = await fetch(API_BASE_URL + "?action=get");
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          const data = await response.json();
+          console.log("✅ Panier chargé:", data);
+
+          if (data.success) {
+            afficherArticlesPanier(data.items || [], data.total_prix || 0);
+          } else {
+            console.error("❌ Erreur API:", data.message);
+            afficherArticlesPanier([], 0);
+          }
+        } catch (error) {
+          console.error("❌ Erreur chargement:", error);
+          afficherArticlesPanier([], 0);
+        }
+      }
+
+      // Afficher les articles dans le panier
+      function afficherArticlesPanier(items, totalPrix) {
+        const container = document.getElementById("cartItems");
+        const cartEmpty = document.getElementById("cartEmpty");
+        const subtotalElement = document.getElementById("subtotal");
+        const totalElement = document.getElementById("total");
+
+        console.log(`📦 ${items.length} articles à afficher`);
+
+        if (!items || items.length === 0) {
+          // Panier vide
+          if (cartEmpty) {
+            cartEmpty.style.display = "flex";
+            container.innerHTML = "";
+          }
+          subtotalElement.textContent = "0,00 €";
+          totalElement.textContent = "0,00 €";
+          return;
+        }
+
+        // Cacher message "panier vide"
+        if (cartEmpty) {
+          cartEmpty.style.display = "none";
+        }
+
+        // Générer HTML des articles
+        let html = "";
+        items.forEach((item) => {
+          const prixUnitaire = parseFloat(item.prix_unitaire || 29.99);
+          const quantite = parseInt(item.quantite) || 1;
+          const totalItem = prixUnitaire * quantite;
+
+          const prixUnitaireFormatted = prixUnitaire
+            .toFixed(2)
+            .replace(".", ",");
+          const totalItemFormatted = totalItem.toFixed(2).replace(".", ",");
+
+          html += `
+            <div class="cart-item" data-item-id="${item.id_item}">
+              <div class="cart-item-image">
+                <img src="img/produit-unique.jpg" alt="${
+                  item.nom
+                }" onerror="this.src='img/default-product.jpg'">
+              </div>
+              <div class="cart-item-details">
+                <h4 class="cart-item-title">${item.nom}</h4>
+                <p class="cart-item-ref">Réf: PROD-${item.id_produit}</p>
+                <p class="cart-item-price-unit">${prixUnitaireFormatted} € l'unité</p>
+              </div>
+              <div class="cart-item-quantity">
+                <button class="quantity-btn minus" onclick="modifierQuantite('${
+                  item.id_item
+                }', -1)" ${quantite <= 1 ? "disabled" : ""}>
+                  <i class="fas fa-minus"></i>
+                </button>
+                <input type="number" value="${quantite}" min="1" max="99" 
+                       class="quantity-input" data-item-id="${item.id_item}"
+                       onchange="mettreAJourQuantite('${
+                         item.id_item
+                       }', this.value)">
+                <button class="quantity-btn plus" onclick="modifierQuantite('${
+                  item.id_item
+                }', 1)">
+                  <i class="fas fa-plus"></i>
+                </button>
+              </div>
+              <div class="cart-item-total">
+                <span class="item-total-price">${totalItemFormatted} €</span>
+              </div>
+              <button class="cart-item-remove" onclick="supprimerArticle('${
+                item.id_item
+              }')" title="Supprimer">
+                <i class="fas fa-trash"></i>
               </button>
             </div>
+          `;
+        });
 
-            <!-- Liste des articles -->
-            <div class="cart-items-wrapper">
-              <div class="cart-items" id="cartItems">
-                <!-- Les articles seront chargés ici par JavaScript -->
-              </div>
-            </div>
+        container.innerHTML = html;
 
-            <!-- Informations supplémentaires -->
-            <div class="cart-extra-info">
-              <div class="extra-info-card">
-                <i class="fas fa-gift"></i>
-                <h4>Emballage cadeau</h4>
-                <p>Ajoutez un emballage élégant pour 3,90€ seulement</p>
-                <div class="gift-wrap-toggle">
-                  <span class="toggle-label">Emballage cadeau</span>
-                  <label class="toggle-switch">
-                    <input type="checkbox" id="giftWrapToggle" />
-                    <span class="toggle-slider"></span>
-                  </label>
-                </div>
-              </div>
-              <div class="extra-info-card">
-                <i class="fas fa-truck"></i>
-                <h4>Livraison offerte</h4>
-                <p>
-                  Votre commande bénéficie de la livraison gratuite en France
-                  métropolitaine
-                </p>
-              </div>
-            </div>
-          </div>
+        // Mettre à jour les totaux
+        const formattedTotal = parseFloat(totalPrix || 0)
+          .toFixed(2)
+          .replace(".", ",");
+        subtotalElement.textContent = formattedTotal + " €";
+        totalElement.textContent = formattedTotal + " €";
 
-          <!-- Sidebar - Récapitulatif -->
-          <aside class="cart-sidebar">
-            <div class="sidebar-card">
-              <h3><i class="fas fa-receipt"></i> Récapitulatif</h3>
+        updateTotal();
+      }
 
-              <div class="summary-details">
-                <div class="summary-row">
-                  <span>Sous-total</span>
-                  <span id="subtotal">0,00 €</span>
-                </div>
-                <div class="summary-row">
-                  <span>Livraison</span>
-                  <span class="free-shipping">Gratuite</span>
-                </div>
-                <div class="summary-row">
-                  <span>Emballage cadeau</span>
-                  <span id="giftWrapPrice">0,00 €</span>
-                </div>
-                <div class="summary-divider"></div>
-                <div class="summary-row total">
-                  <span>Total TTC</span>
-                  <span id="total">0,00 €</span>
-                </div>
-              </div>
+      // Modifier quantité via input
+      async function mettreAJourQuantite(itemId, nouvelleQuantite) {
+        nouvelleQuantite = parseInt(nouvelleQuantite);
+        if (isNaN(nouvelleQuantite) || nouvelleQuantite < 1)
+          nouvelleQuantite = 1;
+        if (nouvelleQuantite > 99) nouvelleQuantite = 99;
 
-              <!-- Code promotionnel -->
-              <div class="promo-code-section">
-                <div class="promo-code-input">
-                  <input
-                    type="text"
-                    id="promoCodeInput"
-                    placeholder="Code promotionnel"
-                  />
-                  <button id="applyPromoBtn" class="btn-promo">
-                    Appliquer
-                  </button>
-                </div>
-                <div
-                  class="promo-success"
-                  id="promoSuccess"
-                  style="display: none"
-                >
-                  <i class="fas fa-check-circle"></i>
-                  <span>Code appliqué avec succès !</span>
-                </div>
-              </div>
-
-              <!-- Boutons d'action -->
-              <div class="cart-actions">
-                <button class="btn btn-primary btn-checkout" id="checkoutBtn">
-                  <i class="fas fa-lock"></i> Procéder au paiement
-                </button>
-                <a href="produits.php" class="btn btn-secondary">
-                  <i class="fas fa-shopping-bag"></i> Continuer mes achats
-                </a>
-              </div>
-
-              <!-- Garanties -->
-              <div class="guarantees">
-                <div class="guarantee-item">
-                  <i class="fas fa-shield-alt"></i>
-                  <span>Paiement sécurisé</span>
-                </div>
-                <div class="guarantee-item">
-                  <i class="fas fa-undo"></i>
-                  <span>Retour sous 30 jours</span>
-                </div>
-                <div class="guarantee-item">
-                  <i class="fas fa-headset"></i>
-                  <span>Service client 7j/7</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Sécurité -->
-            <div class="security-notice">
-              <i class="fas fa-lock"></i>
-              <div>
-                <h4>Transaction sécurisée</h4>
-                <p>
-                  Vos données sont protégées par un chiffrement SSL 256 bits
-                </p>
-              </div>
-            </div>
-          </aside>
-        </div>
-
-        <!-- Produits suggérés -->
-        <section class="suggested-products">
-          <h3><i class="fas fa-heart"></i> Complétez votre panier</h3>
-          <div class="suggested-grid" id="suggestedProducts">
-            <!-- Produits suggérés chargés par JavaScript -->
-          </div>
-        </section>
-      </div>
-    </main>
-
-    <!-- Footer -->
-    <footer class="footer">
-      <div class="container">
-        <div class="footer-grid">
-          <div class="footer-col">
-            <h4>Cadeaux Élégance</h4>
-            <p>
-              Votre boutique de cadeaux d'exception pour toutes les occasions
-              spéciales.
-            </p>
-            <div class="social-links">
-              <a href="#"><i class="fab fa-facebook"></i></a>
-              <a href="#"><i class="fab fa-instagram"></i></a>
-              <a href="#"><i class="fab fa-pinterest"></i></a>
-              <a href="#"><i class="fab fa-tiktok"></i></a>
-            </div>
-          </div>
-          <div class="footer-col">
-            <h4>Boutique</h4>
-            <ul>
-              <li><a href="produits.php">Tous les produits</a></li>
-              <li>
-                <a href="produits.php?categorie=nouveautes">Nouveautés</a>
-              </li>
-              <li>
-                <a href="produits.php?categorie=meilleures-ventes"
-                  >Meilleures ventes</a
-                >
-              </li>
-              <li>
-                <a href="produits.php?categorie=promotions">Promotions</a>
-              </li>
-            </ul>
-          </div>
-          <div class="footer-col">
-            <h4>Informations</h4>
-            <ul>
-              <li><a href="apropos.html">À propos</a></li>
-              <li><a href="contact.html">Contact</a></li>
-              <li><a href="livraison.html">Livraison</a></li>
-              <li><a href="retours.html">Retours & Échanges</a></li>
-              <li><a href="confidentialite.html">Confidentialité</a></li>
-              <li><a href="cgv.html">CGV</a></li>
-            </ul>
-          </div>
-          <div class="footer-col">
-            <h4>Contact</h4>
-            <ul class="contact-info">
-              <li>
-                <i class="fas fa-envelope"></i> contact@cadeaux-elegance.fr
-              </li>
-              <li><i class="fas fa-phone"></i> 01 23 45 67 89</li>
-              <li><i class="fas fa-map-marker-alt"></i> Paris, France</li>
-            </ul>
-          </div>
-        </div>
-        <div class="footer-bottom">
-          <p>&copy; 2025 Cadeaux Élégance. Tous droits réservés.</p>
-          <div class="payment-methods">
-            <i class="fab fa-cc-visa"></i>
-            <i class="fab fa-cc-mastercard"></i>
-            <i class="fab fa-cc-paypal"></i>
-            <i class="fab fa-cc-apple-pay"></i>
-          </div>
-        </div>
-      </div>
-    </footer>
-
-    <!-- Scripts -->
-    <script src="js/main.js"></script>
-    <script src="js/panier.js"></script>
-    <script>
-      // Charger les produits suggérés
-      async function loadSuggestedProducts() {
         try {
-          const response = await fetch(
-            "api/produits.php?action=suggestions&limit=4"
-          );
+          const response = await fetch(API_BASE_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "modifier",
+              id_item: itemId,
+              quantite: nouvelleQuantite,
+            }),
+          });
+
           const data = await response.json();
-
           if (data.success) {
-            const container = document.getElementById("suggestedProducts");
-            let html = "";
-
-            data.products.forEach((product) => {
-              html += `
-                            <div class="suggested-product-card">
-                                <div class="suggested-product-image">
-                                    <img src="${
-                                      product.image ||
-                                      "images/default-product.jpg"
-                                    }" alt="${product.nom}">
-                                    ${
-                                      product.promotion
-                                        ? `<span class="discount-badge">-${product.promotion}%</span>`
-                                        : ""
-                                    }
-                                </div>
-                                <div class="suggested-product-info">
-                                    <h4>${product.nom}</h4>
-                                    <div class="suggested-product-price">
-                                        ${
-                                          product.prix_original
-                                            ? `
-                                            <span class="original-price">${product.prix_original}€</span>
-                                            <span class="current-price">${product.prix_ttc}€</span>
-                                        `
-                                            : `
-                                            <span class="current-price">${product.prix_ttc}€</span>
-                                        `
-                                        }
-                                    </div>
-                                    <button class="btn-add-to-cart" onclick="ajouterAuPanier(${
-                                      product.id_produit
-                                    })">
-                                        <i class="fas fa-cart-plus"></i> Ajouter
-                                    </button>
-                                </div>
-                            </div>
-                        `;
-            });
-
-            container.innerHTML = html;
+            await chargerPanier();
+            await mettreAJourCompteur();
+            showNotification("Quantité mise à jour");
+          } else {
+            showNotification("Erreur: " + data.message, "error");
+            await chargerPanier();
           }
         } catch (error) {
-          console.error("Erreur chargement produits suggérés:", error);
+          console.error("Erreur:", error);
+          showNotification("Erreur de connexion", "error");
         }
       }
 
-      // Gestion de l'emballage cadeau
-      document
-        .getElementById("giftWrapToggle")
-        .addEventListener("change", function (e) {
+      // Modifier quantité (+/- boutons)
+      async function modifierQuantite(itemId, changement) {
+        try {
+          const input = document.querySelector(
+            `input[data-item-id="${itemId}"]`
+          );
+          if (!input) return;
+
+          let nouvelleQuantite = parseInt(input.value) + changement;
+          if (nouvelleQuantite < 1) nouvelleQuantite = 1;
+          if (nouvelleQuantite > 99) nouvelleQuantite = 99;
+
+          const response = await fetch(API_BASE_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "modifier",
+              id_item: itemId,
+              quantite: nouvelleQuantite,
+            }),
+          });
+
+          const data = await response.json();
+          if (data.success) {
+            await chargerPanier();
+            await mettreAJourCompteur();
+          } else {
+            showNotification("Erreur: " + data.message, "error");
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          showNotification("Erreur de connexion", "error");
+        }
+      }
+
+      // Supprimer un article
+      async function supprimerArticle(itemId) {
+        if (
+          !confirm("Voulez-vous vraiment supprimer cet article du panier ?")
+        ) {
+          return;
+        }
+
+        try {
+          const response = await fetch(API_BASE_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "supprimer",
+              id_item: itemId,
+            }),
+          });
+
+          const data = await response.json();
+          if (data.success) {
+            showNotification("Article supprimé du panier");
+            await chargerPanier();
+            await mettreAJourCompteur();
+          } else {
+            showNotification("Erreur: " + data.message, "error");
+          }
+        } catch (error) {
+          console.error("Erreur:", error);
+          showNotification("Erreur de connexion", "error");
+        }
+      }
+
+      // VIDER LE PANIER - FONCTION CORRIGÉE
+      function initialiserBoutonViderPanier() {
+        const clearCartBtn = document.getElementById("clearCartBtn");
+        if (!clearCartBtn) return;
+
+        clearCartBtn.addEventListener("click", async function () {
+          if (!confirm("Voulez-vous vraiment vider tout votre panier ?")) {
+            return;
+          }
+
+          try {
+            console.log("🔄 Tentative de vider le panier...");
+
+            // OPTION 1: GET simple - ÇA DEVRAIT MARCHER
+            const url = API_BASE_URL + "?action=vider&confirmation=1";
+            console.log("URL appelée:", url);
+
+            const response = await fetch(url, {
+              method: "GET",
+              cache: "no-cache",
+            });
+
+            console.log(
+              "📡 Statut réponse:",
+              response.status,
+              response.statusText
+            );
+
+            if (!response.ok) {
+              throw new Error(
+                `HTTP ${response.status}: ${response.statusText}`
+              );
+            }
+
+            const data = await response.json();
+            console.log("✅ Données reçues:", data);
+
+            if (data.success) {
+              showNotification("✅ Panier vidé avec succès !");
+
+              // Recharger immédiatement
+              await chargerPanier();
+              await mettreAJourCompteur();
+
+              // Forcer un petit délai pour que l'utilisateur voie le changement
+              setTimeout(() => {
+                if (data.new_count === 0) {
+                  console.log("✅ Panier confirmé vide");
+                }
+              }, 500);
+            } else {
+              showNotification("❌ Erreur: " + data.message, "error");
+            }
+          } catch (error) {
+            console.error("❌ Erreur détaillée:", error);
+
+            // OPTION 2: Fallback avec POST
+            try {
+              console.log("🔄 Tentative avec POST...");
+              const fallbackResponse = await fetch(API_BASE_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "vider",
+                  confirmation: true,
+                }),
+              });
+
+              const fallbackData = await fallbackResponse.json();
+              if (fallbackData.success) {
+                showNotification("✅ Panier vidé (méthode POST)!");
+                await chargerPanier();
+                await mettreAJourCompteur();
+              } else {
+                showNotification(
+                  "❌ Échec POST: " + fallbackData.message,
+                  "error"
+                );
+              }
+            } catch (fallbackError) {
+              console.error("❌ Fallback échoué:", fallbackError);
+              showNotification(
+                "🚫 Erreur de connexion au serveur. Vérifiez la console.",
+                "error"
+              );
+            }
+          }
+        });
+      }
+
+      // Gestion emballage cadeau
+      function initialiserEmballageCadeau() {
+        const giftWrapToggle = document.getElementById("giftWrapToggle");
+        if (!giftWrapToggle) return;
+
+        giftWrapToggle.addEventListener("change", function (e) {
           const giftWrapPrice = document.getElementById("giftWrapPrice");
           giftWrapPrice.textContent = e.target.checked ? "3,90 €" : "0,00 €";
-          panierManager.updateTotals();
+          updateTotal();
         });
+      }
+
+      // Mettre à jour le total
+      function updateTotal() {
+        const subtotalText = document.getElementById("subtotal").textContent;
+        const subtotal =
+          parseFloat(subtotalText.replace(" €", "").replace(",", ".")) || 0;
+        const giftWrapChecked =
+          document.getElementById("giftWrapToggle")?.checked || false;
+        const giftWrapCost = giftWrapChecked ? 3.9 : 0;
+
+        const total = subtotal + giftWrapCost;
+        const totalFormatted = total.toFixed(2).replace(".", ",") + " €";
+        document.getElementById("total").textContent = totalFormatted;
+      }
 
       // Code promotionnel
-      document
-        .getElementById("applyPromoBtn")
-        .addEventListener("click", function () {
+      function initialiserCodePromo() {
+        const applyPromoBtn = document.getElementById("applyPromoBtn");
+        if (!applyPromoBtn) return;
+
+        applyPromoBtn.addEventListener("click", function () {
           const promoCode = document
             .getElementById("promoCodeInput")
             .value.trim();
           if (promoCode) {
-            // Simulation d'application de code promo
             const promoSuccess = document.getElementById("promoSuccess");
             promoSuccess.style.display = "flex";
+
             setTimeout(() => {
               promoSuccess.style.display = "none";
             }, 3000);
+
+            document.getElementById("promoCodeInput").value = "";
+            showNotification("🎉 Code promotionnel appliqué !");
           }
         });
-
-      // Charger les produits suggérés au chargement
-      document.addEventListener("DOMContentLoaded", () => {
-        loadSuggestedProducts();
-      });
-    </script>
-  </body>
-</html>
-<!DOCTYPE html>
-<html lang="fr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mon Panier - Cadeaux Élégance</title>
-    <link rel="stylesheet" href="css/style.css" />
-    <link rel="stylesheet" href="css/panier.css" />
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-    />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Poppins:wght@300;400;500;600&display=swap"
-      rel="stylesheet"
-    />
-  </head>
-  <body>
-    <!-- Header -->
-    <header class="header">
-      <div class="container header-container">
-        <a href="index.html" class="logo">
-          <i class="fas fa-gift logo-icon"></i>
-          <span class="logo-text"
-            >Cadeaux<span class="logo-highlight">Élégance</span></span
-          >
-        </a>
-
-        <nav class="nav-main">
-          <ul class="nav-list">
-            <li>
-              <a href="index.html" class="nav-link"
-                ><i class="fas fa-home"></i> Accueil</a
-              >
-            </li>
-            <li>
-              <a href="produits.php" class="nav-link"
-                ><i class="fas fa-box-open"></i> Cadeaux</a
-              >
-            </li>
-            <li>
-              <a href="apropos.html" class="nav-link"
-                ><i class="fas fa-info-circle"></i> À propos</a
-              >
-            </li>
-            <li>
-              <a href="contact.html" class="nav-link"
-                ><i class="fas fa-envelope"></i> Contact</a
-              >
-            </li>
-            <li>
-              <a href="panier.html" class="nav-link cart-link">
-                <i class="fas fa-shopping-cart"></i> Panier
-                <span class="cart-count">0</span>
-              </a>
-            </li>
-          </ul>
-        </nav>
-
-        <button class="menu-toggle" id="menuToggle">
-          <i class="fas fa-bars"></i>
-        </button>
-      </div>
-
-      <!-- Navigation mobile -->
-      <nav class="nav-mobile" id="navMobile">
-        <ul class="nav-mobile-list">
-          <li>
-            <a href="index.html" class="nav-mobile-link"
-              ><i class="fas fa-home"></i> Accueil</a
-            >
-          </li>
-          <li>
-            <a href="produits.php" class="nav-mobile-link"
-              ><i class="fas fa-box-open"></i> Cadeaux</a
-            >
-          </li>
-          <li>
-            <a href="apropos.html" class="nav-mobile-link"
-              ><i class="fas fa-info-circle"></i> À propos</a
-            >
-          </li>
-          <li>
-            <a href="contact.html" class="nav-mobile-link"
-              ><i class="fas fa-envelope"></i> Contact</a
-            >
-          </li>
-          <li>
-            <a href="panier.html" class="nav-mobile-link"
-              ><i class="fas fa-shopping-cart"></i> Panier</a
-            >
-          </li>
-        </ul>
-      </nav>
-    </header>
-
-    <!-- Section Panier -->
-    <section class="cart-hero">
-      <div class="container">
-        <div class="cart-hero-content">
-          <h1><i class="fas fa-shopping-cart"></i> Mon Panier</h1>
-          <p class="cart-subtitle">
-            Révisez vos articles et finalisez votre commande
-          </p>
-          <div class="cart-progress">
-            <div class="progress-step active">
-              <span class="step-number">1</span>
-              <span class="step-text">Panier</span>
-            </div>
-            <div class="progress-line"></div>
-            <div class="progress-step">
-              <span class="step-number">2</span>
-              <span class="step-text">Livraison</span>
-            </div>
-            <div class="progress-line"></div>
-            <div class="progress-step">
-              <span class="step-number">3</span>
-              <span class="step-text">Paiement</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <main class="cart-page">
-      <div class="container">
-        <div class="cart-layout">
-          <!-- Section principale - Articles du panier -->
-          <div class="cart-main">
-            <div class="cart-header">
-              <h2><i class="fas fa-box"></i> Votre sélection</h2>
-              <button class="btn-clear-cart" id="clearCartBtn">
-                <i class="fas fa-trash-alt"></i> Vider le panier
-              </button>
-            </div>
-
-            <!-- Liste des articles -->
-            <div class="cart-items-wrapper">
-              <div class="cart-items" id="cartItems">
-                <!-- Les articles seront chargés ici par JavaScript -->
-              </div>
-            </div>
-
-            <!-- Informations supplémentaires -->
-            <div class="cart-extra-info">
-              <div class="extra-info-card">
-                <i class="fas fa-gift"></i>
-                <h4>Emballage cadeau</h4>
-                <p>Ajoutez un emballage élégant pour 3,90€ seulement</p>
-                <div class="gift-wrap-toggle">
-                  <span class="toggle-label">Emballage cadeau</span>
-                  <label class="toggle-switch">
-                    <input type="checkbox" id="giftWrapToggle" />
-                    <span class="toggle-slider"></span>
-                  </label>
-                </div>
-              </div>
-              <div class="extra-info-card">
-                <i class="fas fa-truck"></i>
-                <h4>Livraison offerte</h4>
-                <p>
-                  Votre commande bénéficie de la livraison gratuite en France
-                  métropolitaine
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Sidebar - Récapitulatif -->
-          <aside class="cart-sidebar">
-            <div class="sidebar-card">
-              <h3><i class="fas fa-receipt"></i> Récapitulatif</h3>
-
-              <div class="summary-details">
-                <div class="summary-row">
-                  <span>Sous-total</span>
-                  <span id="subtotal">0,00 €</span>
-                </div>
-                <div class="summary-row">
-                  <span>Livraison</span>
-                  <span class="free-shipping">Gratuite</span>
-                </div>
-                <div class="summary-row">
-                  <span>Emballage cadeau</span>
-                  <span id="giftWrapPrice">0,00 €</span>
-                </div>
-                <div class="summary-divider"></div>
-                <div class="summary-row total">
-                  <span>Total TTC</span>
-                  <span id="total">0,00 €</span>
-                </div>
-              </div>
-
-              <!-- Code promotionnel -->
-              <div class="promo-code-section">
-                <div class="promo-code-input">
-                  <input
-                    type="text"
-                    id="promoCodeInput"
-                    placeholder="Code promotionnel"
-                  />
-                  <button id="applyPromoBtn" class="btn-promo">
-                    Appliquer
-                  </button>
-                </div>
-                <div
-                  class="promo-success"
-                  id="promoSuccess"
-                  style="display: none"
-                >
-                  <i class="fas fa-check-circle"></i>
-                  <span>Code appliqué avec succès !</span>
-                </div>
-              </div>
-
-              <!-- Boutons d'action -->
-              <div class="cart-actions">
-                <button class="btn btn-primary btn-checkout" id="checkoutBtn">
-                  <i class="fas fa-lock"></i> Procéder au paiement
-                </button>
-                <a href="produits.php" class="btn btn-secondary">
-                  <i class="fas fa-shopping-bag"></i> Continuer mes achats
-                </a>
-              </div>
-
-              <!-- Garanties -->
-              <div class="guarantees">
-                <div class="guarantee-item">
-                  <i class="fas fa-shield-alt"></i>
-                  <span>Paiement sécurisé</span>
-                </div>
-                <div class="guarantee-item">
-                  <i class="fas fa-undo"></i>
-                  <span>Retour sous 30 jours</span>
-                </div>
-                <div class="guarantee-item">
-                  <i class="fas fa-headset"></i>
-                  <span>Service client 7j/7</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Sécurité -->
-            <div class="security-notice">
-              <i class="fas fa-lock"></i>
-              <div>
-                <h4>Transaction sécurisée</h4>
-                <p>
-                  Vos données sont protégées par un chiffrement SSL 256 bits
-                </p>
-              </div>
-            </div>
-          </aside>
-        </div>
-
-        <!-- Produits suggérés -->
-        <section class="suggested-products">
-          <h3><i class="fas fa-heart"></i> Complétez votre panier</h3>
-          <div class="suggested-grid" id="suggestedProducts">
-            <!-- Produits suggérés chargés par JavaScript -->
-          </div>
-        </section>
-      </div>
-    </main>
-
-    <!-- Footer -->
-    <footer class="footer">
-      <div class="container">
-        <div class="footer-grid">
-          <div class="footer-col">
-            <h4>Cadeaux Élégance</h4>
-            <p>
-              Votre boutique de cadeaux d'exception pour toutes les occasions
-              spéciales.
-            </p>
-            <div class="social-links">
-              <a href="#"><i class="fab fa-facebook"></i></a>
-              <a href="#"><i class="fab fa-instagram"></i></a>
-              <a href="#"><i class="fab fa-pinterest"></i></a>
-              <a href="#"><i class="fab fa-tiktok"></i></a>
-            </div>
-          </div>
-          <div class="footer-col">
-            <h4>Boutique</h4>
-            <ul>
-              <li><a href="produits.php">Tous les produits</a></li>
-              <li>
-                <a href="produits.php?categorie=nouveautes">Nouveautés</a>
-              </li>
-              <li>
-                <a href="produits.php?categorie=meilleures-ventes"
-                  >Meilleures ventes</a
-                >
-              </li>
-              <li>
-                <a href="produits.php?categorie=promotions">Promotions</a>
-              </li>
-            </ul>
-          </div>
-          <div class="footer-col">
-            <h4>Informations</h4>
-            <ul>
-              <li><a href="apropos.html">À propos</a></li>
-              <li><a href="contact.html">Contact</a></li>
-              <li><a href="livraison.html">Livraison</a></li>
-              <li><a href="retours.html">Retours & Échanges</a></li>
-              <li><a href="confidentialite.html">Confidentialité</a></li>
-              <li><a href="cgv.html">CGV</a></li>
-            </ul>
-          </div>
-          <div class="footer-col">
-            <h4>Contact</h4>
-            <ul class="contact-info">
-              <li>
-                <i class="fas fa-envelope"></i> contact@cadeaux-elegance.fr
-              </li>
-              <li><i class="fas fa-phone"></i> 01 23 45 67 89</li>
-              <li><i class="fas fa-map-marker-alt"></i> Paris, France</li>
-            </ul>
-          </div>
-        </div>
-        <div class="footer-bottom">
-          <p>&copy; 2025 Cadeaux Élégance. Tous droits réservés.</p>
-          <div class="payment-methods">
-            <i class="fab fa-cc-visa"></i>
-            <i class="fab fa-cc-mastercard"></i>
-            <i class="fab fa-cc-paypal"></i>
-            <i class="fab fa-cc-apple-pay"></i>
-          </div>
-        </div>
-      </div>
-    </footer>
-
-    <!-- Scripts -->
-    <script src="js/main.js"></script>
-    <script src="js/panier.js"></script>
-    <script>
-      // Charger les produits suggérés
-      async function loadSuggestedProducts() {
-        try {
-          const response = await fetch(
-            "api/produits.php?action=suggestions&limit=4"
-          );
-          const data = await response.json();
-
-          if (data.success) {
-            const container = document.getElementById("suggestedProducts");
-            let html = "";
-
-            data.products.forEach((product) => {
-              html += `
-                            <div class="suggested-product-card">
-                                <div class="suggested-product-image">
-                                    <img src="${
-                                      product.image ||
-                                      "images/default-product.jpg"
-                                    }" alt="${product.nom}">
-                                    ${
-                                      product.promotion
-                                        ? `<span class="discount-badge">-${product.promotion}%</span>`
-                                        : ""
-                                    }
-                                </div>
-                                <div class="suggested-product-info">
-                                    <h4>${product.nom}</h4>
-                                    <div class="suggested-product-price">
-                                        ${
-                                          product.prix_original
-                                            ? `
-                                            <span class="original-price">${product.prix_original}€</span>
-                                            <span class="current-price">${product.prix_ttc}€</span>
-                                        `
-                                            : `
-                                            <span class="current-price">${product.prix_ttc}€</span>
-                                        `
-                                        }
-                                    </div>
-                                    <button class="btn-add-to-cart" onclick="ajouterAuPanier(${
-                                      product.id_produit
-                                    })">
-                                        <i class="fas fa-cart-plus"></i> Ajouter
-                                    </button>
-                                </div>
-                            </div>
-                        `;
-            });
-
-            container.innerHTML = html;
-          }
-        } catch (error) {
-          console.error("Erreur chargement produits suggérés:", error);
-        }
       }
 
-      // Gestion de l'emballage cadeau
-      document
-        .getElementById("giftWrapToggle")
-        .addEventListener("change", function (e) {
-          const giftWrapPrice = document.getElementById("giftWrapPrice");
-          giftWrapPrice.textContent = e.target.checked ? "3,90 €" : "0,00 €";
-          panierManager.updateTotals();
-        });
+      // Procéder au paiement
+      function initialiserPaiement() {
+        const checkoutBtn = document.getElementById("checkoutBtn");
+        if (!checkoutBtn) return;
 
-      // Code promotionnel
-      document
-        .getElementById("applyPromoBtn")
-        .addEventListener("click", function () {
-          const promoCode = document
-            .getElementById("promoCodeInput")
-            .value.trim();
-          if (promoCode) {
-            // Simulation d'application de code promo
-            const promoSuccess = document.getElementById("promoSuccess");
-            promoSuccess.style.display = "flex";
-            setTimeout(() => {
-              promoSuccess.style.display = "none";
-            }, 3000);
+        checkoutBtn.addEventListener("click", function () {
+          const totalText = document.getElementById("total").textContent;
+          const total = parseFloat(
+            totalText.replace(" €", "").replace(",", ".")
+          );
+
+          if (total <= 0) {
+            showNotification(
+              "🛒 Votre panier est vide. Ajoutez des produits avant de procéder au paiement.",
+              "error"
+            );
+            return;
           }
-        });
 
-      // Charger les produits suggérés au chargement
-      document.addEventListener("DOMContentLoaded", () => {
-        loadSuggestedProducts();
+          showNotification("🔒 Redirection vers la page de paiement...");
+          // window.location.href = 'paiement.php?total=' + total;
+        });
+      }
+
+      // Initialisation principale
+      document.addEventListener("DOMContentLoaded", async function () {
+        console.log("🚀 Page panier - Initialisation démarrée");
+
+        // Ajouter styles d'animation
+        const style = document.createElement("style");
+        style.textContent = `
+          @keyframes notificationSlideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+          }
+          @keyframes notificationSlideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+          }
+          @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+          }
+          .cart-count.pulse {
+            animation: pulse 0.6s ease-in-out;
+          }
+        `;
+        document.head.appendChild(style);
+
+        // Tester l'API immédiatement
+        const apiOk = await testAPI();
+        console.log("API status:", apiOk ? "✅ OK" : "❌ Échec");
+
+        if (!apiOk) {
+          showNotification("⚠️ API panier non disponible", "error");
+        }
+
+        // Mettre à jour compteur
+        await mettreAJourCompteur();
+
+        // Initialiser composants
+        initialiserBoutonViderPanier();
+        initialiserEmballageCadeau();
+        initialiserCodePromo();
+        initialiserPaiement();
+
+        // Si sur page panier, charger les articles
+        if (window.location.pathname.includes("panier.html")) {
+          console.log("📄 Page panier détectée - Chargement articles...");
+          await chargerPanier();
+        }
+
+        console.log("✅ Initialisation terminée");
       });
+
+      // Exposer les fonctions globalement
+      window.ajouterAuPanier = async function (idProduit) {
+        console.log("➕ Ajout produit ID:", idProduit);
+        try {
+          const response = await fetch(API_BASE_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "ajouter",
+              id_produit: idProduit,
+              quantite: 1,
+            }),
+          });
+
+          const data = await response.json();
+          console.log("Réponse ajout:", data);
+
+          if (data.success) {
+            await mettreAJourCompteur();
+            if (window.location.pathname.includes("panier.html")) {
+              await chargerPanier();
+            }
+            showNotification(`🎁 "${data.produit_nom}" ajouté au panier !`);
+            return true;
+          } else {
+            showNotification("❌ Erreur: " + data.message, "error");
+            return false;
+          }
+        } catch (error) {
+          console.error("Erreur ajout:", error);
+          showNotification("❌ Erreur de connexion", "error");
+          return false;
+        }
+      };
+
+      window.modifierQuantite = modifierQuantite;
+      window.supprimerArticle = supprimerArticle;
+      window.mettreAJourQuantite = mettreAJourQuantite;
+      window.chargerPanier = chargerPanier;
+      window.mettreAJourCompteur = mettreAJourCompteur;
+
+      // Fonction de test manuel
+      window.testViderPanier = async function () {
+        console.log("🧪 Test manuel vider panier...");
+        const url = API_BASE_URL + "?action=vider&confirmation=1";
+        console.log("URL test:", url);
+
+        try {
+          const response = await fetch(url);
+          const data = await response.json();
+          console.log("Résultat test:", data);
+          return data;
+        } catch (error) {
+          console.error("Test échoué:", error);
+          return null;
+        }
+      };
     </script>
   </body>
 </html>

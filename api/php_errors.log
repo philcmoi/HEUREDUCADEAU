@@ -1,0 +1,17 @@
+[09-Dec-2025 14:53:32 UTC] Requête reçue - Méthode: GET
+[09-Dec-2025 14:53:32 UTC] Input JSON: null
+[09-Dec-2025 14:53:32 UTC] GET: {"action":"compter"}
+[09-Dec-2025 14:53:32 UTC] POST: []
+[09-Dec-2025 14:53:32 UTC] Action depuis GET: compter
+[09-Dec-2025 14:53:32 UTC] Traitement action: compter
+[09-Dec-2025 14:53:33 UTC] Requête reçue - Méthode: GET
+[09-Dec-2025 14:53:33 UTC] Input JSON: null
+[09-Dec-2025 14:53:33 UTC] GET: {"action":"compter"}
+[09-Dec-2025 14:53:33 UTC] POST: []
+[09-Dec-2025 14:53:33 UTC] Action depuis GET: compter
+[09-Dec-2025 14:53:33 UTC] Traitement action: compter
+[09-Dec-2025 14:53:39 UTC] Requête reçue - Méthode: GET
+[09-Dec-2025 14:53:39 UTC] Input JSON: null
+[09-Dec-2025 14:53:39 UTC] GET: []
+[09-Dec-2025 14:53:39 UTC] POST: []
+[09-Dec-2025 14:53:39 UTC] Traitement action: 

@@ -3,7 +3,7 @@
 session_start();
 
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    header('Location: login_simple.php');
+    header('Location: login.php');
     exit;
 }
 
@@ -664,7 +664,7 @@ function getClientIp() {
                 if (e.ctrlKey && e.key === 'q') {
                     e.preventDefault();
                     if (confirm('Déconnexion ?')) {
-                        window.location.href = 'login_simple.php?logout=1';
+                        window.location.href = 'login.php?logout=1';
                     }
                 }
             });

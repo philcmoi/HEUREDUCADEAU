@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Test API Panier</title>
+  </head>
+  <body>
+    <h1>Test API Panier</h1>
+    <div id="results"></div>
+
+    <script>
+      async function testAPI() {
+          const results = document.getElementById('results');
+          results.innerHTML = '<p>Test en cours...</p>';
+
+          try {
+              // Test 1: Vérifier si le fichier existe
+              results.innerHTML += '<h3>Test 1: Existence du fichier</h3>';
+              const fileCheck = await fetch('/api/panier.php');
+              results.innerHTML += `<p>Statut: ${fileCheck.status} ${fileCheck.statusText}</p>`;
+
+              // Test 2: Test avec action=compter
+              results.innerHTML += '<h3>Test 2: Action=compter</h3>';
+              const countCheck = await fetch('/api/panier.php?action=compter');
+              results.innerHTML += `<p>Statut: ${countCheck.status}</p>`;
+              const countData = await countCheck.text();
+              results.innerHTML += `<p>Réponse: ${countData}</p>`;
+
+              // Test 3: Test avec JSON
+              results.innerHTML += '<h3>Test 3: Ajout produit (JSON)</h3>';
+              const jsonTest = await fetch('/api/panier.php', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({action: 'ajouter', id_produit: 1, quantite: 1})
+              });
+              results.innerHTML += `<p>Statut: ${jsonTest.status}</p>`;
+              const jsonData = await jsonTest.text();
+              results.innerHTML += `<p>Réponse: ${jsonData}</p>';
+
+          } catch (error) {
+              results.innerHTML += `<p style="color: red">ERREUR: ${error.message}</p>`;
+          }
+      }
+
+      testAPI();
+    </script>
+  </body>
+</html>
