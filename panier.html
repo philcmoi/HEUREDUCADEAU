@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mon Panier - Cadeaux Élégance</title>
+    <title>Mon Panier - HEURE DU CADEAU</title>
     <link rel="stylesheet" href="css/style.css" />
     <link rel="stylesheet" href="css/panier.css" />
     <link
@@ -14,6 +14,39 @@
       href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Poppins:wght@300;400;500;600&display=swap"
       rel="stylesheet"
     />
+
+    <style>
+      /* Styles pour l'état vide du panier */
+      .cart-empty {
+        display: none; /* Caché par défaut */
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 60px 20px;
+        text-align: center;
+        background: #f8f9fa;
+        border-radius: 12px;
+        border: 2px dashed #ddd;
+        margin: 20px 0;
+      }
+
+      .cart-empty i {
+        font-size: 4rem;
+        color: #bdc3c7;
+        margin-bottom: 20px;
+      }
+
+      .cart-empty h3 {
+        color: #2c3e50;
+        margin-bottom: 10px;
+      }
+
+      .cart-empty p {
+        color: #7f8c8d;
+        margin-bottom: 30px;
+        max-width: 400px;
+      }
+    </style>
   </head>
   <body>
     <!-- Header -->
@@ -22,7 +55,7 @@
         <a href="index.html" class="logo">
           <i class="fas fa-gift logo-icon"></i>
           <span class="logo-text"
-            >Cadeaux<span class="logo-highlight">Élégance</span></span
+            >HEURE<span class="logo-highlight">DU CADEAU</span></span
           >
         </a>
 
@@ -277,7 +310,7 @@
       <div class="container">
         <div class="footer-grid">
           <div class="footer-col">
-            <h4>Cadeaux Élégance</h4>
+            <h4>HEURE DU CADEAUX</h4>
             <p>
               Votre boutique de cadeaux d'exception pour toutes les occasions
               spéciales.
@@ -320,16 +353,14 @@
           <div class="footer-col">
             <h4>Contact</h4>
             <ul class="contact-info">
-              <li>
-                <i class="fas fa-envelope"></i> contact@cadeaux-elegance.fr
-              </li>
+              <li><i class="fas fa-envelope"></i> contact@HEUREDUCADEAU.fr</li>
               <li><i class="fas fa-phone"></i> 01 23 45 67 89</li>
               <li><i class="fas fa-map-marker-alt"></i> Paris, France</li>
             </ul>
           </div>
         </div>
         <div class="footer-bottom">
-          <p>&copy; 2025 Cadeaux Élégance. Tous droits réservés.</p>
+          <p>&copy; 2025 HEURE DU CADEAU. Tous droits réservés.</p>
           <div class="payment-methods">
             <i class="fab fa-cc-visa"></i>
             <i class="fab fa-cc-mastercard"></i>
@@ -504,6 +535,7 @@
       }
 
       // Afficher les articles dans le panier
+      // Afficher les articles dans le panier - VERSION CORRIGÉE
       function afficherArticlesPanier(items, totalPrix) {
         const container = document.getElementById("cartItems");
         const cartEmpty = document.getElementById("cartEmpty");
@@ -512,20 +544,50 @@
 
         console.log(`📦 ${items.length} articles à afficher`);
 
+        // TOUJOURS afficher le message "panier vide" si aucun article
         if (!items || items.length === 0) {
-          // Panier vide
-          if (cartEmpty) {
-            cartEmpty.style.display = "flex";
-            container.innerHTML = "";
+          console.log("🔄 Affichage: Panier vide");
+
+          if (container) {
+            container.innerHTML = ""; // Vider complètement
           }
-          subtotalElement.textContent = "0,00 €";
-          totalElement.textContent = "0,00 €";
+
+          if (cartEmpty) {
+            cartEmpty.style.display = "flex"; // AFFICHER le message
+            cartEmpty.style.flexDirection = "column";
+            cartEmpty.style.alignItems = "center";
+            cartEmpty.style.justifyContent = "center";
+            cartEmpty.style.padding = "40px 20px";
+            cartEmpty.style.textAlign = "center";
+          }
+
+          if (subtotalElement) subtotalElement.textContent = "0,00 €";
+          if (totalElement) totalElement.textContent = "0,00 €";
+
+          // Désactiver bouton paiement
+          const checkoutBtn = document.getElementById("checkoutBtn");
+          if (checkoutBtn) {
+            checkoutBtn.disabled = true;
+            checkoutBtn.style.opacity = "0.6";
+            checkoutBtn.style.cursor = "not-allowed";
+          }
+
           return;
         }
 
-        // Cacher message "panier vide"
+        // Panier NON vide
+        console.log("🔄 Affichage: Panier avec", items.length, "articles");
+
         if (cartEmpty) {
-          cartEmpty.style.display = "none";
+          cartEmpty.style.display = "none"; // CACHER le message
+        }
+
+        // Réactiver bouton paiement
+        const checkoutBtn = document.getElementById("checkoutBtn");
+        if (checkoutBtn) {
+          checkoutBtn.disabled = false;
+          checkoutBtn.style.opacity = "1";
+          checkoutBtn.style.cursor = "pointer";
         }
 
         // Générer HTML des articles
@@ -541,58 +603,59 @@
           const totalItemFormatted = totalItem.toFixed(2).replace(".", ",");
 
           html += `
-            <div class="cart-item" data-item-id="${item.id_item}">
-              <div class="cart-item-image">
-                <img src="img/produit-unique.jpg" alt="${
-                  item.nom
-                }" onerror="this.src='img/default-product.jpg'">
-              </div>
-              <div class="cart-item-details">
-                <h4 class="cart-item-title">${item.nom}</h4>
-                <p class="cart-item-ref">Réf: PROD-${item.id_produit}</p>
-                <p class="cart-item-price-unit">${prixUnitaireFormatted} € l'unité</p>
-              </div>
-              <div class="cart-item-quantity">
-                <button class="quantity-btn minus" onclick="modifierQuantite('${
-                  item.id_item
-                }', -1)" ${quantite <= 1 ? "disabled" : ""}>
-                  <i class="fas fa-minus"></i>
-                </button>
-                <input type="number" value="${quantite}" min="1" max="99" 
-                       class="quantity-input" data-item-id="${item.id_item}"
-                       onchange="mettreAJourQuantite('${
-                         item.id_item
-                       }', this.value)">
-                <button class="quantity-btn plus" onclick="modifierQuantite('${
-                  item.id_item
-                }', 1)">
-                  <i class="fas fa-plus"></i>
-                </button>
-              </div>
-              <div class="cart-item-total">
-                <span class="item-total-price">${totalItemFormatted} €</span>
-              </div>
-              <button class="cart-item-remove" onclick="supprimerArticle('${
-                item.id_item
-              }')" title="Supprimer">
-                <i class="fas fa-trash"></i>
-              </button>
-            </div>
-          `;
+      <div class="cart-item" data-item-id="${item.id_item}">
+        <div class="cart-item-image">
+          <img src="img/produit-unique.jpg" alt="${item.nom}" 
+               onerror="this.src='img/default-product.jpg'">
+        </div>
+        <div class="cart-item-details">
+          <h4 class="cart-item-title">${item.nom}</h4>
+          <p class="cart-item-ref">Réf: PROD-${item.id_produit}</p>
+          <p class="cart-item-price-unit">${prixUnitaireFormatted} € l'unité</p>
+        </div>
+        <div class="cart-item-quantity">
+          <button class="quantity-btn minus" onclick="modifierQuantite('${
+            item.id_item
+          }', -1)" 
+                  ${quantite <= 1 ? "disabled" : ""}>
+            <i class="fas fa-minus"></i>
+          </button>
+          <input type="number" value="${quantite}" min="1" max="99" 
+                 class="quantity-input" data-item-id="${item.id_item}"
+                 onchange="mettreAJourQuantite('${item.id_item}', this.value)">
+          <button class="quantity-btn plus" onclick="modifierQuantite('${
+            item.id_item
+          }', 1)">
+            <i class="fas fa-plus"></i>
+          </button>
+        </div>
+        <div class="cart-item-total">
+          <span class="item-total-price">${totalItemFormatted} €</span>
+        </div>
+        <button class="cart-item-remove" onclick="supprimerArticle('${
+          item.id_item
+        }')" 
+                title="Supprimer">
+          <i class="fas fa-trash"></i>
+        </button>
+      </div>
+    `;
         });
 
-        container.innerHTML = html;
+        if (container) {
+          container.innerHTML = html;
+        }
 
         // Mettre à jour les totaux
         const formattedTotal = parseFloat(totalPrix || 0)
           .toFixed(2)
           .replace(".", ",");
-        subtotalElement.textContent = formattedTotal + " €";
-        totalElement.textContent = formattedTotal + " €";
+        if (subtotalElement)
+          subtotalElement.textContent = formattedTotal + " €";
+        if (totalElement) totalElement.textContent = formattedTotal + " €";
 
         updateTotal();
       }
-
       // Modifier quantité via input
       async function mettreAJourQuantite(itemId, nouvelleQuantite) {
         nouvelleQuantite = parseInt(nouvelleQuantite);
@@ -694,6 +757,7 @@
       }
 
       // VIDER LE PANIER - FONCTION CORRIGÉE
+      // VIDER LE PANIER - VERSION CORRIGÉE POUR RAFRAÎCHISSEMENT
       function initialiserBoutonViderPanier() {
         const clearCartBtn = document.getElementById("clearCartBtn");
         if (!clearCartBtn) return;
@@ -706,7 +770,13 @@
           try {
             console.log("🔄 Tentative de vider le panier...");
 
-            // OPTION 1: GET simple - ÇA DEVRAIT MARCHER
+            // Désactiver le bouton pendant l'opération
+            clearCartBtn.disabled = true;
+            const originalText = clearCartBtn.innerHTML;
+            clearCartBtn.innerHTML =
+              '<i class="fas fa-spinner fa-spin"></i> Vider...';
+
+            // OPTION 1: GET simple
             const url = API_BASE_URL + "?action=vider&confirmation=1";
             console.log("URL appelée:", url);
 
@@ -733,21 +803,43 @@
             if (data.success) {
               showNotification("✅ Panier vidé avec succès !");
 
-              // Recharger immédiatement
-              await chargerPanier();
-              await mettreAJourCompteur();
+              // FORCER le rafraîchissement IMMÉDIAT et COMPLET
+              setTimeout(async () => {
+                // 1. Mettre à jour le compteur
+                await mettreAJourCompteur();
 
-              // Forcer un petit délai pour que l'utilisateur voie le changement
-              setTimeout(() => {
-                if (data.new_count === 0) {
-                  console.log("✅ Panier confirmé vide");
+                // 2. Recharger les articles (ceci devrait afficher "panier vide")
+                await chargerPanier();
+
+                // 3. FORCER un re-render visuel
+                const cartItems = document.getElementById("cartItems");
+                const cartEmpty = document.getElementById("cartEmpty");
+
+                if (cartItems && cartEmpty) {
+                  // Vider le contenu des articles
+                  cartItems.innerHTML = "";
+                  // Afficher le message "panier vide"
+                  cartEmpty.style.display = "flex";
                 }
-              }, 500);
+
+                // 4. Réinitialiser les totaux
+                document.getElementById("subtotal").textContent = "0,00 €";
+                document.getElementById("total").textContent = "0,00 €";
+                document.getElementById("giftWrapPrice").textContent = "0,00 €";
+
+                // 5. Décocher l'emballage cadeau
+                const giftWrapToggle =
+                  document.getElementById("giftWrapToggle");
+                if (giftWrapToggle) giftWrapToggle.checked = false;
+
+                console.log("✅ Panier rafraîchi visuellement");
+              }, 100);
             } else {
               showNotification("❌ Erreur: " + data.message, "error");
             }
           } catch (error) {
             console.error("❌ Erreur détaillée:", error);
+            showNotification("❌ Erreur lors du vidage du panier", "error");
 
             // OPTION 2: Fallback avec POST
             try {
@@ -764,21 +856,26 @@
               const fallbackData = await fallbackResponse.json();
               if (fallbackData.success) {
                 showNotification("✅ Panier vidé (méthode POST)!");
-                await chargerPanier();
-                await mettreAJourCompteur();
-              } else {
-                showNotification(
-                  "❌ Échec POST: " + fallbackData.message,
-                  "error"
-                );
+
+                // Rafraîchir après POST aussi
+                setTimeout(async () => {
+                  await mettreAJourCompteur();
+                  await chargerPanier();
+
+                  // Forcer l'affichage "panier vide"
+                  const cartEmpty = document.getElementById("cartEmpty");
+                  if (cartEmpty) cartEmpty.style.display = "flex";
+                }, 100);
               }
             } catch (fallbackError) {
               console.error("❌ Fallback échoué:", fallbackError);
-              showNotification(
-                "🚫 Erreur de connexion au serveur. Vérifiez la console.",
-                "error"
-              );
             }
+          } finally {
+            // Réactiver le bouton
+            setTimeout(() => {
+              clearCartBtn.disabled = false;
+              clearCartBtn.innerHTML = originalText;
+            }, 500);
           }
         });
       }
