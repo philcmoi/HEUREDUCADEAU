@@ -623,7 +623,7 @@
       .products-network-error {
         background: white;
         border-radius: 12px;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
         padding: 40px;
         text-align: center;
         grid-column: 1 / -1;
@@ -867,24 +867,38 @@
     </section>
 
     <!-- Section de débogage (visible uniquement en développement) -->
-    <section class="debug-section" style="display: block;">
+    <section class="debug-section" style="display: block">
       <div class="container">
-        <h4 style="margin-bottom: 10px;">Outils de débogage</h4>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <h4 style="margin-bottom: 10px">Outils de débogage</h4>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap">
           <button onclick="testAPI()" class="btn-test-api">
             <i class="fas fa-bug"></i> Tester l'API
           </button>
           <button onclick="checkDatabase()" class="btn-test-api">
             <i class="fas fa-database"></i> Vérifier la base
           </button>
-          <button onclick="localStorage.clear(); location.reload();" class="btn-test-api">
+          <button
+            onclick="localStorage.clear(); location.reload();"
+            class="btn-test-api"
+          >
             <i class="fas fa-trash"></i> Effacer le cache
           </button>
           <button onclick="loadFeaturedProducts()" class="btn-test-api">
             <i class="fas fa-redo"></i> Recharger produits
           </button>
         </div>
-        <div id="debugOutput" style="margin-top: 15px; padding: 10px; background: white; border-radius: 6px; font-family: monospace; font-size: 0.85rem; display: none;"></div>
+        <div
+          id="debugOutput"
+          style="
+            margin-top: 15px;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            display: none;
+          "
+        ></div>
       </div>
     </section>
 
@@ -1085,7 +1099,7 @@
       // CORRECTION IMPORTANTE : Ajouter /sean/ devant les URLs
       const API_PRODUITS_URL = "/sean/api/produits.php?action=featured&limit=4";
       const API_PANIER_URL = "/sean/api/panier.php";
-      
+
       console.log("=== CONFIGURATION AVEC BASE DE DONNÉES ===");
       console.log("URL API Produits:", API_PRODUITS_URL);
       console.log("URL API Panier:", API_PANIER_URL);
@@ -1121,8 +1135,8 @@
         `;
         document.body.appendChild(toast);
         toast
-            .querySelector(".toast-close")
-            .addEventListener("click", () => toast.remove());
+          .querySelector(".toast-close")
+          .addEventListener("click", () => toast.remove());
         setTimeout(() => {
           if (toast.parentElement) toast.remove();
         }, 5000);
@@ -1158,7 +1172,9 @@
 
         // Méthode pour ajouter au panier
         async ajouterAuPanier(id_produit, quantite = 1, button = null) {
-          console.log(`[PanierManager] Ajouter au panier: ID=${id_produit}, Quantité=${quantite}`);
+          console.log(
+            `[PanierManager] Ajouter au panier: ID=${id_produit}, Quantité=${quantite}`
+          );
 
           if (!id_produit) {
             showNotification("Erreur: Produit invalide", "error");
@@ -1267,7 +1283,7 @@
             `Produit #${id_produit}`;
           const prixElement = productCard?.querySelector(".product-price");
           let prix = "19,99";
-          
+
           if (prixElement) {
             // Extraire le prix du HTML
             const priceText = prixElement.textContent || prixElement.innerHTML;
@@ -1280,7 +1296,9 @@
           return {
             nom: nom,
             prix_ttc: prix,
-            image: productCard?.querySelector("img")?.src || "img/default-product.jpg",
+            image:
+              productCard?.querySelector("img")?.src ||
+              "img/default-product.jpg",
             id_produit: id_produit,
           };
         }
@@ -1296,13 +1314,17 @@
           this.cartModalBody.innerHTML = `
                 <div class="cart-modal-product">
                     <div class="modal-product-image">
-                        <img src="${product.image || 'img/default-product.jpg'}" 
+                        <img src="${
+                          product.image || "img/default-product.jpg"
+                        }" 
                              alt="${product.nom}"
                              onerror="this.onerror=null;this.src='img/default-product.jpg'">
                     </div>
                     <div class="modal-product-info">
                         <h4>${product.nom}</h4>
-                        <p class="modal-product-ref">Réf: ${product.id_produit || "N/A"}</p>
+                        <p class="modal-product-ref">Réf: ${
+                          product.id_produit || "N/A"
+                        }</p>
                         <p class="modal-product-price">${prix} €</p>
                         <p class="modal-success-message">
                             <i class="fas fa-check-circle"></i>
@@ -1335,10 +1357,7 @@
                 console.log("API non disponible, statut:", response.status);
               }
             } catch (apiError) {
-              console.log(
-                "API panier non disponible",
-                apiError.message
-              );
+              console.log("API panier non disponible", apiError.message);
             }
 
             // Mettre à jour l'affichage
@@ -1368,7 +1387,7 @@
       async function loadFeaturedProducts() {
         try {
           const container = document.getElementById("featuredProducts");
-          
+
           // Afficher un indicateur de chargement
           container.innerHTML = `
             <div class="products-loading">
@@ -1379,23 +1398,23 @@
               </div>
             </div>
           `;
-          
+
           console.log("Tentative de chargement depuis:", API_PRODUITS_URL);
-          
+
           // Ajouter un timestamp pour éviter le cache
-          const urlWithCacheBuster = API_PRODUITS_URL + '&_=' + Date.now();
-          
+          const urlWithCacheBuster = API_PRODUITS_URL + "&_=" + Date.now();
+
           const response = await fetch(urlWithCacheBuster, {
             method: "GET",
-            headers: { 
-              "Accept": "application/json",
-              "Cache-Control": "no-cache"
+            headers: {
+              Accept: "application/json",
+              "Cache-Control": "no-cache",
             },
-            mode: 'cors'
+            mode: "cors",
           });
 
           console.log("Statut réponse:", response.status, response.statusText);
-          
+
           let data;
           try {
             data = await response.json();
@@ -1408,23 +1427,23 @@
           if (data.success && data.products && data.products.length > 0) {
             // Affichage normal
             displayProductsFromDatabase(data.products);
-            
+
             // Afficher un message de debug si présent
             if (data.debug) {
               console.log("Debug API:", data.debug);
             }
-            
-          } else if (data.success && (!data.products || data.products.length === 0)) {
+          } else if (
+            data.success &&
+            (!data.products || data.products.length === 0)
+          ) {
             // Cas où l'API retourne success:true mais pas de produits
             console.warn("API retourne succès mais aucun produit");
             displayNoProductsMessage();
-            
           } else {
             // Cas où l'API retourne success:false
             console.error("API retourne success:false", data.message || data);
             displayApiError(data.message || "Erreur de l'API");
           }
-          
         } catch (error) {
           console.error("Erreur complète chargement produits:", error);
           displayNetworkError(error);
@@ -1437,7 +1456,7 @@
           displayNoProductsMessage();
           return;
         }
-        
+
         let html = "";
         products.forEach((product) => {
           const prix = product.prix_ttc
@@ -1449,18 +1468,21 @@
           );
 
           // Image du produit - CORRECTION : chemin complet
-          const productImage = "/sean/" + (product.image || "img/default-product.jpg");
-          
+          const productImage =
+            "/sean/" + (product.image || "img/default-product.jpg");
+
           // État du stock
           const stockQuantity = product.quantite_stock || 0;
-          let stockBadge = '';
+          let stockBadge = "";
           let isDisabled = false;
-          
+
           if (stockQuantity <= 0) {
-            stockBadge = '<span class="stock-badge stock-rupture">Épuisé</span>';
+            stockBadge =
+              '<span class="stock-badge stock-rupture">Épuisé</span>';
             isDisabled = true;
           } else if (stockQuantity <= 5) {
-            stockBadge = '<span class="stock-badge stock-faible">Stock faible</span>';
+            stockBadge =
+              '<span class="stock-badge stock-faible">Stock faible</span>';
           }
 
           html += `
@@ -1481,11 +1503,15 @@
                 <h3>${product.nom}</h3>
                 <p class="product-price">${prix} €</p>
                 
-                ${product.description_courte ? `
+                ${
+                  product.description_courte
+                    ? `
                   <p style="color: #666; font-size: 0.9rem; margin: 8px 0;">
                     ${product.description_courte}
                   </p>
-                ` : ''}
+                `
+                    : ""
+                }
                 
                 ${
                   product.note_moyenne && parseFloat(product.note_moyenne) > 0
@@ -1504,11 +1530,13 @@
                   <button class="btn-add-to-cart"
                           data-id="${product.id_produit}"
                           title="Ajouter au panier"
-                          ${isDisabled ? 'disabled' : ''}>
+                          ${isDisabled ? "disabled" : ""}>
                     <i class="fas fa-cart-plus"></i> 
-                    ${isDisabled ? 'Épuisé' : 'Ajouter'}
+                    ${isDisabled ? "Épuisé" : "Ajouter"}
                   </button>
-                  <a href="/sean/produitsprincipale.php?categorie=${encodeURIComponent(product.categorie_nom || '')}" 
+                  <a href="/sean/produitsprincipale.php?categorie=${encodeURIComponent(
+                    product.categorie_nom || ""
+                  )}" 
                      class="btn-view">
                     <i class="fas fa-eye"></i> Voir
                   </a>
@@ -1519,8 +1547,10 @@
         });
 
         document.getElementById("featuredProducts").innerHTML = html;
-        console.log(`${products.length} produits affichés depuis la base de données`);
-        
+        console.log(
+          `${products.length} produits affichés depuis la base de données`
+        );
+
         // Vérifier que les boutons sont accessibles
         const buttons = document.querySelectorAll(".btn-add-to-cart");
         console.log(`${buttons.length} boutons "Ajouter" disponibles`);
@@ -1657,29 +1687,39 @@
 
       // Fonction de test API
       async function testAPI() {
-        const debugOutput = document.getElementById('debugOutput');
-        debugOutput.style.display = 'block';
-        debugOutput.innerHTML = '<p><i class="fas fa-spinner fa-spin"></i> Test en cours...</p>';
-        
+        const debugOutput = document.getElementById("debugOutput");
+        debugOutput.style.display = "block";
+        debugOutput.innerHTML =
+          '<p><i class="fas fa-spinner fa-spin"></i> Test en cours...</p>';
+
         try {
-          const response = await fetch(API_PRODUITS_URL + '&_=' + Date.now());
+          const response = await fetch(API_PRODUITS_URL + "&_=" + Date.now());
           const status = response.status;
           const text = await response.text();
-          
+
           let html = `<p><strong>Statut HTTP:</strong> ${status}</p>`;
-          
+
           try {
             const data = JSON.parse(text);
             html += `<p><strong>JSON valide:</strong> Oui</p>`;
             html += `<p><strong>Success:</strong> ${data.success}</p>`;
-            html += `<p><strong>Nombre de produits:</strong> ${data.products ? data.products.length : 0}</p>`;
-            html += `<p><strong>Debug:</strong> ${data.debug || 'Aucun'}</p>`;
-            html += `<pre style="max-height: 200px; overflow: auto; background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 10px;">${JSON.stringify(data, null, 2)}</pre>`;
+            html += `<p><strong>Nombre de produits:</strong> ${
+              data.products ? data.products.length : 0
+            }</p>`;
+            html += `<p><strong>Debug:</strong> ${data.debug || "Aucun"}</p>`;
+            html += `<pre style="max-height: 200px; overflow: auto; background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 10px;">${JSON.stringify(
+              data,
+              null,
+              2
+            )}</pre>`;
           } catch (e) {
             html += `<p><strong>JSON valide:</strong> Non</p>`;
-            html += `<pre style="max-height: 200px; overflow: auto; background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 10px;">${text.substring(0, 500)}</pre>`;
+            html += `<pre style="max-height: 200px; overflow: auto; background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 10px;">${text.substring(
+              0,
+              500
+            )}</pre>`;
           }
-          
+
           debugOutput.innerHTML = html;
         } catch (error) {
           debugOutput.innerHTML = `<p style="color: #e74c3c;"><strong>Erreur:</strong> ${error.message}</p>`;
@@ -1687,17 +1727,23 @@
       }
 
       // Vérification de la base de données
-      window.checkDatabase = async function() {
+      window.checkDatabase = async function () {
         console.log("=== VÉRIFICATION BASE DE DONNÉES ===");
         try {
           const response = await fetch(API_PRODUITS_URL);
           const data = await response.json();
           console.log("Base de données:", data);
-          
+
           if (data.success && data.products) {
-            console.log(`✅ ${data.products.length} produits trouvés dans la base`);
+            console.log(
+              `✅ ${data.products.length} produits trouvés dans la base`
+            );
             data.products.forEach((p, i) => {
-              console.log(`   ${i+1}. ${p.nom} - ${p.prix_ttc}€ (Catégorie: ${p.categorie_nom || 'Non catégorisé'})`);
+              console.log(
+                `   ${i + 1}. ${p.nom} - ${p.prix_ttc}€ (Catégorie: ${
+                  p.categorie_nom || "Non catégorisé"
+                })`
+              );
             });
           } else {
             console.log("❌ Aucun produit trouvé ou erreur API");
@@ -1712,3 +1758,5 @@
         window.checkDatabase();
       }, 1000);
     </script>
+  </body>
+</html>

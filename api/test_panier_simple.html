@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Test Simple API Panier</title>
+  </head>
+  <body>
+    <h1>Test Simple API Panier</h1>
+
+    <button onclick="testAjouter()">Test Ajouter Produit 1</button>
+    <button onclick="testCompter()">Test Compter</button>
+    <button onclick="testAfficher()">Test Afficher</button>
+
+    <div
+      id="result"
+      style="margin-top: 20px; padding: 10px; border: 1px solid #ccc"
+    ></div>
+
+    <script>
+      function log(msg) {
+        const resultDiv = document.getElementById("result");
+        resultDiv.innerHTML += "<p>" + msg + "</p>";
+        console.log(msg);
+      }
+
+      async function testAjouter() {
+        try {
+          log("=== Test AJOUTER ===");
+
+          const data = {
+            action: "ajouter",
+            id_produit: 1,
+            quantite: 1,
+          };
+
+          log("Envoi des données: " + JSON.stringify(data));
+
+          const response = await fetch("api/panier.php", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(data),
+          });
+
+          const result = await response.json();
+          log("Réponse: " + JSON.stringify(result));
+
+          if (result.success) {
+            log("✅ SUCCÈS: " + result.message);
+          } else {
+            log("❌ ÉCHEC: " + result.message);
+          }
+        } catch (error) {
+          log("❌ ERREUR: " + error.message);
+        }
+      }
+
+      async function testCompter() {
+        try {
+          log("=== Test COMPTER ===");
+
+          const response = await fetch("api/panier.php?action=compter");
+          const result = await response.json();
+
+          log("Réponse: " + JSON.stringify(result));
+
+          if (result.success) {
+            log("✅ Total panier: " + result.total);
+          } else {
+            log("❌ ÉCHEC: " + result.message);
+          }
+        } catch (error) {
+          log("❌ ERREUR: " + error.message);
+        }
+      }
+
+      async function testAfficher() {
+        try {
+          log("=== Test AFFICHER ===");
+
+          const response = await fetch("api/panier.php?action=afficher");
+          const result = await response.json();
+
+          log("Réponse: " + JSON.stringify(result, null, 2));
+
+          if (result.success) {
+            if (result.items && result.items.length > 0) {
+              log("✅ Panier contient " + result.items.length + " article(s)");
+              log("✅ Total prix: " + result.total_prix + "€");
+            } else {
+              log("✅ Panier vide");
+            }
+          } else {
+            log("❌ ÉCHEC: " + result.message);
+          }
+        } catch (error) {
+          log("❌ ERREUR: " + error.message);
+        }
+      }
+    </script>
+  </body>
+</html>
