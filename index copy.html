@@ -1079,16 +1079,14 @@
     <script src="js/main.js"></script>
     <script>
       // ==============================================
-      // CONFIGURATION AVEC BASE DE DONNÉES - VERSION CORRIGÉE
+      // CONFIGURATION AVEC BASE DE DONNÉES
       // ==============================================
 
-      // CORRECTION IMPORTANTE : Ajouter /sean/ devant les URLs
-      const API_PRODUITS_URL = "/sean/api/produits.php?action=featured&limit=4";
-      const API_PANIER_URL = "/sean/api/panier.php";
+      const API_PRODUITS_URL = "api/produits.php?action=featured&limit=4";
+      const API_PANIER_URL = "api/panier.php";
       
       console.log("=== CONFIGURATION AVEC BASE DE DONNÉES ===");
       console.log("URL API Produits:", API_PRODUITS_URL);
-      console.log("URL API Panier:", API_PANIER_URL);
 
       // Fonction pour générer les étoiles de notation
       function generateRatingStars(rating) {
@@ -1128,10 +1126,10 @@
         }, 5000);
       }
 
-      // Classe PanierManager avec chemin corrigé
+      // Classe PanierManager
       class PanierManager {
         constructor() {
-          this.apiUrl = API_PANIER_URL; // Utilise le chemin corrigé
+          this.apiUrl = API_PANIER_URL;
           this.cartModal = document.getElementById("cartModal");
           this.cartModalBody = document.getElementById("cartModalBody");
           this.cartKey = "cadeaux_elegance_panier";
@@ -1364,7 +1362,7 @@
         }
       }
 
-      // Fonction pour charger les produits phares avec chemin corrigé
+      // Fonction pour charger les produits phares avec meilleure gestion d'erreurs
       async function loadFeaturedProducts() {
         try {
           const container = document.getElementById("featuredProducts");
@@ -1448,8 +1446,8 @@
             parseFloat(product.note_moyenne || 0)
           );
 
-          // Image du produit - CORRECTION : chemin complet
-          const productImage = "/sean/" + (product.image || "img/default-product.jpg");
+          // Image du produit
+          const productImage = product.image || "img/default-product.jpg";
           
           // État du stock
           const stockQuantity = product.quantite_stock || 0;
@@ -1469,7 +1467,7 @@
               <div class="product-image">
                 <img src="${productImage}"
                      alt="${product.nom}"
-                     onerror="this.onerror=null;this.src='/sean/img/default-product.jpg'">
+                     onerror="this.onerror=null;this.src='img/default-product.jpg'">
                 <div class="product-overlay">
                   <i class="fas fa-eye"></i>
                 </div>
@@ -1508,7 +1506,7 @@
                     <i class="fas fa-cart-plus"></i> 
                     ${isDisabled ? 'Épuisé' : 'Ajouter'}
                   </button>
-                  <a href="/sean/produitsprincipale.php?categorie=${encodeURIComponent(product.categorie_nom || '')}" 
+                  <a href="produitsprincipale.php?categorie=${encodeURIComponent(product.categorie_nom || '')}" 
                      class="btn-view">
                     <i class="fas fa-eye"></i> Voir
                   </a>
@@ -1519,11 +1517,7 @@
         });
 
         document.getElementById("featuredProducts").innerHTML = html;
-        console.log(`${products.length} produits affichés depuis la base de données`);
-        
-        // Vérifier que les boutons sont accessibles
-        const buttons = document.querySelectorAll(".btn-add-to-cart");
-        console.log(`${buttons.length} boutons "Ajouter" disponibles`);
+        console.log(`${products.length} produits affichés`);
       }
 
       // Fonctions d'affichage d'erreur
@@ -1590,7 +1584,7 @@
         `;
       }
 
-      // Initialisation avec chemins corrigés
+      // Initialisation CORRIGÉE
       document.addEventListener("DOMContentLoaded", async () => {
         console.log("=== INITIALISATION AVEC BASE DE DONNÉES ===");
 
@@ -1712,3 +1706,5 @@
         window.checkDatabase();
       }, 1000);
     </script>
+  </body>
+</html>

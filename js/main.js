@@ -328,3 +328,55 @@ function viderPanier() {
     }
   }
 }
+
+// Dans js/main.js, ajoutez :
+async function ajouterAuPanier(idProduit) {
+  console.log("Ajout au panier produit ID:", idProduit);
+  try {
+    const response = await fetch("api/panier.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        action: "ajouter",
+        id_produit: idProduit,
+        quantite: 1,
+      }),
+    });
+
+    const data = await response.json();
+    console.log("Réponse API:", data);
+
+    if (data.success) {
+      // Mettre à jour le compteur
+      mettreAJourCompteur();
+      return true;
+    } else {
+      console.error("Erreur API:", data.message);
+      return false;
+    }
+  } catch (error) {
+    console.error("Erreur réseau:", error);
+    return false;
+  }
+}
+
+async function mettreAJourCompteur() {
+  try {
+    const response = await fetch("api/panier.php?action=compter");
+    const data = await response.json();
+
+    if (data.success) {
+      const cartCountElements = document.querySelectorAll(".cart-count");
+      cartCountElements.forEach((el) => {
+        el.textContent = data.total;
+      });
+    }
+  } catch (error) {
+    console.error("Erreur mise à jour compteur:", error);
+  }
+}
+
+// Mettre à jour le compteur au chargement de chaque page
+document.addEventListener("DOMContentLoaded", mettreAJourCompteur);
