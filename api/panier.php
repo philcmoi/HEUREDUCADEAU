@@ -1,5 +1,5 @@
 <?php
-// api/panier.php - VERSION COMPLÈTE CORRIGÉE
+// api/panier.php - VERSION AVEC BASE DE DONNÉES
 session_start();
 
 // Headers CORS COMPLETS
@@ -14,6 +14,67 @@ header("Content-Type: application/json; charset=UTF-8");
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
+}
+
+// ==============================================
+// CONNEXION À LA BASE DE DONNÉES
+// ==============================================
+function getPDOConnection() {
+    static $pdo = null;
+    
+    if ($pdo === null) {
+        try {
+            $pdo = new PDO(
+                "mysql:host=localhost;dbname=heureducadeau;charset=utf8",
+                "Philippe",
+                "l@99339R",
+                [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+                ]
+            );
+        } catch (PDOException $e) {
+            // Mode silencieux pour ne pas casser l'API
+            error_log("Erreur BDD panier: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    return $pdo;
+}
+
+// Fonction pour récupérer les infos d'un produit depuis la BDD
+function getProduitInfo($id_produit) {
+    $pdo = getPDOConnection();
+    if (!$pdo) return false;
+    
+    try {
+        $sql = "SELECT 
+                    p.id_produit,
+                    p.nom,
+                    p.prix_ttc,
+                    p.quantite_stock,
+                    p.description_courte,
+                    p.note_moyenne,
+                    c.nom as categorie_nom,
+                    img.url_image
+                FROM produits p
+                LEFT JOIN categories c ON p.id_categorie = c.id_categorie
+                LEFT JOIN (
+                    SELECT id_produit, url_image 
+                    FROM images_produits 
+                    WHERE principale = 1 
+                    ORDER BY ordre LIMIT 1
+                ) img ON p.id_produit = img.id_produit
+                WHERE p.id_produit = ? AND p.statut = 'actif'";
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$id_produit]);
+        return $stmt->fetch();
+    } catch (PDOException $e) {
+        error_log("Erreur getProduitInfo: " . $e->getMessage());
+        return false;
+    }
 }
 
 // Lire les données JSON
@@ -56,7 +117,7 @@ function calculerTotaux() {
     return ['items' => $totalItems, 'price' => $totalPrice];
 }
 
-// ACTION: AJOUTER
+// ACTION: AJOUTER (AVEC BDD)
 if ($action === 'ajouter') {
     $id_produit = 0;
     $quantite = 1;
@@ -82,18 +143,47 @@ if ($action === 'ajouter') {
         exit;
     }
     
-    // Ajouter au panier
+    // Récupérer les vraies infos du produit depuis la BDD
+    $produitInfo = getProduitInfo($id_produit);
+    
+    if (!$produitInfo) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Produit non trouvé ou indisponible',
+            'id_produit' => $id_produit
+        ]);
+        exit;
+    }
+    
+    // Vérifier le stock
+    if ($produitInfo['quantite_stock'] < $quantite) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Stock insuffisant. Disponible: ' . $produitInfo['quantite_stock'],
+            'stock_disponible' => $produitInfo['quantite_stock']
+        ]);
+        exit;
+    }
+    
+    // Ajouter au panier avec les VRAIES informations
     $itemKey = 'item_' . $id_produit;
     
     if (isset($_SESSION['panier']['items'][$itemKey])) {
+        // Mettre à jour la quantité
         $_SESSION['panier']['items'][$itemKey]['quantite'] += $quantite;
     } else {
+        // Ajouter nouvel article
         $_SESSION['panier']['items'][$itemKey] = [
             'id_produit' => $id_produit,
-            'nom' => 'Produit ' . $id_produit,
-            'prix_unitaire' => 29.99,
+            'nom' => $produitInfo['nom'],
+            'prix_unitaire' => floatval($produitInfo['prix_ttc']),
+            'description' => $produitInfo['description_courte'] ?? '',
+            'categorie' => $produitInfo['categorie_nom'] ?? '',
+            'note' => $produitInfo['note_moyenne'] ?? 0,
+            'image' => $produitInfo['url_image'] ?? 'img/default-product.jpg',
             'quantite' => $quantite,
-            'date_ajout' => date('Y-m-d H:i:s')
+            'date_ajout' => date('Y-m-d H:i:s'),
+            'stock_max' => $produitInfo['quantite_stock']
         ];
     }
     
@@ -103,15 +193,20 @@ if ($action === 'ajouter') {
     echo json_encode([
         'success' => true,
         'message' => 'Produit ajouté au panier',
-        'produit_nom' => 'Produit ' . $id_produit,
+        'produit_nom' => $produitInfo['nom'],
         'produit_id' => $id_produit,
+        'produit_prix' => number_format($produitInfo['prix_ttc'], 2, '.', ''),
         'quantite_ajoutee' => $quantite,
         'total_articles' => $totaux['items'],
         'total_prix' => number_format($totaux['price'], 2, '.', ''),
-        'prix_final' => '29.99',
         'panier_items_count' => count($_SESSION['panier']['items']),
         'session_id' => session_id(),
-        'debug' => ['action_received' => $action, 'id_received' => $id_produit]
+        'produit_info' => [
+            'nom' => $produitInfo['nom'],
+            'prix' => $produitInfo['prix_ttc'],
+            'image' => $produitInfo['url_image'] ?? 'img/default-product.jpg',
+            'categorie' => $produitInfo['categorie_nom'] ?? ''
+        ]
     ]);
     exit;
 }
@@ -129,7 +224,7 @@ if ($action === 'compter') {
     exit;
 }
 
-// ACTION: GET (afficher)
+// ACTION: GET (afficher) - RETOURNE LES VRAIES INFOS
 if ($action === 'get' || $action === 'afficher') {
     $items = $_SESSION['panier']['items'] ?? [];
     $total = $_SESSION['panier']['total'] ?? 0.00;
@@ -142,10 +237,15 @@ if ($action === 'get' || $action === 'afficher') {
             'id_item' => $key,
             'id_produit' => $item['id_produit'],
             'nom' => $item['nom'],
-            'prix_unitaire' => number_format($item['prix_unitaire'], 2),
+            'prix_unitaire' => number_format($item['prix_unitaire'], 2, '.', ''),
+            'description' => $item['description'] ?? '',
+            'categorie' => $item['categorie'] ?? '',
+            'note' => $item['note'] ?? 0,
+            'image' => $item['image'] ?? 'img/default-product.jpg',
             'quantite' => $item['quantite'],
-            'total_item' => number_format($item['prix_unitaire'] * $item['quantite'], 2),
-            'date_ajout' => $item['date_ajout']
+            'total_item' => number_format($item['prix_unitaire'] * $item['quantite'], 2, '.', ''),
+            'date_ajout' => $item['date_ajout'],
+            'stock_max' => $item['stock_max'] ?? 99
         ];
     }
     
@@ -153,14 +253,14 @@ if ($action === 'get' || $action === 'afficher') {
         'success' => true,
         'message' => 'Panier récupéré',
         'items' => $formattedItems,
-        'total_prix' => number_format($total, 2),
+        'total_prix' => number_format($total, 2, '.', ''),
         'total_articles' => $count,
         'session_id' => session_id()
     ]);
     exit;
 }
 
-// ACTION: MODIFIER QUANTITÉ
+// ACTION: MODIFIER QUANTITÉ (avec vérification stock)
 if ($action === 'modifier') {
     $id_item = '';
     $quantite = 1;
@@ -188,6 +288,22 @@ if ($action === 'modifier') {
         exit;
     }
     
+    // Vérifier le stock en BDD si nouvelle quantité > ancienne
+    $ancienneQuantite = $_SESSION['panier']['items'][$id_item]['quantite'];
+    $id_produit = $_SESSION['panier']['items'][$id_item]['id_produit'];
+    
+    if ($quantite > $ancienneQuantite) {
+        $produitInfo = getProduitInfo($id_produit);
+        if ($produitInfo && $quantite > $produitInfo['quantite_stock']) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Stock insuffisant. Disponible: ' . $produitInfo['quantite_stock'],
+                'stock_disponible' => $produitInfo['quantite_stock']
+            ]);
+            exit;
+        }
+    }
+    
     if ($quantite < 1) {
         // Si quantité = 0, supprimer l'article
         unset($_SESSION['panier']['items'][$id_item]);
@@ -195,6 +311,12 @@ if ($action === 'modifier') {
     } else {
         // Modifier la quantité
         $_SESSION['panier']['items'][$id_item]['quantite'] = $quantite;
+        
+        // Mettre à jour le stock max
+        if (isset($produitInfo)) {
+            $_SESSION['panier']['items'][$id_item]['stock_max'] = $produitInfo['quantite_stock'];
+        }
+        
         $message = 'Quantité mise à jour';
     }
     
@@ -207,7 +329,7 @@ if ($action === 'modifier') {
         'id_item' => $id_item,
         'nouvelle_quantite' => $quantite,
         'total_articles' => $totaux['items'],
-        'total_prix' => number_format($totaux['price'], 2),
+        'total_prix' => number_format($totaux['price'], 2, '.', ''),
         'panier_items_count' => count($_SESSION['panier']['items'])
     ]);
     exit;
@@ -251,7 +373,7 @@ if ($action === 'supprimer') {
         'id_item' => $id_item,
         'article_supprime' => $deletedItem,
         'total_articles' => $totaux['items'],
-        'total_prix' => number_format($totaux['price'], 2),
+        'total_prix' => number_format($totaux['price'], 2, '.', ''),
         'panier_items_count' => count($_SESSION['panier']['items'])
     ]);
     exit;
@@ -259,43 +381,30 @@ if ($action === 'supprimer') {
 
 // ACTION: VIDER
 if ($action === 'vider') {
-    // Vérifier la confirmation - Accepte toutes les méthodes
+    // Vérifier la confirmation
     $confirmation = false;
     
-    // 1. Via paramètre GET
     if (isset($_GET['confirmation']) && ($_GET['confirmation'] == '1' || $_GET['confirmation'] == 'true')) {
         $confirmation = true;
-    }
-    // 2. Via POST form-data
-    elseif (isset($_POST['confirmation']) && ($_POST['confirmation'] == '1' || $_POST['confirmation'] == 'true')) {
+    } elseif (isset($_POST['confirmation']) && ($_POST['confirmation'] == '1' || $_POST['confirmation'] == 'true')) {
         $confirmation = true;
-    }
-    // 3. Via JSON
-    elseif (!empty($data) && isset($data['confirmation']) && 
-           ($data['confirmation'] === true || $data['confirmation'] == '1' || $data['confirmation'] == 'true')) {
+    } elseif (!empty($data) && isset($data['confirmation']) && 
+              ($data['confirmation'] === true || $data['confirmation'] == '1' || $data['confirmation'] == 'true')) {
         $confirmation = true;
-    }
-    // 4. Pas de confirmation requise si action est 'vider' seul
-    else {
-        $confirmation = true; // Simplification pour le moment
+    } else {
+        $confirmation = true; // Simplification
     }
     
     if (!$confirmation) {
         echo json_encode([
             'success' => false,
             'message' => 'Confirmation requise pour vider le panier',
-            'hint' => 'Ajoutez ?confirmation=1 à l\'URL',
-            'action' => $action,
-            'received_confirmation' => [
-                'get' => $_GET['confirmation'] ?? 'non',
-                'post' => $_POST['confirmation'] ?? 'non',
-                'json' => $data['confirmation'] ?? 'non'
-            ]
+            'hint' => 'Ajoutez ?confirmation=1 à l\'URL'
         ]);
         exit;
     }
     
-    // Sauvegarder l'ancien panier pour log
+    // Sauvegarder l'ancien panier
     $oldCount = $_SESSION['panier']['count'] ?? 0;
     $oldTotal = $_SESSION['panier']['total'] ?? 0;
     
@@ -316,7 +425,7 @@ if ($action === 'vider') {
         'success' => true,
         'message' => 'Panier vidé avec succès',
         'old_count' => $oldCount,
-        'old_total' => number_format($oldTotal, 2),
+        'old_total' => number_format($oldTotal, 2, '.', ''),
         'new_count' => 0,
         'new_total' => '0.00',
         'session_id' => session_id(),
@@ -341,26 +450,69 @@ if ($action === 'etat' || $action === 'debug') {
     exit;
 }
 
+// ACTION: SYNC (mettre à jour les infos depuis la BDD)
+if ($action === 'sync') {
+    // Synchroniser tous les articles avec la BDD
+    $updatedItems = [];
+    $itemsToRemove = [];
+    
+    foreach ($_SESSION['panier']['items'] as $key => $item) {
+        $produitInfo = getProduitInfo($item['id_produit']);
+        
+        if (!$produitInfo) {
+            // Produit n'existe plus
+            $itemsToRemove[] = $key;
+            continue;
+        }
+        
+        // Mettre à jour les informations
+        $_SESSION['panier']['items'][$key]['nom'] = $produitInfo['nom'];
+        $_SESSION['panier']['items'][$key]['prix_unitaire'] = floatval($produitInfo['prix_ttc']);
+        $_SESSION['panier']['items'][$key]['description'] = $produitInfo['description_courte'] ?? '';
+        $_SESSION['panier']['items'][$key]['categorie'] = $produitInfo['categorie_nom'] ?? '';
+        $_SESSION['panier']['items'][$key]['image'] = $produitInfo['url_image'] ?? 'img/default-product.jpg';
+        $_SESSION['panier']['items'][$key]['stock_max'] = $produitInfo['quantite_stock'];
+        
+        // Ajuster la quantité si nécessaire
+        if ($item['quantite'] > $produitInfo['quantite_stock']) {
+            $_SESSION['panier']['items'][$key]['quantite'] = $produitInfo['quantite_stock'];
+            $updatedItems[] = ['id' => $item['id_produit'], 'ancienne' => $item['quantite'], 'nouvelle' => $produitInfo['quantite_stock']];
+        }
+    }
+    
+    // Supprimer les produits inexistants
+    foreach ($itemsToRemove as $key) {
+        unset($_SESSION['panier']['items'][$key]);
+    }
+    
+    // Recalculer les totaux
+    $totaux = calculerTotaux();
+    
+    echo json_encode([
+        'success' => true,
+        'message' => 'Panier synchronisé avec la BDD',
+        'items_updated' => $updatedItems,
+        'items_removed' => $itemsToRemove,
+        'total_articles' => $totaux['items'],
+        'total_prix' => number_format($totaux['price'], 2, '.', '')
+    ]);
+    exit;
+}
+
 // ACTION NON RECONNUE
 echo json_encode([
     'success' => false,
     'message' => 'Action non spécifiée ou invalide',
     'received_action' => $action,
-    'input_data' => $data,
-    'raw_input' => $input,
     'actions_disponibles' => [
-        'ajouter' => 'Ajouter un produit',
+        'ajouter' => 'Ajouter un produit (avec vérification BDD)',
         'compter' => 'Compter les articles',
         'get' => 'Récupérer le panier',
         'modifier' => 'Modifier quantité',
         'supprimer' => 'Supprimer article',
         'vider' => 'Vider le panier',
+        'sync' => 'Synchroniser avec BDD',
         'etat' => 'État du panier (debug)'
-    ],
-    'session_info' => [
-        'session_id' => session_id(),
-        'panier_items' => count($_SESSION['panier']['items'] ?? []),
-        'panier_total' => $_SESSION['panier']['total'] ?? 0
     ]
 ]);
 ?>
