@@ -1,894 +1,1152 @@
 <?php
-/**
- * admin_produits.php - Gestion des produits (CRUD)
- * @version 1.1
- */
+// admin_produits.php - CORRIGÉ et adapté à heureducadeau
+// NE PAS mettre session_start() ici
 
-// Vérification de l'authentification
-session_start();
-require_once __DIR__ . '/config/Database.php';
+// Inclure la protection
+require_once 'admin_protection.php';
 
-// Vérifier si l'utilisateur est connecté et est admin
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    header('Location: login.php');
-    exit;
-}
+// ============================================
+// CONFIGURATION DE LA BASE DE DONNÉES heureducadeau
+// ============================================
+$host = 'localhost';
+$dbname = 'heureducadeau';
+$username_db = 'root';
+$password_db = '';
 
-// Vérifier les permissions
-if (!isset($_SESSION['admin_role']) || !in_array($_SESSION['admin_role'], ['admin', 'superadmin'])) {
-    die('<h1>Accès refusé</h1><p>Vous n\'avez pas les permissions nécessaires.</p>');
-}
-
-// Récupérer l'instance de la base de données
 try {
-    $db = Database::getInstance();
-} catch (Exception $e) {
-    die('Erreur de connexion à la base de données: ' . htmlspecialchars($e->getMessage()));
+    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username_db, $password_db);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch(PDOException $e) {
+    die("Erreur de connexion à la base de données : " . $e->getMessage());
 }
 
-// Variables avec filtrage
-$action = filter_input(INPUT_GET, 'action', FILTER_SANITIZE_STRING) ?? 'list';
-$id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT) ?? 0;
-$message = $error = $success = '';
+// ============================================
+// FONCTIONS CRUD adaptées à votre structure
+// ============================================
 
-// Actions autorisées
-$allowed_actions = ['list', 'add', 'edit', 'delete'];
-if (!in_array($action, $allowed_actions)) {
-    $action = 'list';
-}
-
-// Titres des pages
-$page_titles = [
-    'add' => "Ajouter un produit",
-    'edit' => "Modifier un produit", 
-    'delete' => "Supprimer un produit",
-    'list' => "Gestion des produits"
-];
-$page_title = $page_titles[$action] ?? $page_titles['list'];
-
-// Traitement du formulaire POST
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $post_action = filter_input(INPUT_POST, 'action', FILTER_SANITIZE_STRING);
-    
-    switch ($post_action) {
-        case 'add':
-        case 'edit':
-            $result = saveProduit($_POST);
-            if ($result['success']) {
-                $success = $result['message'];
-                if ($post_action === 'add') {
-                    header('Location: admin_produits.php?success=' . urlencode($success));
-                    exit;
-                }
-            } else {
-                $error = $result['message'];
-            }
-            break;
-            
-        case 'delete':
-            $id_produit = filter_input(INPUT_POST, 'id_produit', FILTER_VALIDATE_INT);
-            if ($id_produit) {
-                $result = deleteProduit($id_produit);
-                if ($result['success']) {
-                    header('Location: admin_produits.php?success=' . urlencode($result['message']));
-                    exit;
-                } else {
-                    $error = $result['message'];
-                }
-            }
-            break;
-    }
-}
-
-// Récupérer les messages de succès
-if (isset($_GET['success'])) {
-    $success = htmlspecialchars($_GET['success']);
-}
-
-// Récupérer un produit pour l'édition
-$produit = [];
-if ($action === 'edit' && $id > 0) {
-    $produit = getProduitById($id);
-    if (!$produit) {
-        $error = "Produit introuvable.";
-        $action = 'list';
-    }
-}
-
-// Récupérer les catégories (cache en session pour éviter requêtes répétées)
-$categories = getCategories();
-
-// Récupérer la liste des produits pour l'action 'list'
-$produits = [];
-if ($action === 'list') {
-    $produits = getAllProduits();
-}
-
-/**
- * Récupérer toutes les catégories
- */
-function getCategories() {
-    global $db;
-    
-    // Utiliser le cache de session pour éviter des requêtes répétées
-    if (isset($_SESSION['categories_cache']) && 
-        isset($_SESSION['categories_cache_time']) && 
-        (time() - $_SESSION['categories_cache_time'] < 300)) { // 5 minutes cache
-        return $_SESSION['categories_cache'];
-    }
-    
-    try {
-        $stmt = $db->prepare("SELECT id_categorie, nom FROM categories ORDER BY nom");
-        $stmt->execute();
-        $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Mettre en cache
-        $_SESSION['categories_cache'] = $categories;
-        $_SESSION['categories_cache_time'] = time();
-        
-        return $categories;
-    } catch (PDOException $e) {
-        error_log("Erreur catégories: " . $e->getMessage());
-        return [];
-    }
-}
-
-/**
- * Récupérer un produit par son ID
- */
-function getProduitById($id) {
-    global $db;
-    
-    try {
-        $stmt = $db->prepare("
-            SELECT p.*, c.nom as categorie_nom,
-                   (p.prix_ht * (1 + p.tva/100)) as prix_ttc,
-                   COALESCE(p.seuil_alerte, 10) as seuil_alerte
+// Fonction pour récupérer tous les produits avec catégorie
+function getAllProducts($pdo) {
+    $sql = "SELECT p.*, c.nom as categorie_nom 
             FROM produits p 
             LEFT JOIN categories c ON p.id_categorie = c.id_categorie 
-            WHERE p.id_produit = ? AND p.statut != 'supprime'
-        ");
-        $stmt->execute([$id]);
-        return $stmt->fetch(PDO::FETCH_ASSOC);
-    } catch (PDOException $e) {
-        error_log("Erreur produit ID $id: " . $e->getMessage());
-        return false;
-    }
+            ORDER BY p.id_produit DESC";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute();
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-/**
- * Récupérer tous les produits
- */
-function getAllProduits() {
-    global $db;
-    
-    try {
-        $stmt = $db->query("
-            SELECT p.*, c.nom as categorie_nom,
-                   (p.prix_ht * (1 + p.tva/100)) as prix_ttc,
-                   COALESCE(p.seuil_alerte, 10) as seuil_alerte
+// Fonction pour récupérer un produit par ID
+function getProductById($pdo, $id) {
+    $sql = "SELECT p.*, c.nom as categorie_nom 
             FROM produits p 
             LEFT JOIN categories c ON p.id_categorie = c.id_categorie 
-            WHERE p.statut != 'supprime'
-            ORDER BY p.date_creation DESC
-            LIMIT 500
-        ");
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (PDOException $e) {
-        error_log("Erreur liste produits: " . $e->getMessage());
-        return [];
-    }
+            WHERE p.id_produit = :id";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(['id' => $id]);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
-/**
- * Valider les données du produit
- */
-function validateProduitData($data) {
-    $errors = [];
-    
-    // Champs requis
-    $required = ['reference', 'nom', 'slug', 'prix_ht', 'id_categorie'];
-    foreach ($required as $field) {
-        if (empty($data[$field])) {
-            $errors[] = "Le champ " . ucfirst(str_replace('_', ' ', $field)) . " est requis.";
-        }
-    }
-    
-    // Vérifier la référence
-    if (isset($data['reference']) && !preg_match('/^[A-Z0-9-]{3,50}$/i', trim($data['reference']))) {
-        $errors[] = "La référence doit contenir 3 à 50 caractères (lettres, chiffres, tirets).";
-    }
-    
-    // Vérifier le slug
-    if (isset($data['slug']) && !preg_match('/^[a-z0-9-]{3,100}$/', trim($data['slug']))) {
-        $errors[] = "Le slug doit contenir 3 à 100 caractères (lettres minuscules, chiffres, tirets).";
-    }
-    
-    // Vérifier le prix
-    if (isset($data['prix_ht']) && floatval($data['prix_ht']) < 0) {
-        $errors[] = "Le prix ne peut pas être négatif.";
-    }
-    
-    // Vérifier la TVA
-    if (isset($data['tva']) && (floatval($data['tva']) < 0 || floatval($data['tva']) > 100)) {
-        $errors[] = "La TVA doit être entre 0 et 100%.";
-    }
-    
-    // Vérifier la quantité
-    if (isset($data['quantite_stock']) && intval($data['quantite_stock']) < 0) {
-        $errors[] = "La quantité en stock ne peut pas être négative.";
-    }
-    
-    return $errors;
+// Fonction pour récupérer toutes les catégories
+function getAllCategories($pdo) {
+    $sql = "SELECT * FROM categories WHERE active = 1 ORDER BY nom";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute();
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-/**
- * Préparer les données du produit
- */
-function prepareProduitData($data) {
-    $produitData = [
-        'reference' => htmlspecialchars(trim($data['reference'])),
-        'nom' => htmlspecialchars(trim($data['nom'])),
-        'slug' => htmlspecialchars(trim($data['slug'])),
-        'description' => htmlspecialchars(trim($data['description'] ?? '')),
-        'description_courte' => htmlspecialchars(substr(trim($data['description_courte'] ?? ''), 0, 255)),
-        'prix_ht' => floatval($data['prix_ht']),
-        'tva' => floatval($data['tva'] ?? 20.0),
-        'quantite_stock' => intval($data['quantite_stock'] ?? 0),
-        'id_categorie' => intval($data['id_categorie']),
-        'marque' => htmlspecialchars(trim($data['marque'] ?? '')),
-        'poids' => !empty($data['poids']) ? floatval($data['poids']) : null,
-        'dimensions' => htmlspecialchars(trim($data['dimensions'] ?? '')),
-        'materiau' => htmlspecialchars(trim($data['materiau'] ?? '')),
-        'couleur' => htmlspecialchars(trim($data['couleur'] ?? '')),
-        'made_in' => htmlspecialchars(trim($data['made_in'] ?? '')),
-        'personnalisable' => isset($data['personnalisable']) ? 1 : 0,
-        'ecologique' => isset($data['ecologique']) ? 1 : 0,
-        'made_in_france' => isset($data['made_in_france']) ? 1 : 0,
-        'artisanal' => isset($data['artisanal']) ? 1 : 0,
-        'exclusif' => isset($data['exclusif']) ? 1 : 0,
-        'statut' => htmlspecialchars(trim($data['statut'] ?? 'actif')),
-        'seuil_alerte' => intval($data['seuil_alerte'] ?? 10)
-    ];
+// Fonction pour ajouter un produit
+function addProduct($pdo, $data) {
+    $sql = "INSERT INTO produits (
+                reference, nom, slug, description, description_courte, 
+                prix_ht, tva, quantite_stock, seuil_alerte, id_categorie,
+                marque, poids, dimensions, materiau, couleur, made_in,
+                personnalisable, ecologique, made_in_france, artisanal, exclusif,
+                statut
+            ) VALUES (
+                :reference, :nom, :slug, :description, :description_courte,
+                :prix_ht, :tva, :quantite_stock, :seuil_alerte, :id_categorie,
+                :marque, :poids, :dimensions, :materiau, :couleur, :made_in,
+                :personnalisable, :ecologique, :made_in_france, :artisanal, :exclusif,
+                :statut
+            )";
     
-    return $produitData;
+    $stmt = $pdo->prepare($sql);
+    return $stmt->execute($data);
 }
 
-/**
- * Sauvegarder un produit (ajout ou modification)
- */
-function saveProduit($data) {
-    global $db;
+// Fonction pour modifier un produit
+function updateProduct($pdo, $id, $data) {
+    $data['id_produit'] = $id;
     
-    // Validation des données
-    $errors = validateProduitData($data);
-    if (!empty($errors)) {
-        return [
-            'success' => false,
-            'message' => implode('<br>', $errors)
-        ];
-    }
+    $sql = "UPDATE produits SET 
+                reference = :reference,
+                nom = :nom,
+                slug = :slug,
+                description = :description,
+                description_courte = :description_courte,
+                prix_ht = :prix_ht,
+                tva = :tva,
+                quantite_stock = :quantite_stock,
+                seuil_alerte = :seuil_alerte,
+                id_categorie = :id_categorie,
+                marque = :marque,
+                poids = :poids,
+                dimensions = :dimensions,
+                materiau = :materiau,
+                couleur = :couleur,
+                made_in = :made_in,
+                personnalisable = :personnalisable,
+                ecologique = :ecologique,
+                made_in_france = :made_in_france,
+                artisanal = :artisanal,
+                exclusif = :exclusif,
+                statut = :statut,
+                date_modification = NOW()
+            WHERE id_produit = :id_produit";
     
-    $produitData = prepareProduitData($data);
-    
+    $stmt = $pdo->prepare($sql);
+    return $stmt->execute($data);
+}
+
+// Fonction pour supprimer un produit
+function deleteProduct($pdo, $id) {
+    // Supprimer d'abord les images associées (si vous avez la table images_produits)
     try {
-        $db->beginTransaction();
-        
-        if (isset($data['id_produit']) && $data['id_produit'] > 0) {
-            // Modification
-            $produitData['id_produit'] = intval($data['id_produit']);
-            
-            $stmt = $db->prepare("
-                UPDATE produits SET
-                    reference = :reference,
-                    nom = :nom,
-                    slug = :slug,
-                    description = :description,
-                    description_courte = :description_courte,
-                    prix_ht = :prix_ht,
-                    tva = :tva,
-                    quantite_stock = :quantite_stock,
-                    id_categorie = :id_categorie,
-                    marque = :marque,
-                    poids = :poids,
-                    dimensions = :dimensions,
-                    materiau = :materiau,
-                    couleur = :couleur,
-                    made_in = :made_in,
-                    personnalisable = :personnalisable,
-                    ecologique = :ecologique,
-                    made_in_france = :made_in_france,
-                    artisanal = :artisanal,
-                    exclusif = :exclusif,
-                    statut = :statut,
-                    seuil_alerte = :seuil_alerte,
-                    date_modification = NOW()
-                WHERE id_produit = :id_produit
-            ");
-            
-            $stmt->execute($produitData);
-            $db->commit();
-            
-            // Invalider le cache des catégories
-            unset($_SESSION['categories_cache']);
-            
-            return [
-                'success' => true,
-                'message' => 'Produit modifié avec succès.',
-                'id_produit' => $produitData['id_produit']
-            ];
-        } else {
-            // Ajout
-            $stmt = $db->prepare("
-                INSERT INTO produits (
-                    reference, nom, slug, description, description_courte,
-                    prix_ht, tva, quantite_stock, id_categorie, marque,
-                    poids, dimensions, materiau, couleur, made_in,
-                    personnalisable, ecologique, made_in_france, artisanal,
-                    exclusif, statut, seuil_alerte, date_creation
-                ) VALUES (
-                    :reference, :nom, :slug, :description, :description_courte,
-                    :prix_ht, :tva, :quantite_stock, :id_categorie, :marque,
-                    :poids, :dimensions, :materiau, :couleur, :made_in,
-                    :personnalisable, :ecologique, :made_in_france, :artisanal,
-                    :exclusif, :statut, :seuil_alerte, NOW()
-                )
-            ");
-            
-            $stmt->execute($produitData);
-            $id_produit = $db->lastInsertId();
-            $db->commit();
-            
-            // Invalider le cache des catégories
-            unset($_SESSION['categories_cache']);
-            
-            return [
-                'success' => true,
-                'message' => 'Produit ajouté avec succès.',
-                'id_produit' => $id_produit
-            ];
-        }
-    } catch (PDOException $e) {
-        $db->rollBack();
-        
-        // Vérifier si c'est une erreur de duplication
-        if (strpos($e->getMessage(), 'Duplicate entry') !== false) {
-            if (strpos($e->getMessage(), 'reference') !== false) {
-                return [
-                    'success' => false,
-                    'message' => 'Cette référence existe déjà.'
-                ];
-            } elseif (strpos($e->getMessage(), 'slug') !== false) {
-                return [
-                    'success' => false,
-                    'message' => 'Ce slug existe déjà.'
-                ];
-            }
-        }
-        
-        error_log("Erreur sauvegarde produit: " . $e->getMessage());
-        return [
-            'success' => false,
-            'message' => 'Erreur de base de données.'
-        ];
+        $sql = "DELETE FROM images_produits WHERE id_produit = :id";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(['id' => $id]);
+    } catch(Exception $e) {
+        // Table images_produits peut ne pas exister
     }
-}
-
-/**
- * Supprimer un produit (soft delete)
- */
-function deleteProduit($id) {
-    global $db;
     
+    // Supprimer les variants associés
     try {
-        $db->beginTransaction();
-        
-        // Vérifier si le produit existe
-        $stmt = $db->prepare("SELECT id_produit, nom FROM produits WHERE id_produit = ? AND statut != 'supprime'");
-        $stmt->execute([$id]);
-        $produit = $stmt->fetch();
-        
-        if (!$produit) {
-            return [
-                'success' => false,
-                'message' => 'Produit introuvable.'
-            ];
-        }
-        
-        // Soft delete au lieu de suppression physique
-        $stmt = $db->prepare("UPDATE produits SET statut = 'supprime', date_modification = NOW() WHERE id_produit = ?");
-        $stmt->execute([$id]);
-        
-        $db->commit();
-        
-        // Invalider le cache des catégories
-        unset($_SESSION['categories_cache']);
-        
-        return [
-            'success' => true,
-            'message' => 'Produit supprimé avec succès.'
-        ];
-    } catch (PDOException $e) {
-        $db->rollBack();
-        error_log("Erreur suppression produit $id: " . $e->getMessage());
-        return [
-            'success' => false,
-            'message' => 'Erreur de suppression.'
-        ];
+        $sql = "DELETE FROM variants WHERE id_produit = :id";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(['id' => $id]);
+    } catch(Exception $e) {
+        // Table variants peut ne pas exister
     }
+    
+    // Supprimer le produit
+    $sql = "DELETE FROM produits WHERE id_produit = :id";
+    $stmt = $pdo->prepare($sql);
+    return $stmt->execute(['id' => $id]);
 }
 
-/**
- * Générer un slug à partir d'un nom
- */
+// Fonction pour générer un slug à partir du nom
 function generateSlug($nom) {
     $slug = strtolower($nom);
-    $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
+    $slug = preg_replace('/[^a-z0-9-]/', '-', $slug);
+    $slug = preg_replace('/-+/', '-', $slug);
     $slug = trim($slug, '-');
-    return substr($slug, 0, 100);
+    return $slug;
 }
 
-// Calculer les statistiques
-$stats = [
-    'total' => count($produits),
-    'actifs' => 0,
-    'rupture' => 0,
-    'alerte' => 0
-];
+// Fonction pour générer une référence automatique
+function generateReference($pdo) {
+    // Compter le nombre de produits et incrémenter
+    $sql = "SELECT COUNT(*) as count FROM produits";
+    $stmt = $pdo->query($sql);
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    $nextNumber = $result['count'] + 1;
+    return 'PROD-' . str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
+}
 
-if ($action === 'list') {
-    foreach ($produits as $p) {
-        if ($p['statut'] === 'actif') $stats['actifs']++;
-        if ($p['quantite_stock'] <= 0) $stats['rupture']++;
-        if ($p['quantite_stock'] > 0 && $p['quantite_stock'] <= $p['seuil_alerte']) $stats['alerte']++;
+// Fonction pour uploader une image
+function uploadImage($file) {
+    $target_dir = "uploads/produits/";
+    
+    // Créer le dossier s'il n'existe pas
+    if (!file_exists($target_dir)) {
+        mkdir($target_dir, 0777, true);
+    }
+    
+    $target_file = $target_dir . basename($file["name"]);
+    $imageFileType = strtolower(pathinfo($target_file, PATHINFO_EXTENSION));
+    
+    // Vérifier si c'est une vraie image
+    $check = getimagesize($file["tmp_name"]);
+    if ($check === false) {
+        return ['error' => 'Le fichier n\'est pas une image.'];
+    }
+    
+    // Vérifier la taille (max 2MB)
+    if ($file["size"] > 2000000) {
+        return ['error' => 'L\'image est trop volumineuse (max 2MB).'];
+    }
+    
+    // Autoriser certains formats
+    $allowed_types = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+    if (!in_array($imageFileType, $allowed_types)) {
+        return ['error' => 'Seuls JPG, JPEG, PNG, GIF et WebP sont autorisés.'];
+    }
+    
+    // Générer un nom unique pour éviter les conflits
+    $new_filename = uniqid() . '.' . $imageFileType;
+    $target_file = $target_dir . $new_filename;
+    
+    // Uploader le fichier
+    if (move_uploaded_file($file["tmp_name"], $target_file)) {
+        return ['success' => $new_filename];
+    } else {
+        return ['error' => 'Erreur lors de l\'upload.'];
     }
 }
+
+// ============================================
+// TRAITEMENT DES ACTIONS CRUD
+// ============================================
+$message = '';
+$error = '';
+$action = $_GET['action'] ?? 'list';
+$id = $_GET['id'] ?? 0;
+
+// Récupérer les catégories pour les formulaires
+$categories = getAllCategories($pdo);
+
+// Traitement des formulaires POST
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['action'])) {
+        switch ($_POST['action']) {
+            
+            // AJOUTER UN PRODUIT
+            case 'add':
+                // Générer le slug
+                $slug = generateSlug($_POST['nom']);
+                
+                $data = [
+                    'reference' => $_POST['reference'],
+                    'nom' => $_POST['nom'],
+                    'slug' => $slug,
+                    'description' => $_POST['description'],
+                    'description_courte' => $_POST['description_courte'],
+                    'prix_ht' => floatval($_POST['prix_ht']),
+                    'tva' => floatval($_POST['tva']),
+                    'quantite_stock' => intval($_POST['quantite_stock']),
+                    'seuil_alerte' => intval($_POST['seuil_alerte']),
+                    'id_categorie' => intval($_POST['id_categorie']),
+                    'marque' => $_POST['marque'],
+                    'poids' => !empty($_POST['poids']) ? floatval($_POST['poids']) : null,
+                    'dimensions' => $_POST['dimensions'],
+                    'materiau' => $_POST['materiau'],
+                    'couleur' => $_POST['couleur'],
+                    'made_in' => $_POST['made_in'],
+                    'personnalisable' => isset($_POST['personnalisable']) ? 1 : 0,
+                    'ecologique' => isset($_POST['ecologique']) ? 1 : 0,
+                    'made_in_france' => isset($_POST['made_in_france']) ? 1 : 0,
+                    'artisanal' => isset($_POST['artisanal']) ? 1 : 0,
+                    'exclusif' => isset($_POST['exclusif']) ? 1 : 0,
+                    'statut' => $_POST['statut']
+                ];
+                
+                if (addProduct($pdo, $data)) {
+                    $lastId = $pdo->lastInsertId();
+                    
+                    // Gestion de l'upload d'image
+                    if (!empty($_FILES['image']['name'])) {
+                        $upload_result = uploadImage($_FILES['image']);
+                        if (isset($upload_result['success'])) {
+                            // Enregistrer l'image dans la table images_produits
+                            try {
+                                $sql = "INSERT INTO images_produits (id_produit, url_image, alt_text, principale) 
+                                        VALUES (:id_produit, :url_image, :alt_text, 1)";
+                                $stmt = $pdo->prepare($sql);
+                                $stmt->execute([
+                                    'id_produit' => $lastId,
+                                    'url_image' => $upload_result['success'],
+                                    'alt_text' => $_POST['nom']
+                                ]);
+                            } catch(Exception $e) {
+                                // Table images_produits peut ne pas exister
+                            }
+                        } else {
+                            $error = $upload_result['error'];
+                            break;
+                        }
+                    }
+                    
+                    $message = 'Produit ajouté avec succès!';
+                    header('Location: admin_produits.php?action=list&message=added');
+                    exit();
+                } else {
+                    $error = 'Erreur lors de l\'ajout du produit.';
+                }
+                break;
+            
+            // MODIFIER UN PRODUIT
+            case 'edit':
+                $id = intval($_POST['id_produit']);
+                
+                // Récupérer le produit existant
+                $existingProduct = getProductById($pdo, $id);
+                if (!$existingProduct) {
+                    $error = 'Produit non trouvé!';
+                    break;
+                }
+                
+                // Garder le même slug si le nom n'a pas changé
+                $slug = ($existingProduct['nom'] == $_POST['nom']) 
+                    ? $existingProduct['slug'] 
+                    : generateSlug($_POST['nom']);
+                
+                $data = [
+                    'reference' => $_POST['reference'],
+                    'nom' => $_POST['nom'],
+                    'slug' => $slug,
+                    'description' => $_POST['description'],
+                    'description_courte' => $_POST['description_courte'],
+                    'prix_ht' => floatval($_POST['prix_ht']),
+                    'tva' => floatval($_POST['tva']),
+                    'quantite_stock' => intval($_POST['quantite_stock']),
+                    'seuil_alerte' => intval($_POST['seuil_alerte']),
+                    'id_categorie' => intval($_POST['id_categorie']),
+                    'marque' => $_POST['marque'],
+                    'poids' => !empty($_POST['poids']) ? floatval($_POST['poids']) : null,
+                    'dimensions' => $_POST['dimensions'],
+                    'materiau' => $_POST['materiau'],
+                    'couleur' => $_POST['couleur'],
+                    'made_in' => $_POST['made_in'],
+                    'personnalisable' => isset($_POST['personnalisable']) ? 1 : 0,
+                    'ecologique' => isset($_POST['ecologique']) ? 1 : 0,
+                    'made_in_france' => isset($_POST['made_in_france']) ? 1 : 0,
+                    'artisanal' => isset($_POST['artisanal']) ? 1 : 0,
+                    'exclusif' => isset($_POST['exclusif']) ? 1 : 0,
+                    'statut' => $_POST['statut'],
+                    'id_produit' => $id
+                ];
+                
+                if (updateProduct($pdo, $id, $data)) {
+                    // Gestion de l'upload d'image
+                    if (!empty($_FILES['image']['name'])) {
+                        $upload_result = uploadImage($_FILES['image']);
+                        if (isset($upload_result['success'])) {
+                            try {
+                                // Supprimer l'ancienne image si elle existe
+                                $sql = "DELETE FROM images_produits WHERE id_produit = :id_produit AND principale = 1";
+                                $stmt = $pdo->prepare($sql);
+                                $stmt->execute(['id_produit' => $id]);
+                                
+                                // Ajouter la nouvelle image
+                                $sql = "INSERT INTO images_produits (id_produit, url_image, alt_text, principale) 
+                                        VALUES (:id_produit, :url_image, :alt_text, 1)";
+                                $stmt = $pdo->prepare($sql);
+                                $stmt->execute([
+                                    'id_produit' => $id,
+                                    'url_image' => $upload_result['success'],
+                                    'alt_text' => $_POST['nom']
+                                ]);
+                            } catch(Exception $e) {
+                                // Table images_produits peut ne pas exister
+                            }
+                        } else {
+                            $error = $upload_result['error'];
+                            break;
+                        }
+                    }
+                    
+                    $message = 'Produit modifié avec succès!';
+                    header('Location: admin_produits.php?action=list&message=updated');
+                    exit();
+                } else {
+                    $error = 'Erreur lors de la modification du produit.';
+                }
+                break;
+            
+            // SUPPRIMER UN PRODUIT
+            case 'delete':
+                $id = intval($_POST['id_produit']);
+                
+                if (deleteProduct($pdo, $id)) {
+                    $message = 'Produit supprimé avec succès!';
+                    header('Location: admin_produits.php?action=list&message=deleted');
+                    exit();
+                } else {
+                    $error = 'Erreur lors de la suppression du produit.';
+                }
+                break;
+        }
+    }
+}
+
+// Traitement des actions GET
+if ($action === 'delete_confirm' && $id > 0) {
+    $product = getProductById($pdo, $id);
+    if (!$product) {
+        header('Location: admin_produits.php?action=list&error=notfound');
+        exit();
+    }
+}
+
+// Messages depuis les redirections
+if (isset($_GET['message'])) {
+    switch ($_GET['message']) {
+        case 'added': $message = 'Produit ajouté avec succès!'; break;
+        case 'updated': $message = 'Produit modifié avec succès!'; break;
+        case 'deleted': $message = 'Produit supprimé avec succès!'; break;
+    }
+}
+if (isset($_GET['error'])) {
+    switch ($_GET['error']) {
+        case 'notfound': $error = 'Produit non trouvé!'; break;
+    }
+}
+
+// ============================================
+// AFFICHAGE DE L'INTERFACE
+// ============================================
+
+// Récupérer les informations de l'admin depuis la session
+$admin_username = $_SESSION['admin_username'] ?? 'Administrateur';
+$admin_role = $_SESSION['admin_role'] ?? 'Non défini';
 ?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($page_title); ?> - Administration</title>
-    
-    <!-- CSS optimisé -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>Gestion des Produits - Heure du Cadeau</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style><?php include __DIR__ . '/css/admin_produits.min.css'; ?></style>
+    <style>
+        /* Styles CSS - Raccourcis pour la lisibilité */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f7fa; color: #333; line-height: 1.6; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        
+        /* Header */
+        .header { 
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%); 
+            color: white; 
+            padding: 25px; 
+            border-radius: 15px; 
+            margin-bottom: 30px; 
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .header h1 { font-size: 28px; font-weight: 600; }
+        
+        /* Badge de rôle - CORRIGÉ ICI */
+        .role-badge { 
+            background-color: #4CAF50; 
+            color: white; 
+            padding: 8px 15px; 
+            border-radius: 20px; 
+            font-size: 14px; 
+            font-weight: 500;
+        }
+        .superadmin-badge { background-color: #f44336; }
+        
+        /* Messages */
+        .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: 500; }
+        .alert-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        
+        /* Navigation */
+        .nav-tabs { 
+            display: flex; 
+            background-color: white; 
+            border-radius: 10px; 
+            overflow: hidden; 
+            margin-bottom: 30px; 
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+        .nav-tabs a { 
+            padding: 18px 25px; 
+            text-decoration: none; 
+            color: #555; 
+            font-weight: 500; 
+            border-bottom: 3px solid transparent; 
+            transition: all 0.3s ease; 
+            display: flex; 
+            align-items: center; 
+            gap: 10px;
+        }
+        .nav-tabs a:hover { background-color: #f8f9fa; color: #6a11cb; }
+        .nav-tabs a.active { color: #6a11cb; border-bottom-color: #6a11cb; background-color: #f0f8ff; }
+        
+        /* Boutons */
+        .btn { 
+            padding: 10px 20px; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-weight: 500; 
+            font-size: 14px; 
+            transition: all 0.3s ease; 
+            display: inline-flex; 
+            align-items: center; 
+            gap: 8px; 
+            text-decoration: none;
+        }
+        .btn-primary { background-color: #6a11cb; color: white; }
+        .btn-primary:hover { background-color: #5a0cb3; }
+        .btn-success { background-color: #4CAF50; color: white; }
+        .btn-warning { background-color: #ff9800; color: white; }
+        .btn-danger { background-color: #f44336; color: white; }
+        .btn-secondary { background-color: #6c757d; color: white; }
+        
+        /* Tableaux */
+        .table-container { 
+            background-color: white; 
+            border-radius: 10px; 
+            overflow: hidden; 
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08); 
+            margin-bottom: 30px;
+        }
+        .table-header { 
+            background-color: #f8f9fa; 
+            padding: 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border-bottom: 1px solid #eee;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th { 
+            background-color: #f1f5fd; 
+            padding: 16px 15px; 
+            text-align: left; 
+            font-weight: 600; 
+            color: #2c3e50; 
+            border-bottom: 2px solid #dee2e6;
+        }
+        td { padding: 16px 15px; border-bottom: 1px solid #eee; vertical-align: middle; }
+        tr:hover { background-color: #f9f9f9; }
+        
+        /* Images produits */
+        .product-image { 
+            width: 60px; 
+            height: 60px; 
+            object-fit: cover; 
+            border-radius: 8px; 
+            border: 1px solid #ddd;
+        }
+        
+        /* Prix et quantités */
+        .price { font-weight: 600; color: #2e7d32; }
+        .quantity { 
+            display: inline-block; 
+            padding: 5px 12px; 
+            border-radius: 20px; 
+            font-size: 13px; 
+            font-weight: 500;
+        }
+        .quantity-low { background-color: #ffebee; color: #c62828; }
+        .quantity-medium { background-color: #fff8e1; color: #f57c00; }
+        .quantity-high { background-color: #e8f5e9; color: #2e7d32; }
+        
+        /* Actions */
+        .actions { display: flex; gap: 8px; }
+        
+        /* Formulaires */
+        .form-container { 
+            background-color: white; 
+            border-radius: 10px; 
+            padding: 30px; 
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { 
+            display: block; 
+            margin-bottom: 8px; 
+            font-weight: 500; 
+            color: #444;
+        }
+        .form-control { 
+            width: 100%; 
+            padding: 12px 15px; 
+            border: 1px solid #ddd; 
+            border-radius: 6px; 
+            font-size: 16px; 
+            transition: border-color 0.3s;
+        }
+        .form-control:focus { 
+            outline: none; 
+            border-color: #6a11cb; 
+            box-shadow: 0 0 0 3px rgba(106, 17, 203, 0.1);
+        }
+        textarea.form-control { min-height: 120px; resize: vertical; }
+        
+        /* Modal */
+        .modal { 
+            display: none; 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            background-color: rgba(0, 0, 0, 0.5); 
+            z-index: 1000; 
+            align-items: center; 
+            justify-content: center;
+        }
+        .modal-content { 
+            background-color: white; 
+            border-radius: 10px; 
+            padding: 30px; 
+            max-width: 500px; 
+            width: 90%; 
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header { flex-direction: column; text-align: center; }
+            .nav-tabs { flex-wrap: wrap; }
+            .nav-tabs a { flex: 1; min-width: 140px; justify-content: center; }
+            .table-header { flex-direction: column; gap: 15px; align-items: flex-start; }
+            .actions { flex-direction: column; }
+        }
+    </style>
 </head>
 <body>
-    <div class="admin-container">
-        <!-- En-tête -->
-        <header class="admin-header">
-            <h1 class="page-title">
-                <i class="fas fa-box"></i>
-                <?php echo htmlspecialchars($page_title); ?>
-            </h1>
-            
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb">
-                    <li class="breadcrumb-item"><a href="dashboard.php"><i class="fas fa-home"></i> Tableau de bord</a></li>
-                    <li class="breadcrumb-item"><a href="admin_produits.php">Produits</a></li>
-                    <?php if ($action !== 'list'): ?>
-                    <li class="breadcrumb-item active"><?php echo htmlspecialchars(ucfirst($action)); ?></li>
-                    <?php endif; ?>
-                </ol>
-            </nav>
-            
-            <div class="alert alert-info mt-3">
-                <i class="fas fa-user"></i> Connecté en tant que: 
-                <strong><?php echo htmlspecialchars($_SESSION['admin_username'] ?? 'Admin'); ?></strong>
-                | Rôle: <strong><?php echo htmlspecialchars($_SESSION['admin_role'] ?? 'admin'); ?></strong>
+    <div class="container">
+        <!-- Header - CORRIGÉ ICI (ligne 723-724) -->
+        <div class="header">
+            <div>
+                <h1><i class="fas fa-boxes"></i> Gestion des Produits</h1>
+                <p>Bienvenue, <?php echo htmlspecialchars($admin_username); ?></p>
             </div>
-        </header>
+            <div class="role-badge <?php echo $admin_role === 'superadmin' ? 'superadmin-badge' : ''; ?>">
+                <i class="fas fa-user-shield"></i> <?php echo htmlspecialchars(ucfirst($admin_role)); ?>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <div class="nav-tabs">
+            <a href="dashboard.php">
+                <i class="fas fa-arrow-left"></i> Retour Dashboard
+            </a>
+            <a href="admin_produits.php?action=list" class="<?php echo $action == 'list' ? 'active' : ''; ?>">
+                <i class="fas fa-list"></i> Liste des produits
+            </a>
+            <a href="admin_produits.php?action=add" class="<?php echo $action == 'add' ? 'active' : ''; ?>">
+                <i class="fas fa-plus-circle"></i> Ajouter un produit
+            </a>
+            <a href="admin_produits.php?action=stats" class="<?php echo $action == 'stats' ? 'active' : ''; ?>">
+                <i class="fas fa-chart-bar"></i> Statistiques
+            </a>
+        </div>
         
         <!-- Messages -->
-        <?php if ($success): ?>
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            <i class="fas fa-check-circle me-2"></i><?php echo $success; ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
+        <?php if ($message): ?>
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle"></i> <?php echo $message; ?>
+            </div>
         <?php endif; ?>
         
         <?php if ($error): ?>
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            <i class="fas fa-exclamation-circle me-2"></i><?php echo $error; ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-circle"></i> <?php echo $error; ?>
+            </div>
         <?php endif; ?>
         
-        <!-- Contenu principal -->
-        <?php if ($action === 'list'): ?>
-        <!-- Liste des produits -->
-        <div class="row row-cols-1 row-cols-md-4 g-3 mb-4">
-            <div class="col">
-                <div class="stats-box">
-                    <div class="stats-number"><?php echo $stats['total']; ?></div>
-                    <div class="stats-label">Produits total</div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="stats-box" style="background: linear-gradient(135deg, #28a745, #20c997);">
-                    <div class="stats-number"><?php echo $stats['actifs']; ?></div>
-                    <div class="stats-label">Produits actifs</div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="stats-box" style="background: linear-gradient(135deg, #dc3545, #e83e8c);">
-                    <div class="stats-number"><?php echo $stats['rupture']; ?></div>
-                    <div class="stats-label">En rupture</div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="stats-box" style="background: linear-gradient(135deg, #ffc107, #fd7e14);">
-                    <div class="stats-number"><?php echo $stats['alerte']; ?></div>
-                    <div class="stats-label">Stock faible</div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="admin-card">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2 class="card-title"><i class="fas fa-list"></i> Liste des produits</h2>
-                <a href="admin_produits.php?action=add" class="btn btn-primary">
-                    <i class="fas fa-plus"></i> Nouveau produit
-                </a>
-            </div>
+        <!-- Contenu selon l'action -->
+        <?php if ($action == 'list'): ?>
+            <!-- LISTE DES PRODUITS -->
+            <?php 
+            $products = getAllProducts($pdo);
+            $totalProducts = count($products);
+            ?>
             
-            <div class="search-box">
-                <input type="text" id="searchInput" class="form-control" placeholder="Rechercher un produit...">
-                <i class="fas fa-search"></i>
-            </div>
-            
-            <div class="table-responsive">
-                <table class="table table-hover" id="productsTable">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Référence</th>
-                            <th>Nom</th>
-                            <th>Catégorie</th>
-                            <th>Prix</th>
-                            <th>Stock</th>
-                            <th>Statut</th>
-                            <th>Création</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($produits)): ?>
-                        <tr>
-                            <td colspan="9" class="text-center py-5">
-                                <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
-                                <p class="text-muted">Aucun produit trouvé</p>
-                                <a href="admin_produits.php?action=add" class="btn btn-primary mt-2">
-                                    <i class="fas fa-plus"></i> Ajouter un produit
-                                </a>
-                            </td>
-                        </tr>
-                        <?php else: foreach ($produits as $produit): ?>
-                        <tr>
-                            <td><?php echo $produit['id_produit']; ?></td>
-                            <td><strong><?php echo htmlspecialchars($produit['reference']); ?></strong></td>
-                            <td>
-                                <strong><?php echo htmlspecialchars($produit['nom']); ?></strong>
-                                <?php if ($produit['marque']): ?>
-                                <br><small class="text-muted"><?php echo htmlspecialchars($produit['marque']); ?></small>
-                                <?php endif; ?>
-                            </td>
-                            <td><?php echo htmlspecialchars($produit['categorie_nom'] ?? 'Non catégorisé'); ?></td>
-                            <td>
-                                <strong><?php echo number_format($produit['prix_ttc'], 2, ',', ' '); ?> €</strong>
-                                <br><small class="text-muted">HT: <?php echo number_format($produit['prix_ht'], 2, ',', ' '); ?> €</small>
-                            </td>
-                            <td>
-                                <?php
-                                $stockClass = 'stock-ok';
-                                if ($produit['quantite_stock'] <= 0) {
-                                    $stockClass = 'stock-zero';
-                                } elseif ($produit['quantite_stock'] <= $produit['seuil_alerte']) {
-                                    $stockClass = 'stock-low';
-                                }
-                                ?>
-                                <span class="<?php echo $stockClass; ?>"><?php echo $produit['quantite_stock']; ?></span>
-                                <?php if ($produit['quantite_stock'] <= $produit['seuil_alerte'] && $produit['quantite_stock'] > 0): ?>
-                                <br><small class="text-danger">Seuil: <?php echo $produit['seuil_alerte']; ?></small>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <?php
-                                $badgeClass = match($produit['statut']) {
-                                    'inactif' => 'badge-inactive',
-                                    'rupture' => 'badge-rupture',
-                                    'bientot' => 'badge-bientot',
-                                    default => 'badge-active'
-                                };
-                                ?>
-                                <span class="badge-status <?php echo $badgeClass; ?>"><?php echo ucfirst($produit['statut']); ?></span>
-                            </td>
-                            <td>
-                                <?php echo date('d/m/Y', strtotime($produit['date_creation'])); ?>
-                                <br><small><?php echo date('H:i', strtotime($produit['date_creation'])); ?></small>
-                            </td>
-                            <td>
-                                <div class="btn-group btn-group-sm">
-                                    <a href="admin_produits.php?action=edit&id=<?php echo $produit['id_produit']; ?>" 
-                                       class="btn btn-warning" title="Modifier">
-                                        <i class="fas fa-edit"></i>
-                                    </a>
-                                    <button type="button" class="btn btn-danger delete-btn" 
-                                            data-id="<?php echo $produit['id_produit']; ?>"
-                                            data-name="<?php echo htmlspecialchars($produit['nom']); ?>">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        <?php endforeach; endif; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        
-        <?php elseif ($action === 'add' || $action === 'edit'): ?>
-        <!-- Formulaire -->
-        <div class="admin-card">
-            <h2 class="card-title">
-                <i class="fas fa-<?php echo $action === 'add' ? 'plus' : 'edit'; ?>"></i>
-                <?php echo $action === 'add' ? 'Ajouter un produit' : 'Modifier le produit'; ?>
-            </h2>
-            
-            <form method="POST" action="" id="produitForm" data-action="<?php echo $action; ?>">
-                <input type="hidden" name="action" value="<?php echo $action; ?>">
-                <?php if ($action === 'edit'): ?>
-                <input type="hidden" name="id_produit" value="<?php echo $produit['id_produit']; ?>">
-                <?php endif; ?>
+            <div class="table-container">
+                <div class="table-header">
+                    <h3><i class="fas fa-box-open"></i> Liste des produits (<?php echo $totalProducts; ?>)</h3>
+                    <a href="admin_produits.php?action=add" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Nouveau produit
+                    </a>
+                </div>
                 
-                <div class="row">
-                    <div class="col-md-8">
-                        <!-- Informations de base -->
-                        <div class="mb-4">
-                            <h4><i class="fas fa-info-circle"></i> Informations de base</h4>
-                            <div class="row mt-3 g-3">
-                                <div class="col-md-6">
-                                    <label for="reference" class="form-label">Référence *</label>
-                                    <input type="text" id="reference" name="reference" class="form-control" 
-                                           value="<?php echo htmlspecialchars($produit['reference'] ?? ''); ?>" required
-                                           pattern="[A-Za-z0-9-]{3,50}" title="3-50 caractères (lettres, chiffres, tirets)">
-                                </div>
+                <?php if ($totalProducts > 0): ?>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Référence</th>
+                                <th>Nom</th>
+                                <th>Catégorie</th>
+                                <th>Prix HT</th>
+                                <th>Prix TTC</th>
+                                <th>Stock</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($products as $product): 
+                                // Calcul du prix TTC
+                                $prix_ttc = $product['prix_ht'] * (1 + ($product['tva'] / 100));
                                 
-                                <div class="col-md-6">
-                                    <label for="nom" class="form-label">Nom du produit *</label>
-                                    <input type="text" id="nom" name="nom" class="form-control" 
-                                           value="<?php echo htmlspecialchars($produit['nom'] ?? ''); ?>" required>
-                                </div>
-                                
-                                <div class="col-md-6">
-                                    <label for="slug" class="form-label">Slug *</label>
-                                    <div class="input-group">
-                                        <input type="text" id="slug" name="slug" class="form-control" 
-                                               value="<?php echo htmlspecialchars($produit['slug'] ?? ''); ?>" required
-                                               pattern="[a-z0-9-]{3,100}" title="3-100 caractères (minuscules, chiffres, tirets)">
-                                        <button type="button" class="btn btn-outline-secondary" id="generateSlug">
-                                            <i class="fas fa-magic"></i>
+                                // Déterminer la classe pour la quantité
+                                $quantityClass = 'quantity-high';
+                                if ($product['quantite_stock'] == 0) {
+                                    $quantityClass = 'quantity-low';
+                                    $stockStatus = 'Rupture';
+                                } elseif ($product['quantite_stock'] <= $product['seuil_alerte']) {
+                                    $quantityClass = 'quantity-medium';
+                                    $stockStatus = 'Faible';
+                                } else {
+                                    $stockStatus = 'OK';
+                                }
+                            ?>
+                            <tr>
+                                <td>#<?php echo $product['id_produit']; ?></td>
+                                <td><strong><?php echo htmlspecialchars($product['reference']); ?></strong></td>
+                                <td><?php echo htmlspecialchars($product['nom']); ?></td>
+                                <td><?php echo htmlspecialchars($product['categorie_nom'] ?? 'Non catégorisé'); ?></td>
+                                <td class="price"><?php echo number_format($product['prix_ht'], 2, ',', ' '); ?> €</td>
+                                <td class="price"><?php echo number_format($prix_ttc, 2, ',', ' '); ?> €</td>
+                                <td>
+                                    <span class="quantity <?php echo $quantityClass; ?>">
+                                        <?php echo $product['quantite_stock']; ?> unités
+                                        <small>(<?php echo $stockStatus; ?>)</small>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?php 
+                                    $statusColors = [
+                                        'actif' => 'success',
+                                        'inactif' => 'secondary',
+                                        'rupture' => 'danger',
+                                        'bientot' => 'warning'
+                                    ];
+                                    $statusText = [
+                                        'actif' => 'Actif',
+                                        'inactif' => 'Inactif',
+                                        'rupture' => 'Rupture',
+                                        'bientot' => 'Bientôt'
+                                    ];
+                                    $status = $product['statut'] ?? 'actif';
+                                    $color = $statusColors[$status] ?? 'secondary';
+                                    ?>
+                                    <span style="display: inline-block; padding: 4px 10px; font-size: 12px; border-radius: 4px; background-color: var(--color, #6c757d); color: white; --color: <?php 
+                                        echo $color === 'success' ? '#4CAF50' : 
+                                              ($color === 'secondary' ? '#6c757d' : 
+                                              ($color === 'danger' ? '#f44336' : '#ff9800'));
+                                    ?>">
+                                        <?php echo $statusText[$status] ?? $status; ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="actions">
+                                        <a href="admin_produits.php?action=edit&id=<?php echo $product['id_produit']; ?>" 
+                                           class="btn btn-warning btn-sm">
+                                            <i class="fas fa-edit"></i> Modifier
+                                        </a>
+                                        <button onclick="confirmDelete(<?php echo $product['id_produit']; ?>, '<?php echo addslashes($product['nom']); ?>')" 
+                                                class="btn btn-danger btn-sm">
+                                            <i class="fas fa-trash"></i> Supprimer
                                         </button>
+                                        <a href="admin_produits.php?action=view&id=<?php echo $product['id_produit']; ?>" 
+                                           class="btn btn-secondary btn-sm">
+                                            <i class="fas fa-eye"></i> Voir
+                                        </a>
                                     </div>
-                                </div>
-                                
-                                <div class="col-md-6">
-                                    <label for="id_categorie" class="form-label">Catégorie *</label>
-                                    <select id="id_categorie" name="id_categorie" class="form-select" required>
-                                        <option value="">Sélectionner...</option>
-                                        <?php foreach ($categories as $categorie): ?>
-                                        <option value="<?php echo $categorie['id_categorie']; ?>"
-                                                <?php echo (isset($produit['id_categorie']) && $produit['id_categorie'] == $categorie['id_categorie']) ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($categorie['nom']); ?>
-                                        </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                            </div>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php else: ?>
+                    <div style="text-align: center; padding: 40px;">
+                        <i class="fas fa-box-open" style="font-size: 60px; color: #ccc; margin-bottom: 20px;"></i>
+                        <h3 style="color: #777; margin-bottom: 10px;">Aucun produit trouvé</h3>
+                        <p style="color: #999; margin-bottom: 30px;">Commencez par ajouter votre premier produit.</p>
+                        <a href="admin_produits.php?action=add" class="btn btn-primary">
+                            <i class="fas fa-plus"></i> Ajouter un produit
+                        </a>
+                    </div>
+                <?php endif; ?>
+            </div>
+            
+        <?php elseif ($action == 'add' || $action == 'edit'): ?>
+            <!-- FORMULAIRE AJOUT/MODIFICATION -->
+            <?php 
+            $product = null;
+            if ($action == 'edit' && $id > 0) {
+                $product = getProductById($pdo, $id);
+                if (!$product) {
+                    echo '<div class="alert alert-danger">Produit non trouvé!</div>';
+                    echo '<a href="admin_produits.php?action=list" class="btn btn-secondary">Retour à la liste</a>';
+                    exit();
+                }
+            }
+            
+            // Valeurs par défaut pour l'ajout
+            $defaultReference = $action == 'add' ? generateReference($pdo) : ($product['reference'] ?? '');
+            ?>
+            
+            <div class="form-container">
+                <h2 style="margin-bottom: 25px; color: #333; display: flex; align-items: center; gap: 10px;">
+                    <i class="fas <?php echo $action == 'add' ? 'fa-plus-circle' : 'fa-edit'; ?>"></i>
+                    <?php echo $action == 'add' ? 'Ajouter un nouveau produit' : 'Modifier le produit #' . $product['id_produit']; ?>
+                </h2>
+                
+                <form method="POST" action="" enctype="multipart/form-data">
+                    <input type="hidden" name="action" value="<?php echo $action == 'add' ? 'add' : 'edit'; ?>">
+                    <?php if ($action == 'edit'): ?>
+                        <input type="hidden" name="id_produit" value="<?php echo $product['id_produit']; ?>">
+                    <?php endif; ?>
+                    
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <div class="form-group">
+                            <label for="nom"><i class="fas fa-tag"></i> Nom du produit *</label>
+                            <input type="text" id="nom" name="nom" class="form-control" 
+                                   value="<?php echo htmlspecialchars($product['nom'] ?? ''); ?>" required
+                                   oninput="document.getElementById('slug-preview').textContent = 'Slug : ' + generateSlug(this.value)">
+                            <small id="slug-preview" style="color: #666; margin-top: 5px;">
+                                Slug : <?php echo $product['slug'] ?? ''; ?>
+                            </small>
                         </div>
                         
-                        <!-- Prix et stock -->
-                        <div class="mb-4">
-                            <h4><i class="fas fa-euro-sign"></i> Prix et stock</h4>
-                            <div class="row mt-3 g-3">
-                                <div class="col-md-4">
-                                    <label for="prix_ht" class="form-label">Prix HT *</label>
-                                    <input type="number" id="prix_ht" name="prix_ht" class="form-control" 
-                                           step="0.01" min="0" required
-                                           value="<?php echo $produit['prix_ht'] ?? '0'; ?>">
-                                </div>
-                                
-                                <div class="col-md-4">
-                                    <label for="tva" class="form-label">TVA (%)</label>
-                                    <input type="number" id="tva" name="tva" class="form-control" 
-                                           step="0.01" min="0" max="100"
-                                           value="<?php echo $produit['tva'] ?? '20.00'; ?>">
-                                </div>
-                                
-                                <div class="col-md-4">
-                                    <label class="form-label">Prix TTC</label>
-                                    <input type="text" id="prix_ttc_display" class="form-control" readonly>
-                                </div>
+                        <div class="form-group">
+                            <label for="reference"><i class="fas fa-barcode"></i> Référence *</label>
+                            <input type="text" id="reference" name="reference" class="form-control" 
+                                   value="<?php echo htmlspecialchars($defaultReference); ?>" required>
+                        </div>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <div class="form-group">
+                            <label for="description_courte"><i class="fas fa-align-left"></i> Description courte</label>
+                            <textarea id="description_courte" name="description_courte" class="form-control" rows="3"><?php echo htmlspecialchars($product['description_courte'] ?? ''); ?></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="description"><i class="fas fa-align-justify"></i> Description complète</label>
+                            <textarea id="description" name="description" class="form-control" rows="3"><?php echo htmlspecialchars($product['description'] ?? ''); ?></textarea>
+                        </div>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <div class="form-group">
+                            <label for="prix_ht"><i class="fas fa-euro-sign"></i> Prix HT (€) *</label>
+                            <input type="number" id="prix_ht" name="prix_ht" class="form-control" 
+                                   step="0.01" min="0" value="<?php echo $product['prix_ht'] ?? ''; ?>" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="tva"><i class="fas fa-percentage"></i> TVA (%) *</label>
+                            <input type="number" id="tva" name="tva" class="form-control" 
+                                   step="0.01" min="0" value="<?php echo $product['tva'] ?? '20.00'; ?>" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="id_categorie"><i class="fas fa-folder"></i> Catégorie *</label>
+                            <select id="id_categorie" name="id_categorie" class="form-control" required>
+                                <option value="">-- Sélectionner --</option>
+                                <?php foreach ($categories as $category): ?>
+                                    <option value="<?php echo $category['id_categorie']; ?>"
+                                        <?php echo (isset($product['id_categorie']) && $product['id_categorie'] == $category['id_categorie']) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($category['nom']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <div class="form-group">
+                            <label for="quantite_stock"><i class="fas fa-cubes"></i> Quantité en stock *</label>
+                            <input type="number" id="quantite_stock" name="quantite_stock" class="form-control" 
+                                   min="0" value="<?php echo $product['quantite_stock'] ?? '0'; ?>" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="seuil_alerte"><i class="fas fa-exclamation-triangle"></i> Seuil d'alerte</label>
+                            <input type="number" id="seuil_alerte" name="seuil_alerte" class="form-control" 
+                                   min="0" value="<?php echo $product['seuil_alerte'] ?? '10'; ?>">
+                        </div>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px;">
+                        <div class="form-group">
+                            <label for="marque"><i class="fas fa-trademark"></i> Marque</label>
+                            <input type="text" id="marque" name="marque" class="form-control" 
+                                   value="<?php echo htmlspecialchars($product['marque'] ?? ''); ?>">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="poids"><i class="fas fa-weight"></i> Poids (g)</label>
+                            <input type="number" id="poids" name="poids" class="form-control" 
+                                   step="0.01" min="0" value="<?php echo $product['poids'] ?? ''; ?>">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="couleur"><i class="fas fa-palette"></i> Couleur</label>
+                            <input type="text" id="couleur" name="couleur" class="form-control" 
+                                   value="<?php echo htmlspecialchars($product['couleur'] ?? ''); ?>">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="made_in"><i class="fas fa-globe"></i> Origine</label>
+                            <input type="text" id="made_in" name="made_in" class="form-control" 
+                                   value="<?php echo htmlspecialchars($product['made_in'] ?? ''); ?>">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="dimensions"><i class="fas fa-ruler-combined"></i> Dimensions (LxHxP en cm)</label>
+                        <input type="text" id="dimensions" name="dimensions" class="form-control" 
+                               value="<?php echo htmlspecialchars($product['dimensions'] ?? ''); ?>">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="materiau"><i class="fas fa-cube"></i> Matériau</label>
+                        <input type="text" id="materiau" name="materiau" class="form-control" 
+                               value="<?php echo htmlspecialchars($product['materiau'] ?? ''); ?>">
+                    </div>
+                    
+                    <!-- Caractéristiques spéciales -->
+                    <div class="form-group">
+                        <label><i class="fas fa-star"></i> Caractéristiques spéciales</label>
+                        <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="personnalisable" name="personnalisable" 
+                                       value="1" <?php echo (isset($product['personnalisable']) && $product['personnalisable'] == 1) ? 'checked' : ''; ?>>
+                                <label for="personnalisable">Personnalisable</label>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="ecologique" name="ecologique" 
+                                       value="1" <?php echo (isset($product['ecologique']) && $product['ecologique'] == 1) ? 'checked' : ''; ?>>
+                                <label for="ecologique">Écologique</label>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="made_in_france" name="made_in_france" 
+                                       value="1" <?php echo (isset($product['made_in_france']) && $product['made_in_france'] == 1) ? 'checked' : ''; ?>>
+                                <label for="made_in_france">Made in France</label>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="artisanal" name="artisanal" 
+                                       value="1" <?php echo (isset($product['artisanal']) && $product['artisanal'] == 1) ? 'checked' : ''; ?>>
+                                <label for="artisanal">Artisanal</label>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="exclusif" name="exclusif" 
+                                       value="1" <?php echo (isset($product['exclusif']) && $product['exclusif'] == 1) ? 'checked' : ''; ?>>
+                                <label for="exclusif">Exclusif</label>
                             </div>
                         </div>
                     </div>
                     
-                    <div class="col-md-4">
-                        <!-- Caractéristiques -->
-                        <div class="mb-4">
-                            <h4><i class="fas fa-bolt"></i> Caractéristiques</h4>
-                            <div class="form-check mt-2">
-                                <input type="checkbox" id="personnalisable" name="personnalisable" value="1" 
-                                       class="form-check-input" <?php echo (isset($produit['personnalisable']) && $produit['personnalisable']) ? 'checked' : ''; ?>>
-                                <label for="personnalisable" class="form-check-label">Personnalisable</label>
-                            </div>
-                            <div class="form-check">
-                                <input type="checkbox" id="ecologique" name="ecologique" value="1"
-                                       class="form-check-input" <?php echo (isset($produit['ecologique']) && $produit['ecologique']) ? 'checked' : ''; ?>>
-                                <label for="ecologique" class="form-check-label">Écologique</label>
-                            </div>
-                            <div class="form-check">
-                                <input type="checkbox" id="made_in_france" name="made_in_france" value="1"
-                                       class="form-check-input" <?php echo (isset($produit['made_in_france']) && $produit['made_in_france']) ? 'checked' : ''; ?>>
-                                <label for="made_in_france" class="form-check-label">Fabriqué en France</label>
-                            </div>
-                        </div>
-                        
-                        <!-- Statut -->
-                        <div class="mb-4">
-                            <h4><i class="fas fa-flag"></i> Statut</h4>
-                            <select id="statut" name="statut" class="form-select">
-                                <option value="actif" <?php echo (isset($produit['statut']) && $produit['statut'] === 'actif') ? 'selected' : ''; ?>>Actif</option>
-                                <option value="inactif" <?php echo (isset($produit['statut']) && $produit['statut'] === 'inactif') ? 'selected' : ''; ?>>Inactif</option>
-                                <option value="rupture" <?php echo (isset($produit['statut']) && $produit['statut'] === 'rupture') ? 'selected' : ''; ?>>Rupture</option>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <div class="form-group">
+                            <label for="statut"><i class="fas fa-toggle-on"></i> Statut *</label>
+                            <select id="statut" name="statut" class="form-control" required>
+                                <option value="actif" <?php echo (isset($product['statut']) && $product['statut'] == 'actif') ? 'selected' : ''; ?>>Actif</option>
+                                <option value="inactif" <?php echo (isset($product['statut']) && $product['statut'] == 'inactif') ? 'selected' : ''; ?>>Inactif</option>
+                                <option value="rupture" <?php echo (isset($product['statut']) && $product['statut'] == 'rupture') ? 'selected' : ''; ?>>Rupture de stock</option>
+                                <option value="bientot" <?php echo (isset($product['statut']) && $product['statut'] == 'bientot') ? 'selected' : ''; ?>>Bientôt disponible</option>
                             </select>
                         </div>
+                        
+                        <div class="form-group">
+                            <label for="image"><i class="fas fa-image"></i> Image du produit</label>
+                            <input type="file" id="image" name="image" class="form-control" accept="image/*">
+                            <?php if ($action == 'edit'): ?>
+                                <small>Laissez vide pour conserver l'image actuelle</small>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 15px; margin-top: 30px;">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save"></i> <?php echo $action == 'add' ? 'Ajouter le produit' : 'Mettre à jour'; ?>
+                        </button>
+                        <a href="admin_produits.php?action=list" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Annuler
+                        </a>
+                    </div>
+                </form>
+            </div>
+            
+        <?php elseif ($action == 'stats'): ?>
+            <!-- STATISTIQUES (simplifié pour éviter les erreurs) -->
+            <div class="form-container">
+                <h2 style="margin-bottom: 25px; color: #333; display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-chart-bar"></i> Statistiques produits
+                </h2>
+                
+                <?php 
+                try {
+                    // Nombre total de produits
+                    $sql = "SELECT COUNT(*) as total FROM produits";
+                    $stmt = $pdo->query($sql);
+                    $total = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+                    
+                    // Produits par statut
+                    $sql = "SELECT statut, COUNT(*) as count FROM produits GROUP BY statut";
+                    $stmt = $pdo->query($sql);
+                    $statuts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    // Produits en alerte
+                    $sql = "SELECT COUNT(*) as alertes FROM produits WHERE quantite_stock <= seuil_alerte AND statut = 'actif'";
+                    $stmt = $pdo->query($sql);
+                    $alertes = $stmt->fetch(PDO::FETCH_ASSOC)['alertes'];
+                    
+                    // Produits en rupture
+                    $sql = "SELECT COUNT(*) as rupture FROM produits WHERE quantite_stock = 0 AND statut = 'actif'";
+                    $stmt = $pdo->query($sql);
+                    $rupture = $stmt->fetch(PDO::FETCH_ASSOC)['rupture'];
+                    
+                    // Valeur totale du stock
+                    $sql = "SELECT SUM(prix_ht * quantite_stock * (1 + tva/100)) as valeur FROM produits WHERE statut = 'actif'";
+                    $stmt = $pdo->query($sql);
+                    $valeur = $stmt->fetch(PDO::FETCH_ASSOC)['valeur'];
+                ?>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                    <div style="background-color: white; padding: 20px; border-radius: 8px; border-left: 4px solid #2196F3; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="color: #2196F3; margin-bottom: 10px;">Total produits</h3>
+                        <p style="font-size: 32px; font-weight: 700;"><?php echo $total; ?></p>
+                    </div>
+                    
+                    <div style="background-color: white; padding: 20px; border-radius: 8px; border-left: 4px solid #4CAF50; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="color: #4CAF50; margin-bottom: 10px;">Valeur stock</h3>
+                        <p style="font-size: 32px; font-weight: 700;"><?php echo number_format($valeur ?? 0, 2, ',', ' '); ?> €</p>
+                    </div>
+                    
+                    <div style="background-color: white; padding: 20px; border-radius: 8px; border-left: 4px solid #FF9800; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="color: #FF9800; margin-bottom: 10px;">Alertes stock</h3>
+                        <p style="font-size: 32px; font-weight: 700;"><?php echo $alertes; ?></p>
+                    </div>
+                    
+                    <div style="background-color: white; padding: 20px; border-radius: 8px; border-left: 4px solid #F44336; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="color: #F44336; margin-bottom: 10px;">Ruptures</h3>
+                        <p style="font-size: 32px; font-weight: 700;"><?php echo $rupture; ?></p>
                     </div>
                 </div>
                 
-                <div class="d-flex justify-content-between mt-4">
-                    <a href="admin_produits.php" class="btn btn-secondary">
-                        <i class="fas fa-arrow-left"></i> Retour
-                    </a>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-save"></i> 
-                        <?php echo $action === 'add' ? 'Créer' : 'Mettre à jour'; ?>
-                    </button>
+                <div style="background-color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <h3 style="margin-bottom: 20px; color: #333;">Répartition par statut</h3>
+                    <?php foreach ($statuts as $stat): ?>
+                        <?php 
+                        $percentage = $total > 0 ? ($stat['count'] / $total) * 100 : 0;
+                        $colors = [
+                            'actif' => '#4CAF50',
+                            'inactif' => '#9E9E9E',
+                            'rupture' => '#F44336',
+                            'bientot' => '#FF9800'
+                        ];
+                        $color = $colors[$stat['statut']] ?? '#333';
+                        ?>
+                        <div style="margin-bottom: 15px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span style="font-weight: 600; color: <?php echo $color; ?>">
+                                    <?php echo ucfirst($stat['statut']); ?>
+                                </span>
+                                <span><?php echo $stat['count']; ?> (<?php echo number_format($percentage, 1); ?>%)</span>
+                            </div>
+                            <div style="height: 8px; background-color: #eee; border-radius: 4px; overflow: hidden;">
+                                <div style="height: 100%; width: <?php echo $percentage; ?>%; background-color: <?php echo $color; ?>; border-radius: 4px;"></div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
                 </div>
-            </form>
-        </div>
+                
+                <?php } catch(Exception $e) { ?>
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle"></i> Erreur lors du chargement des statistiques
+                    </div>
+                <?php } ?>
+            </div>
+            
         <?php endif; ?>
     </div>
     
-    <!-- Modal suppression -->
-    <div class="modal fade" id="deleteModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Confirmer la suppression</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Supprimer le produit <strong id="deleteProductName"></strong> ?</p>
-                    <p class="text-danger"><i class="fas fa-exclamation-triangle"></i> Action irréversible !</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                    <form method="POST" id="deleteForm">
-                        <input type="hidden" name="action" value="delete">
-                        <input type="hidden" name="id_produit" id="deleteProductId">
-                        <button type="submit" class="btn btn-danger">
-                            <i class="fas fa-trash"></i> Supprimer
-                        </button>
-                    </form>
-                </div>
+    <!-- Modal de confirmation suppression -->
+    <div id="deleteModal" class="modal">
+        <div class="modal-content">
+            <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
+                <i class="fas fa-exclamation-triangle" style="color: #f44336; font-size: 24px;"></i>
+                <h3 style="font-size: 22px; color: #333;">Confirmer la suppression</h3>
+            </div>
+            <div style="margin-bottom: 25px; color: #666;">
+                <p>Êtes-vous sûr de vouloir supprimer le produit "<span id="productName"></span>" ?</p>
+                <p style="color: #f44336; font-weight: 600; margin-top: 10px;">
+                    <i class="fas fa-exclamation-circle"></i> Cette action est irréversible !
+                </p>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <form id="deleteForm" method="POST" action="">
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="id_produit" id="productId">
+                    <button type="button" onclick="closeModal()" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Annuler
+                    </button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash"></i> Supprimer
+                    </button>
+                </form>
             </div>
         </div>
     </div>
     
-    <!-- JavaScript -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script>
-    // Configuration globale
-    const config = {
-        debug: <?php echo ($_SESSION['admin_role'] === 'superadmin') ? 'true' : 'false'; ?>
-    };
-    
-    // Calcul du prix TTC
-    function calculateTTC() {
-        const prixHT = parseFloat(document.getElementById('prix_ht')?.value) || 0;
-        const tva = parseFloat(document.getElementById('tva')?.value) || 20;
-        const prixTTC = prixHT * (1 + tva / 100);
-        const display = document.getElementById('prix_ttc_display');
-        if (display) display.value = prixTTC.toFixed(2) + ' €';
-    }
-    
-    // Génération de slug
-    function generateSlug(text) {
-        return text.toLowerCase()
-            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '')
-            .substring(0, 100);
-    }
-    
-    // Initialisation
-    document.addEventListener('DOMContentLoaded', function() {
-        // Calcul TTC
-        const prixHT = document.getElementById('prix_ht');
-        const tva = document.getElementById('tva');
-        if (prixHT && tva) {
-            prixHT.addEventListener('input', calculateTTC);
-            tva.addEventListener('input', calculateTTC);
+        // Fonction pour générer un slug
+        function generateSlug(text) {
+            return text
+                .toLowerCase()
+                .replace(/[^a-z0-9-]/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-|-$/g, '');
+        }
+        
+        // Fonctions pour la modal de suppression
+        function confirmDelete(id, name) {
+            document.getElementById('productId').value = id;
+            document.getElementById('productName').textContent = name;
+            document.getElementById('deleteModal').style.display = 'flex';
+        }
+        
+        function closeModal() {
+            document.getElementById('deleteModal').style.display = 'none';
+        }
+        
+        // Fermer la modal en cliquant en dehors
+        window.onclick = function(event) {
+            const modal = document.getElementById('deleteModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        }
+        
+        // Calcul automatique du prix TTC
+        document.getElementById('prix_ht')?.addEventListener('input', calculateTTC);
+        document.getElementById('tva')?.addEventListener('input', calculateTTC);
+        
+        function calculateTTC() {
+            const prixHT = parseFloat(document.getElementById('prix_ht')?.value) || 0;
+            const tva = parseFloat(document.getElementById('tva')?.value) || 20;
+            const prixTTC = prixHT * (1 + tva / 100);
+            
+            const ttcElement = document.getElementById('ttc-preview');
+            if (ttcElement) {
+                ttcElement.textContent = 'Prix TTC : ' + prixTTC.toFixed(2) + ' €';
+            }
+        }
+        
+        // Initialiser le calcul TTC au chargement
+        document.addEventListener('DOMContentLoaded', function() {
             calculateTTC();
-        }
-        
-        // Génération slug
-        const generateBtn = document.getElementById('generateSlug');
-        const nomInput = document.getElementById('nom');
-        const slugInput = document.getElementById('slug');
-        
-        if (generateBtn && nomInput && slugInput) {
-            generateBtn.addEventListener('click', () => {
-                if (nomInput.value) {
-                    slugInput.value = generateSlug(nomInput.value);
-                }
-            });
-        }
-        
-        // Recherche
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) {
-            searchInput.addEventListener('input', debounce(function() {
-                const filter = this.value.toLowerCase();
-                document.querySelectorAll('#productsTable tbody tr').forEach(row => {
-                    row.style.display = row.textContent.toLowerCase().includes(filter) ? '' : 'none';
-                });
-            }, 300));
-        }
-        
-        // Suppression
-        document.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                document.getElementById('deleteProductId').value = this.dataset.id;
-                document.getElementById('deleteProductName').textContent = this.dataset.name;
-                new bootstrap.Modal(document.getElementById('deleteModal')).show();
-            });
+            
+            // Ajouter un aperçu du prix TTC si le champ existe
+            const prixHTField = document.getElementById('prix_ht');
+            if (prixHTField) {
+                const ttcPreview = document.createElement('small');
+                ttcPreview.id = 'ttc-preview';
+                ttcPreview.style.color = '#666';
+                ttcPreview.style.marginTop = '5px';
+                ttcPreview.style.display = 'block';
+                prixHTField.parentNode.appendChild(ttcPreview);
+                calculateTTC();
+            }
         });
-        
-        // Validation
-        const form = document.getElementById('produitForm');
-        if (form) {
-            form.addEventListener('submit', function(e) {
-                if (!this.checkValidity()) {
-                    e.preventDefault();
-                    this.classList.add('was-validated');
-                }
-            });
-        }
-        
-        // Debug
-        if (config.debug) {
-            console.log('Admin:', '<?php echo htmlspecialchars($_SESSION['admin_username'] ?? ''); ?>');
-        }
-    });
-    
-    // Fonction debounce pour performances
-    function debounce(func, wait) {
-        let timeout;
-        return function executedFunction(...args) {
-            const later = () => {
-                clearTimeout(timeout);
-                func.apply(this, args);
-            };
-            clearTimeout(timeout);
-            timeout = setTimeout(later, wait);
-        };
-    }
     </script>
 </body>
 </html>

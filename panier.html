@@ -46,6 +46,81 @@
         margin-bottom: 30px;
         max-width: 400px;
       }
+
+      /* Styles pour les vraies infos produits */
+      .cart-item-category {
+        font-size: 0.8rem;
+        color: #3498db;
+        margin: 5px 0;
+        font-weight: 500;
+      }
+
+      .cart-item-desc {
+        font-size: 0.85rem;
+        color: #666;
+        margin: 5px 0;
+        line-height: 1.3;
+        max-height: 40px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .cart-item-rating {
+        margin: 5px 0;
+      }
+
+      .cart-item-rating .stars {
+        color: #f1c40f;
+        font-size: 0.9rem;
+      }
+
+      .stock-info {
+        display: block;
+        font-size: 0.75rem;
+        color: #7f8c8d;
+        margin-top: 5px;
+        text-align: center;
+      }
+
+      /* Notification améliorée */
+      @keyframes notificationSlideIn {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+
+      @keyframes notificationSlideOut {
+        from {
+          transform: translateX(0);
+          opacity: 1;
+        }
+        to {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+      }
+
+      /* Animation du compteur */
+      @keyframes pulse {
+        0% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.2);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+
+      .cart-count.pulse {
+        animation: pulse 0.6s ease-in-out;
+      }
     </style>
   </head>
   <body>
@@ -375,11 +450,11 @@
     <script src="js/main.js"></script>
     <script>
       // ==============================================
-      // GESTION DU PANIER - VERSION ULTRA SIMPLIFIÉE
+      // GESTION DU PANIER - VERSION COMPLÈTE AVEC BDD
       // ==============================================
 
       // Configuration - UTILISEZ LE CHEMIN ABSOLU
-      const API_BASE_URL = "http://localhost/sean/api/panier.php";
+      const API_BASE_URL = "/api/panier.php";
       console.log("API URL configurée:", API_BASE_URL);
 
       // Test immédiat de l'API
@@ -476,6 +551,24 @@
         }, 4000);
       }
 
+      // Fonction pour générer les étoiles
+      function generateStars(rating) {
+        let stars = "";
+        const fullStars = Math.floor(rating);
+        const hasHalfStar = rating - fullStars >= 0.5;
+
+        for (let i = 0; i < 5; i++) {
+          if (i < fullStars) {
+            stars += '<i class="fas fa-star"></i>';
+          } else if (i === fullStars && hasHalfStar) {
+            stars += '<i class="fas fa-star-half-alt"></i>';
+          } else {
+            stars += '<i class="far fa-star"></i>';
+          }
+        }
+        return stars;
+      }
+
       // Mettre à jour le compteur du panier
       async function mettreAJourCompteur() {
         try {
@@ -534,8 +627,7 @@
         }
       }
 
-      // Afficher les articles dans le panier
-      // Afficher les articles dans le panier - VERSION CORRIGÉE
+      // Afficher les articles dans le panier - VERSION AVEC VRAIES INFOS BDD
       function afficherArticlesPanier(items, totalPrix) {
         const container = document.getElementById("cartItems");
         const cartEmpty = document.getElementById("cartEmpty");
@@ -544,21 +636,16 @@
 
         console.log(`📦 ${items.length} articles à afficher`);
 
-        // TOUJOURS afficher le message "panier vide" si aucun article
+        // Gérer panier vide
         if (!items || items.length === 0) {
           console.log("🔄 Affichage: Panier vide");
 
           if (container) {
-            container.innerHTML = ""; // Vider complètement
+            container.innerHTML = "";
           }
 
           if (cartEmpty) {
-            cartEmpty.style.display = "flex"; // AFFICHER le message
-            cartEmpty.style.flexDirection = "column";
-            cartEmpty.style.alignItems = "center";
-            cartEmpty.style.justifyContent = "center";
-            cartEmpty.style.padding = "40px 20px";
-            cartEmpty.style.textAlign = "center";
+            cartEmpty.style.display = "flex";
           }
 
           if (subtotalElement) subtotalElement.textContent = "0,00 €";
@@ -579,7 +666,7 @@
         console.log("🔄 Affichage: Panier avec", items.length, "articles");
 
         if (cartEmpty) {
-          cartEmpty.style.display = "none"; // CACHER le message
+          cartEmpty.style.display = "none";
         }
 
         // Réactiver bouton paiement
@@ -590,28 +677,62 @@
           checkoutBtn.style.cursor = "pointer";
         }
 
-        // Générer HTML des articles
+        // Générer HTML des articles avec VRAIES infos
         let html = "";
         items.forEach((item) => {
-          const prixUnitaire = parseFloat(item.prix_unitaire || 29.99);
+          const prixUnitaire = parseFloat(item.prix_unitaire || 0);
           const quantite = parseInt(item.quantite) || 1;
           const totalItem = prixUnitaire * quantite;
+          const stockMax = item.stock_max || 99;
 
+          // Formater les prix
           const prixUnitaireFormatted = prixUnitaire
             .toFixed(2)
             .replace(".", ",");
           const totalItemFormatted = totalItem.toFixed(2).replace(".", ",");
 
+          // Image par défaut si vide
+          const imageUrl =
+            item.image &&
+            item.image !== "null" &&
+            item.image !== "img/default-product.jpg"
+              ? item.image
+              : "img/default-product.jpg";
+
           html += `
-      <div class="cart-item" data-item-id="${item.id_item}">
+      <div class="cart-item" data-item-id="${item.id_item}" data-produit-id="${
+            item.id_produit
+          }">
         <div class="cart-item-image">
-          <img src="img/produit-unique.jpg" alt="${item.nom}" 
+          <img src="${imageUrl}" alt="${item.nom}" 
                onerror="this.src='img/default-product.jpg'">
         </div>
         <div class="cart-item-details">
           <h4 class="cart-item-title">${item.nom}</h4>
-          <p class="cart-item-ref">Réf: PROD-${item.id_produit}</p>
+          ${
+            item.categorie
+              ? `<p class="cart-item-category">${item.categorie}</p>`
+              : ""
+          }
+          ${
+            item.description
+              ? `<p class="cart-item-desc">${item.description}</p>`
+              : ""
+          }
+          <p class="cart-item-ref">Réf: ${item.id_produit
+            .toString()
+            .padStart(6, "0")}</p>
           <p class="cart-item-price-unit">${prixUnitaireFormatted} € l'unité</p>
+          ${
+            item.note > 0
+              ? `
+          <div class="cart-item-rating">
+            <div class="stars">
+              ${generateStars(item.note)}
+            </div>
+          </div>`
+              : ""
+          }
         </div>
         <div class="cart-item-quantity">
           <button class="quantity-btn minus" onclick="modifierQuantite('${
@@ -620,14 +741,17 @@
                   ${quantite <= 1 ? "disabled" : ""}>
             <i class="fas fa-minus"></i>
           </button>
-          <input type="number" value="${quantite}" min="1" max="99" 
+          <input type="number" value="${quantite}" min="1" max="${stockMax}" 
                  class="quantity-input" data-item-id="${item.id_item}"
-                 onchange="mettreAJourQuantite('${item.id_item}', this.value)">
+                 onchange="mettreAJourQuantite('${item.id_item}', this.value)"
+                 title="Stock disponible: ${stockMax}">
           <button class="quantity-btn plus" onclick="modifierQuantite('${
             item.id_item
-          }', 1)">
+          }', 1)"
+                  ${quantite >= stockMax ? "disabled" : ""}>
             <i class="fas fa-plus"></i>
           </button>
+          <small class="stock-info">Stock: ${stockMax}</small>
         </div>
         <div class="cart-item-total">
           <span class="item-total-price">${totalItemFormatted} €</span>
@@ -656,6 +780,7 @@
 
         updateTotal();
       }
+
       // Modifier quantité via input
       async function mettreAJourQuantite(itemId, nouvelleQuantite) {
         nouvelleQuantite = parseInt(nouvelleQuantite);
@@ -756,8 +881,7 @@
         }
       }
 
-      // VIDER LE PANIER - FONCTION CORRIGÉE
-      // VIDER LE PANIER - VERSION CORRIGÉE POUR RAFRAÎCHISSEMENT
+      // VIDER LE PANIER
       function initialiserBoutonViderPanier() {
         const clearCartBtn = document.getElementById("clearCartBtn");
         if (!clearCartBtn) return;
@@ -776,7 +900,7 @@
             clearCartBtn.innerHTML =
               '<i class="fas fa-spinner fa-spin"></i> Vider...';
 
-            // OPTION 1: GET simple
+            // Appel API
             const url = API_BASE_URL + "?action=vider&confirmation=1";
             console.log("URL appelée:", url);
 
@@ -803,31 +927,21 @@
             if (data.success) {
               showNotification("✅ Panier vidé avec succès !");
 
-              // FORCER le rafraîchissement IMMÉDIAT et COMPLET
+              // Mettre à jour l'affichage
               setTimeout(async () => {
-                // 1. Mettre à jour le compteur
                 await mettreAJourCompteur();
-
-                // 2. Recharger les articles (ceci devrait afficher "panier vide")
                 await chargerPanier();
 
-                // 3. FORCER un re-render visuel
-                const cartItems = document.getElementById("cartItems");
+                // Forcer l'affichage du message "panier vide"
                 const cartEmpty = document.getElementById("cartEmpty");
+                if (cartEmpty) cartEmpty.style.display = "flex";
 
-                if (cartItems && cartEmpty) {
-                  // Vider le contenu des articles
-                  cartItems.innerHTML = "";
-                  // Afficher le message "panier vide"
-                  cartEmpty.style.display = "flex";
-                }
-
-                // 4. Réinitialiser les totaux
+                // Réinitialiser les totaux
                 document.getElementById("subtotal").textContent = "0,00 €";
                 document.getElementById("total").textContent = "0,00 €";
                 document.getElementById("giftWrapPrice").textContent = "0,00 €";
 
-                // 5. Décocher l'emballage cadeau
+                // Décocher l'emballage cadeau
                 const giftWrapToggle =
                   document.getElementById("giftWrapToggle");
                 if (giftWrapToggle) giftWrapToggle.checked = false;
@@ -840,36 +954,6 @@
           } catch (error) {
             console.error("❌ Erreur détaillée:", error);
             showNotification("❌ Erreur lors du vidage du panier", "error");
-
-            // OPTION 2: Fallback avec POST
-            try {
-              console.log("🔄 Tentative avec POST...");
-              const fallbackResponse = await fetch(API_BASE_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  action: "vider",
-                  confirmation: true,
-                }),
-              });
-
-              const fallbackData = await fallbackResponse.json();
-              if (fallbackData.success) {
-                showNotification("✅ Panier vidé (méthode POST)!");
-
-                // Rafraîchir après POST aussi
-                setTimeout(async () => {
-                  await mettreAJourCompteur();
-                  await chargerPanier();
-
-                  // Forcer l'affichage "panier vide"
-                  const cartEmpty = document.getElementById("cartEmpty");
-                  if (cartEmpty) cartEmpty.style.display = "flex";
-                }, 100);
-              }
-            } catch (fallbackError) {
-              console.error("❌ Fallback échoué:", fallbackError);
-            }
           } finally {
             // Réactiver le bouton
             setTimeout(() => {
@@ -953,31 +1037,44 @@
         });
       }
 
+      // Synchroniser le panier avec la BDD
+      async function synchroniserPanier() {
+        try {
+          console.log("🔄 Synchronisation du panier...");
+          const response = await fetch(API_BASE_URL + "?action=sync");
+          const data = await response.json();
+
+          if (data.success) {
+            if (
+              data.items_updated.length > 0 ||
+              data.items_removed.length > 0
+            ) {
+              console.log("✅ Panier synchronisé:", data);
+              await chargerPanier();
+              await mettreAJourCompteur();
+
+              if (data.items_updated.length > 0) {
+                showNotification(
+                  "⚠️ Certains articles ont été ajustés au stock disponible",
+                  "error"
+                );
+              }
+              if (data.items_removed.length > 0) {
+                showNotification(
+                  "⚠️ Certains articles indisponibles ont été retirés",
+                  "error"
+                );
+              }
+            }
+          }
+        } catch (error) {
+          console.error("❌ Erreur synchronisation:", error);
+        }
+      }
+
       // Initialisation principale
       document.addEventListener("DOMContentLoaded", async function () {
         console.log("🚀 Page panier - Initialisation démarrée");
-
-        // Ajouter styles d'animation
-        const style = document.createElement("style");
-        style.textContent = `
-          @keyframes notificationSlideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-          }
-          @keyframes notificationSlideOut {
-            from { transform: translateX(0); opacity: 1; }
-            to { transform: translateX(100%); opacity: 0; }
-          }
-          @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.2); }
-            100% { transform: scale(1); }
-          }
-          .cart-count.pulse {
-            animation: pulse 0.6s ease-in-out;
-          }
-        `;
-        document.head.appendChild(style);
 
         // Tester l'API immédiatement
         const apiOk = await testAPI();
@@ -989,6 +1086,9 @@
 
         // Mettre à jour compteur
         await mettreAJourCompteur();
+
+        // Synchroniser le panier avec la BDD
+        await synchroniserPanier();
 
         // Initialiser composants
         initialiserBoutonViderPanier();
@@ -1045,6 +1145,7 @@
       window.mettreAJourQuantite = mettreAJourQuantite;
       window.chargerPanier = chargerPanier;
       window.mettreAJourCompteur = mettreAJourCompteur;
+      window.synchroniserPanier = synchroniserPanier;
 
       // Fonction de test manuel
       window.testViderPanier = async function () {

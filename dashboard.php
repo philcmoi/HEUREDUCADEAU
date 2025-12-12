@@ -1,38 +1,62 @@
 <?php
-// dashboard.php - Simple tableau de bord
-session_start();
+// dashboard.php - Adapté à heureducadeau
+require_once 'admin_protection.php';
 
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    header('Location: login.php');
-    exit;
+// ============================================
+// RÉCUPÉRATION DES STATISTIQUES
+// ============================================
+try {
+    // Nombre total de produits
+    $sql = "SELECT COUNT(*) as total_produits FROM produits";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute();
+    $total_produits = $stmt->fetch(PDO::FETCH_ASSOC)['total_produits'];
+    
+    // Nombre total de commandes
+    $sql = "SELECT COUNT(*) as total_commandes FROM commandes";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute();
+    $total_commandes = $stmt->fetch(PDO::FETCH_ASSOC)['total_commandes'];
+    
+    // Nombre total de clients
+    $sql = "SELECT COUNT(*) as total_clients FROM clients";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute();
+    $total_clients = $stmt->fetch(PDO::FETCH_ASSOC)['total_clients'];
+    
+    // Produits en alerte de stock
+    $sql = "SELECT COUNT(*) as alert_stock FROM produits WHERE quantite_stock <= seuil_alerte AND statut = 'actif'";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute();
+    $alert_stock = $stmt->fetch(PDO::FETCH_ASSOC)['alert_stock'];
+    
+    // Commandes en attente
+    $sql = "SELECT COUNT(*) as commandes_attente FROM commandes WHERE statut = 'en_attente'";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute();
+    $commandes_attente = $stmt->fetch(PDO::FETCH_ASSOC)['commandes_attente'];
+    
+    // Chiffre d'affaires total
+    $sql = "SELECT SUM(total_ttc) as chiffre_affaires FROM commandes WHERE statut_paiement = 'paye'";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute();
+    $chiffre_affaires = $stmt->fetch(PDO::FETCH_ASSOC)['chiffre_affaires'] ?? 0;
+    
+} catch(PDOException $e) {
+    $error_stats = "Erreur lors du chargement des statistiques: " . $e->getMessage();
 }
 
-// Récupérer les informations de l'admin
-$admin_username = $_SESSION['admin_username'] ?? 'Admin';
-$admin_role = $_SESSION['admin_role'] ?? 'admin';
-$is_superadmin = ($admin_role === 'superadmin');
-
-// Fonction pour obtenir l'IP du client
-function getClientIp() {
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-    $headers = ['HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_FORWARDED'];
-    
-    foreach ($headers as $header) {
-        if (isset($_SERVER[$header]) && filter_var($_SERVER[$header], FILTER_VALIDATE_IP)) {
-            $ip = $_SERVER[$header];
-            break;
-        }
-    }
-    
-    return $ip;
-}
+// Récupérer le nom de l'admin depuis la session
+$admin_username = $_SESSION['admin_username'] ?? 'Administrateur';
+$admin_role = $_SESSION['admin_role'] ?? 'Non défini';
 ?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tableau de bord - Administration</title>
+    <title>Tableau de bord - Heure du Cadeau</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
             margin: 0;
@@ -42,248 +66,266 @@ function getClientIp() {
         
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
             padding: 20px;
         }
         
-        .dashboard-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        
         /* Header */
-        .dashboard-header {
-            background: linear-gradient(to right, #8a4baf, #ff6b8b);
+        .header {
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
             color: white;
-            padding: 30px 40px;
-            position: relative;
-            overflow: hidden;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
         }
         
-        .dashboard-header::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 100%;
-            height: 200%;
-            background: rgba(255,255,255,0.1);
-            transform: rotate(30deg);
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
         }
         
-        .welcome-section {
-            position: relative;
-            z-index: 1;
-        }
-        
-        .welcome-title {
-            font-size: 2.5rem;
+        .header h1 {
+            font-size: 32px;
+            font-weight: 600;
             margin-bottom: 10px;
-            font-weight: 700;
         }
         
-        .welcome-subtitle {
-            font-size: 1.2rem;
+        .header p {
+            font-size: 16px;
             opacity: 0.9;
-            margin-bottom: 20px;
         }
         
-        .admin-info {
+        .user-info {
+            text-align: right;
+        }
+        
+        .role-badge {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            margin-top: 10px;
+        }
+        
+        .superadmin-badge {
+            background-color: #f44336;
+        }
+        
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+        
+        .stat-card {
+            background-color: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border-left: 5px solid;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+        }
+        
+        .stat-card.products { border-left-color: #2196F3; }
+        .stat-card.orders { border-left-color: #4CAF50; }
+        .stat-card.clients { border-left-color: #FF9800; }
+        .stat-card.revenue { border-left-color: #9C27B0; }
+        .stat-card.alerts { border-left-color: #F44336; }
+        .stat-card.pending { border-left-color: #FFC107; }
+        
+        .stat-header {
             display: flex;
             align-items: center;
             gap: 15px;
-            margin-top: 20px;
+            margin-bottom: 15px;
         }
         
-        .admin-avatar {
-            width: 60px;
-            height: 60px;
-            background: white;
-            border-radius: 50%;
+        .stat-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.5rem;
-            color: #8a4baf;
-            font-weight: bold;
+            font-size: 22px;
+            color: white;
         }
         
-        .admin-details {
-            flex: 1;
+        .stat-card.products .stat-icon { background-color: #2196F3; }
+        .stat-card.orders .stat-icon { background-color: #4CAF50; }
+        .stat-card.clients .stat-icon { background-color: #FF9800; }
+        .stat-card.revenue .stat-icon { background-color: #9C27B0; }
+        .stat-card.alerts .stat-icon { background-color: #F44336; }
+        .stat-card.pending .stat-icon { background-color: #FFC107; }
+        
+        .stat-title {
+            font-size: 16px;
+            color: #666;
+            font-weight: 500;
         }
         
-        .admin-name {
-            font-size: 1.3rem;
-            font-weight: 600;
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #333;
             margin-bottom: 5px;
         }
         
-        .admin-role {
-            display: inline-block;
-            background: rgba(255,255,255,0.2);
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            margin-top: 5px;
+        .stat-change {
+            font-size: 14px;
+            color: #666;
         }
         
-        /* Main content */
-        .dashboard-main {
-            padding: 40px;
+        .stat-change.positive { color: #4CAF50; }
+        .stat-change.negative { color: #F44336; }
+        
+        /* Quick Actions */
+        .quick-actions {
+            margin-bottom: 40px;
         }
         
-        .section-title {
+        .quick-actions h2 {
+            font-size: 24px;
+            margin-bottom: 20px;
             color: #333;
-            margin-bottom: 30px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #f0f0f0;
-            font-size: 1.5rem;
+        }
+        
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        
+        .action-card {
+            background-color: white;
+            border-radius: 12px;
+            padding: 25px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s ease;
+            text-decoration: none;
+            color: #333;
+            border: 2px solid transparent;
+        }
+        
+        .action-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+            border-color: #2196F3;
+        }
+        
+        .action-icon {
+            font-size: 36px;
+            margin-bottom: 15px;
+            color: #2196F3;
+        }
+        
+        .action-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .action-desc {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        /* Recent Activity */
+        .recent-activity {
+            background-color: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+            margin-bottom: 40px;
+        }
+        
+        .recent-activity h2 {
+            font-size: 24px;
+            margin-bottom: 25px;
+            color: #333;
             display: flex;
             align-items: center;
             gap: 10px;
         }
         
-        .section-title i {
-            color: #8a4baf;
+        .activity-list {
+            list-style: none;
         }
         
-        /* Cards grid */
-        .cards-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 25px;
-            margin-bottom: 40px;
-        }
-        
-        .dashboard-card {
-            background: white;
-            border-radius: 12px;
-            padding: 30px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-            border: 1px solid #eaeaea;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            text-decoration: none;
-            color: inherit;
-            display: block;
-        }
-        
-        .dashboard-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 30px rgba(0,0,0,0.15);
-            border-color: #8a4baf;
-        }
-        
-        .card-icon {
-            width: 70px;
-            height: 70px;
-            background: linear-gradient(135deg, #8a4baf, #ff6b8b);
-            border-radius: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 20px;
-            font-size: 1.8rem;
-            color: white;
-        }
-        
-        .card-title {
-            font-size: 1.3rem;
-            color: #333;
-            margin-bottom: 10px;
-            font-weight: 600;
-        }
-        
-        .card-description {
-            color: #666;
-            line-height: 1.6;
-            margin-bottom: 15px;
-        }
-        
-        .card-stats {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #eee;
-        }
-        
-        .stat-number {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #8a4baf;
-        }
-        
-        .stat-label {
-            font-size: 0.9rem;
-            color: #888;
-        }
-        
-        /* Quick actions */
-        .quick-actions {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 30px;
-        }
-        
-        .action-btn {
+        .activity-item {
             display: flex;
             align-items: center;
             gap: 15px;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 10px;
-            text-decoration: none;
-            color: #333;
-            transition: all 0.3s ease;
-            border: 2px solid transparent;
+            padding: 15px 0;
+            border-bottom: 1px solid #eee;
         }
         
-        .action-btn:hover {
-            background: white;
-            border-color: #8a4baf;
-            transform: translateX(5px);
+        .activity-item:last-child {
+            border-bottom: none;
         }
         
-        .action-icon {
-            width: 50px;
-            height: 50px;
-            background: linear-gradient(135deg, #8a4baf, #ff6b8b);
-            border-radius: 10px;
+        .activity-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: #f0f8ff;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: white;
-            font-size: 1.3rem;
+            color: #2196F3;
         }
         
-        .action-text {
+        .activity-content {
             flex: 1;
         }
         
-        .action-title {
+        .activity-title {
             font-weight: 600;
             margin-bottom: 5px;
         }
         
-        .action-desc {
-            font-size: 0.9rem;
+        .activity-time {
+            font-size: 14px;
             color: #666;
         }
         
-        /* System info */
+        /* System Info */
         .system-info {
-            background: #f8f9fa;
+            background-color: white;
             border-radius: 12px;
-            padding: 25px;
-            margin-top: 40px;
+            padding: 30px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        }
+        
+        .system-info h2 {
+            font-size: 24px;
+            margin-bottom: 25px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         
         .info-grid {
@@ -293,401 +335,414 @@ function getClientIp() {
         }
         
         .info-item {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        
-        .info-icon {
-            width: 45px;
-            height: 45px;
-            background: #e9ecef;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #8a4baf;
-            font-size: 1.2rem;
-        }
-        
-        .info-content {
-            flex: 1;
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
         }
         
         .info-label {
-            font-size: 0.9rem;
+            font-size: 14px;
             color: #666;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
         }
         
         .info-value {
+            font-size: 18px;
             font-weight: 600;
             color: #333;
         }
         
-        /* Footer */
-        .dashboard-footer {
-            background: #f8f9fa;
-            padding: 25px 40px;
-            text-align: center;
-            border-top: 1px solid #eaeaea;
-        }
-        
-        .logout-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            padding: 12px 30px;
-            background: #dc3545;
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            border: none;
-            cursor: pointer;
-            font-size: 1rem;
-        }
-        
-        .logout-btn:hover {
-            background: #c82333;
-            transform: translateY(-2px);
-        }
-        
-        .footer-text {
-            margin-top: 20px;
-            color: #666;
-            font-size: 0.9rem;
-        }
-        
         /* Responsive */
         @media (max-width: 768px) {
-            body {
-                padding: 10px;
+            .header-content {
+                flex-direction: column;
+                text-align: center;
             }
             
-            .dashboard-header {
-                padding: 20px;
+            .user-info {
+                text-align: center;
             }
             
-            .welcome-title {
-                font-size: 2rem;
-            }
-            
-            .dashboard-main {
-                padding: 20px;
-            }
-            
-            .cards-grid {
+            .stats-grid {
                 grid-template-columns: 1fr;
             }
             
-            .quick-actions {
+            .actions-grid {
                 grid-template-columns: 1fr;
             }
         }
         
-        /* Animation */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+        /* Session Info */
+        .session-info {
+            background-color: #f0f8ff;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 30px;
+            border-left: 4px solid #2196F3;
         }
         
-        .dashboard-card, .action-btn {
-            animation: fadeIn 0.5s ease forwards;
+        .session-info h3 {
+            color: #2196F3;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         
-        .dashboard-card:nth-child(1) { animation-delay: 0.1s; }
-        .dashboard-card:nth-child(2) { animation-delay: 0.2s; }
-        .dashboard-card:nth-child(3) { animation-delay: 0.3s; }
-        .dashboard-card:nth-child(4) { animation-delay: 0.4s; }
+        .session-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            font-size: 14px;
+        }
+        
+        .session-item {
+            background-color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .session-label {
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .session-value {
+            color: #333;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
-    <div class="dashboard-container">
+    <div class="container">
         <!-- Header -->
-        <header class="dashboard-header">
-            <div class="welcome-section">
-                <h1 class="welcome-title">Tableau de bord Administrateur</h1>
-                <p class="welcome-subtitle">Gérez votre boutique Cadeaux Élégance</p>
-                
-                <div class="admin-info">
-                    <div class="admin-avatar">
-                        <?php echo strtoupper(substr($admin_username, 0, 1)); ?>
-                    </div>
-                    <div class="admin-details">
-                        <div class="admin-name"><?php echo htmlspecialchars($admin_username); ?></div>
-                        <div class="admin-role">
-                            <i class="fas fa-shield-alt"></i> 
-                            <?php echo htmlspecialchars(ucfirst($admin_role)); ?>
-                        </div>
+        <div class="header">
+            <div class="header-content">
+                <div>
+                    <h1><i class="fas fa-gift"></i> Tableau de bord - Heure du Cadeau</h1>
+                    <p>Gestion complète de votre boutique en ligne</p>
+                </div>
+                <div class="user-info">
+                    <p>Bienvenue, <strong><?php echo htmlspecialchars($admin_username); ?></strong></p>
+                    <div class="role-badge <?php echo $admin_role === 'superadmin' ? 'superadmin-badge' : ''; ?>">
+                        <i class="fas fa-user-shield"></i> <?php echo htmlspecialchars(ucfirst($admin_role)); ?>
                     </div>
                 </div>
             </div>
-        </header>
+        </div>
         
-        <!-- Main content -->
-        <main class="dashboard-main">
-            <!-- Section principale -->
-            <h2 class="section-title">
-                <i class="fas fa-tachometer-alt"></i>
-                Tableau de bord
-            </h2>
-            
-            <!-- Cartes principales -->
-            <div class="cards-grid">
-                <!-- Gestion des produits -->
-                <a href="admin_produits.php" class="dashboard-card">
-                    <div class="card-icon">
-                        <i class="fas fa-box"></i>
+        <?php if (isset($error_stats)): ?>
+            <div style="background-color: #ffebee; color: #c62828; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error_stats); ?>
+            </div>
+        <?php endif; ?>
+        
+        <!-- Statistiques principales -->
+        <div class="stats-grid">
+            <div class="stat-card products">
+                <div class="stat-header">
+                    <div class="stat-icon">
+                        <i class="fas fa-box-open"></i>
                     </div>
-                    <h3 class="card-title">Gestion des produits</h3>
-                    <p class="card-description">
-                        Ajoutez, modifiez ou supprimez des produits de votre catalogue.
-                        Gérez les stocks, les prix et les descriptions.
-                    </p>
-                    <div class="card-stats">
-                        <div>
-                            <div class="stat-number">CRUD</div>
-                            <div class="stat-label">Complet</div>
-                        </div>
-                        <i class="fas fa-arrow-right" style="color: #8a4baf;"></i>
+                    <div>
+                        <div class="stat-title">Produits</div>
+                        <div class="stat-value"><?php echo number_format($total_produits ?? 0); ?></div>
                     </div>
-                </a>
-                
-                <!-- Ajouter un administrateur -->
-                <a href="add_admin_simple.php" class="dashboard-card">
-                    <div class="card-icon">
-                        <i class="fas fa-user-plus"></i>
-                    </div>
-                    <h3 class="card-title">Ajouter un administrateur</h3>
-                    <p class="card-description">
-                        Créez de nouveaux comptes administrateurs pour votre équipe.
-                        Définissez les rôles et permissions.
-                    </p>
-                    <div class="card-stats">
-                        <div>
-                            <div class="stat-number">Admin+</div>
-                            <div class="stat-label">Nouveaux comptes</div>
-                        </div>
-                        <i class="fas fa-arrow-right" style="color: #8a4baf;"></i>
-                    </div>
-                </a>
-                
-                <!-- Voir le site -->
-                <a href="/sean/index.html" target="_blank" class="dashboard-card">
-                    <div class="card-icon">
-                        <i class="fas fa-eye"></i>
-                    </div>
-                    <h3 class="card-title">Voir le site public</h3>
-                    <p class="card-description">
-                        Consultez votre boutique telle qu'elle apparaît aux visiteurs.
-                        Vérifiez l'affichage des produits.
-                    </p>
-                    <div class="card-stats">
-                        <div>
-                            <div class="stat-number">Site</div>
-                            <div class="stat-label">Public</div>
-                        </div>
-                        <i class="fas fa-external-link-alt" style="color: #8a4baf;"></i>
-                    </div>
-                </a>
-                
-                <!-- Recherche de produits -->
-                <a href="produits.php" target="_blank" class="dashboard-card">
-                    <div class="card-icon">
-                        <i class="fas fa-search"></i>
-                    </div>
-                    <h3 class="card-title">Recherche de produits</h3>
-                    <p class="card-description">
-                        Testez le moteur de recherche de produits.
-                        Vérifiez les filtres et l'affichage des résultats.
-                    </p>
-                    <div class="card-stats">
-                        <div>
-                            <div class="stat-number">Test</div>
-                            <div class="stat-label">Recherche</div>
-                        </div>
-                        <i class="fas fa-external-link-alt" style="color: #8a4baf;"></i>
-                    </div>
-                </a>
+                </div>
+                <div class="stat-change">
+                    <i class="fas fa-chart-line"></i> Total des produits en boutique
+                </div>
             </div>
             
-            <!-- Actions rapides -->
-            <h3 class="section-title">
-                <i class="fas fa-bolt"></i>
-                Actions rapides
-            </h3>
+            <div class="stat-card orders">
+                <div class="stat-header">
+                    <div class="stat-icon">
+                        <i class="fas fa-shopping-cart"></i>
+                    </div>
+                    <div>
+                        <div class="stat-title">Commandes</div>
+                        <div class="stat-value"><?php echo number_format($total_commandes ?? 0); ?></div>
+                    </div>
+                </div>
+                <div class="stat-change">
+                    <i class="fas fa-chart-bar"></i> Commandes totales
+                </div>
+            </div>
             
-            <div class="quick-actions">
-                <a href="admin_produits.php?action=add" class="action-btn">
+            <div class="stat-card clients">
+                <div class="stat-header">
+                    <div class="stat-icon">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <div>
+                        <div class="stat-title">Clients</div>
+                        <div class="stat-value"><?php echo number_format($total_clients ?? 0); ?></div>
+                    </div>
+                </div>
+                <div class="stat-change">
+                    <i class="fas fa-user-plus"></i> Clients inscrits
+                </div>
+            </div>
+            
+            <div class="stat-card revenue">
+                <div class="stat-header">
+                    <div class="stat-icon">
+                        <i class="fas fa-euro-sign"></i>
+                    </div>
+                    <div>
+                        <div class="stat-title">Chiffre d'affaires</div>
+                        <div class="stat-value"><?php echo number_format($chiffre_affaires ?? 0, 2, ',', ' '); ?> €</div>
+                    </div>
+                </div>
+                <div class="stat-change">
+                    <i class="fas fa-chart-pie"></i> CA total
+                </div>
+            </div>
+            
+            <div class="stat-card alerts">
+                <div class="stat-header">
+                    <div class="stat-icon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div>
+                        <div class="stat-title">Alertes stock</div>
+                        <div class="stat-value"><?php echo number_format($alert_stock ?? 0); ?></div>
+                    </div>
+                </div>
+                <div class="stat-change negative">
+                    <i class="fas fa-bell"></i> Produits à réapprovisionner
+                </div>
+            </div>
+            
+            <div class="stat-card pending">
+                <div class="stat-header">
+                    <div class="stat-icon">
+                        <i class="fas fa-clock"></i>
+                    </div>
+                    <div>
+                        <div class="stat-title">Commandes en attente</div>
+                        <div class="stat-value"><?php echo number_format($commandes_attente ?? 0); ?></div>
+                    </div>
+                </div>
+                <div class="stat-change">
+                    <i class="fas fa-hourglass-half"></i> À traiter
+                </div>
+            </div>
+        </div>
+        
+        <!-- Actions rapides -->
+        <div class="quick-actions">
+            <h2><i class="fas fa-bolt"></i> Actions rapides</h2>
+            <div class="actions-grid">
+                <a href="admin_produits.php?action=add" class="action-card">
                     <div class="action-icon">
                         <i class="fas fa-plus-circle"></i>
                     </div>
-                    <div class="action-text">
-                        <div class="action-title">Nouveau produit</div>
-                        <div class="action-desc">Ajouter un produit au catalogue</div>
-                    </div>
+                    <div class="action-title">Ajouter un produit</div>
+                    <div class="action-desc">Créez un nouveau produit dans votre catalogue</div>
                 </a>
                 
-                <a href="admin_produits.php" class="action-btn">
+                <a href="admin_produits.php?action=list" class="action-card">
                     <div class="action-icon">
-                        <i class="fas fa-list"></i>
+                        <i class="fas fa-boxes"></i>
                     </div>
-                    <div class="action-text">
-                        <div class="action-title">Liste des produits</div>
-                        <div class="action-desc">Voir et gérer tous les produits</div>
-                    </div>
+                    <div class="action-title">Gérer les produits</div>
+                    <div class="action-desc">Modifiez, supprimez vos produits</div>
                 </a>
                 
-                <a href="add_admin_simple.php" class="action-btn">
+                <a href="admin_commandes.php" class="action-card">
                     <div class="action-icon">
-                        <i class="fas fa-user-cog"></i>
+                        <i class="fas fa-shopping-cart"></i>
                     </div>
-                    <div class="action-text">
-                        <div class="action-title">Ajouter admin</div>
-                        <div class="action-desc">Créer un nouveau compte admin</div>
-                    </div>
+                    <div class="action-title">Voir les commandes</div>
+                    <div class="action-desc">Gérez les commandes clients</div>
                 </a>
                 
-                <a href="../produits.php" target="_blank" class="action-btn">
+                <a href="admin_clients.php" class="action-card">
                     <div class="action-icon">
-                        <i class="fas fa-store"></i>
+                        <i class="fas fa-users"></i>
                     </div>
-                    <div class="action-text">
-                        <div class="action-title">Boutique</div>
-                        <div class="action-desc">Voir la boutique en ligne</div>
+                    <div class="action-title">Gérer les clients</div>
+                    <div class="action-desc">Consultez la liste des clients</div>
+                </a>
+                
+                <a href="admin_categories.php" class="action-card">
+                    <div class="action-icon">
+                        <i class="fas fa-tags"></i>
                     </div>
+                    <div class="action-title">Catégories</div>
+                    <div class="action-desc">Organisez vos produits par catégories</div>
+                </a>
+                
+                <a href="admin_promotions.php" class="action-card">
+                    <div class="action-icon">
+                        <i class="fas fa-percent"></i>
+                    </div>
+                    <div class="action-title">Promotions</div>
+                    <div class="action-desc">Créez des codes promotionnels</div>
                 </a>
             </div>
-            
-            <!-- Informations système -->
-            <div class="system-info">
-                <h4 style="color: #333; margin-bottom: 20px; font-size: 1.2rem;">
-                    <i class="fas fa-info-circle"></i> Informations système
-                </h4>
+        </div>
+        
+        <!-- Informations système -->
+        <div class="system-info">
+            <h2><i class="fas fa-info-circle"></i> Informations système</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Version PHP</div>
+                    <div class="info-value"><?php echo phpversion(); ?></div>
+                </div>
                 
-                <div class="info-grid">
-                    <div class="info-item">
-                        <div class="info-icon">
-                            <i class="fas fa-calendar"></i>
-                        </div>
-                        <div class="info-content">
-                            <div class="info-label">Date et heure</div>
-                            <div class="info-value"><?php echo date('d/m/Y H:i:s'); ?></div>
-                        </div>
-                    </div>
-                    
-                    <div class="info-item">
-                        <div class="info-icon">
-                            <i class="fas fa-user"></i>
-                        </div>
-                        <div class="info-content">
-                            <div class="info-label">Connecté en tant que</div>
-                            <div class="info-value"><?php echo htmlspecialchars($admin_username); ?></div>
-                        </div>
-                    </div>
-                    
-                    <div class="info-item">
-                        <div class="info-icon">
-                            <i class="fas fa-network-wired"></i>
-                        </div>
-                        <div class="info-content">
-                            <div class="info-label">Adresse IP</div>
-                            <div class="info-value"><?php echo getClientIp(); ?></div>
-                        </div>
-                    </div>
-                    
-                    <div class="info-item">
-                        <div class="info-icon">
-                            <i class="fas fa-shield-alt"></i>
-                        </div>
-                        <div class="info-content">
-                            <div class="info-label">Rôle</div>
-                            <div class="info-value"><?php echo htmlspecialchars(ucfirst($admin_role)); ?></div>
-                        </div>
-                    </div>
+                <div class="info-item">
+                    <div class="info-label">Base de données</div>
+                    <div class="info-value">heureducadeau</div>
+                </div>
+                
+                <div class="info-item">
+                    <div class="info-label">Serveur</div>
+                    <div class="info-value"><?php echo $_SERVER['SERVER_SOFTWARE'] ?? 'Apache'; ?></div>
+                </div>
+                
+                <div class="info-item">
+                    <div class="info-label">Dernière connexion</div>
+                    <div class="info-value"><?php echo date('d/m/Y H:i:s'); ?></div>
                 </div>
             </div>
-        </main>
+        </div>
         
-        <!-- Footer -->
-        <footer class="dashboard-footer">
-            <a href="login_simple.php?logout=1" class="logout-btn">
-                <i class="fas fa-sign-out-alt"></i>
-                Déconnexion
-            </a>
-            <p class="footer-text">
-                Cadeaux Élégance - Administration © <?php echo date('Y'); ?>
-                <br>
-                <small style="color: #888;">Session sécurisée | <?php echo $_SERVER['HTTP_HOST']; ?></small>
-            </p>
-        </footer>
+        <!-- Informations de session -->
+        <div class="session-info">
+            <h3><i class="fas fa-user-circle"></i> Informations de session</h3>
+            <div class="session-details">
+                <div class="session-item">
+                    <div class="session-label">ID Admin</div>
+                    <div class="session-value"><?php echo htmlspecialchars($_SESSION['admin_id'] ?? 'Non défini'); ?></div>
+                </div>
+                
+                <div class="session-item">
+                    <div class="session-label">Nom d'utilisateur</div>
+                    <div class="session-value"><?php echo htmlspecialchars($_SESSION['admin_username'] ?? 'Non défini'); ?></div>
+                </div>
+                
+                <div class="session-item">
+                    <div class="session-label">Rôle</div>
+                    <div class="session-value"><?php echo htmlspecialchars($_SESSION['admin_role'] ?? 'Non défini'); ?></div>
+                </div>
+                
+                <div class="session-item">
+                    <div class="session-label">IP Client</div>
+                    <div class="session-value"><?php echo getClientIp(); ?></div>
+                </div>
+                
+                <div class="session-item">
+                    <div class="session-label">Session ID</div>
+                    <div class="session-value"><?php echo session_id(); ?></div>
+                </div>
+                
+                <div class="session-item">
+                    <div class="session-label">Dernière activité</div>
+                    <div class="session-value"><?php echo isset($_SESSION['last_activity']) ? date('H:i:s', $_SESSION['last_activity']) : 'Maintenant'; ?></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Menu de navigation -->
+        <div style="margin-top: 40px; padding: 25px; background-color: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);">
+            <h2 style="margin-bottom: 20px; color: #333;"><i class="fas fa-cogs"></i> Administration complète</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <a href="admin_produits.php" style="background-color: #2196F3; color: white; padding: 15px; border-radius: 8px; text-decoration: none; text-align: center; font-weight: 500; transition: background-color 0.3s;">
+                    <i class="fas fa-box"></i> Produits
+                </a>
+                
+                <a href="admin_categories.php" style="background-color: #4CAF50; color: white; padding: 15px; border-radius: 8px; text-decoration: none; text-align: center; font-weight: 500; transition: background-color 0.3s;">
+                    <i class="fas fa-tags"></i> Catégories
+                </a>
+                
+                <a href="admin_commandes.php" style="background-color: #FF9800; color: white; padding: 15px; border-radius: 8px; text-decoration: none; text-align: center; font-weight: 500; transition: background-color 0.3s;">
+                    <i class="fas fa-shopping-cart"></i> Commandes
+                </a>
+                
+                <a href="admin_clients.php" style="background-color: #9C27B0; color: white; padding: 15px; border-radius: 8px; text-decoration: none; text-align: center; font-weight: 500; transition: background-color 0.3s;">
+                    <i class="fas fa-users"></i> Clients
+                </a>
+                
+                <a href="admin_promotions.php" style="background-color: #F44336; color: white; padding: 15px; border-radius: 8px; text-decoration: none; text-align: center; font-weight: 500; transition: background-color 0.3s;">
+                    <i class="fas fa-percent"></i> Promotions
+                </a>
+                
+                <a href="admin_pages.php" style="background-color: #607D8B; color: white; padding: 15px; border-radius: 8px; text-decoration: none; text-align: center; font-weight: 500; transition: background-color 0.3s;">
+                    <i class="fas fa-file-alt"></i> Pages
+                </a>
+                
+                <a href="admin_configuration.php" style="background-color: #795548; color: white; padding: 15px; border-radius: 8px; text-decoration: none; text-align: center; font-weight: 500; transition: background-color 0.3s;">
+                    <i class="fas fa-cog"></i> Configuration
+                </a>
+                
+                <a href="logout.php" style="background-color: #333; color: white; padding: 15px; border-radius: 8px; text-decoration: none; text-align: center; font-weight: 500; transition: background-color 0.3s;">
+                    <i class="fas fa-sign-out-alt"></i> Déconnexion
+                </a>
+            </div>
+        </div>
+        
+        <!-- Super Admin Features -->
+        <?php if ($admin_role === 'superadmin'): ?>
+        <div style="margin-top: 30px; padding: 25px; background: linear-gradient(135deg, #ff6b6b 0%, #ffa8a8 100%); border-radius: 12px; color: white;">
+            <h2 style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                <i class="fas fa-crown"></i> Fonctions Super Admin
+            </h2>
+            <p style="margin-bottom: 20px; opacity: 0.9;">En tant que Super Admin, vous avez accès à toutes les fonctionnalités :</p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                <div style="background-color: rgba(255, 255, 255, 0.1); padding: 15px; border-radius: 8px;">
+                    <i class="fas fa-user-shield"></i> <strong>Gestion administrateurs</strong>
+                    <p style="font-size: 14px; margin-top: 5px;">Ajoutez/modifiez/supprimez des administrateurs</p>
+                </div>
+                <div style="background-color: rgba(255, 255, 255, 0.1); padding: 15px; border-radius: 8px;">
+                    <i class="fas fa-database"></i> <strong>Sauvegarde BDD</strong>
+                    <p style="font-size: 14px; margin-top: 5px;">Sauvegardez/restaurez la base de données</p>
+                </div>
+                <div style="background-color: rgba(255, 255, 255, 0.1); padding: 15px; border-radius: 8px;">
+                    <i class="fas fa-chart-line"></i> <strong>Statistiques avancées</strong>
+                    <p style="font-size: 14px; margin-top: 5px;">Analyses détaillées et rapports</p>
+                </div>
+                <div style="background-color: rgba(255, 255, 255, 0.1); padding: 15px; border-radius: 8px;">
+                    <i class="fas fa-cogs"></i> <strong>Configuration système</strong>
+                    <p style="font-size: 14px; margin-top: 5px;">Paramètres avancés du site</p>
+                </div>
+            </div>
+            <div style="margin-top: 20px;">
+                <a href="admin_administrateurs.php" style="background-color: white; color: #ff6b6b; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">
+                    <i class="fas fa-users-cog"></i> Gérer les administrateurs
+                </a>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
     
-    <!-- Font Awesome -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
-    
     <script>
-        // Animation au chargement
-        document.addEventListener('DOMContentLoaded', function() {
-            // Ajouter un effet de pulse sur les cartes au survol
-            const cards = document.querySelectorAll('.dashboard-card');
-            cards.forEach(card => {
-                card.addEventListener('mouseenter', function() {
-                    this.style.animation = 'pulse 0.3s';
-                });
-                
-                card.addEventListener('mouseleave', function() {
-                    this.style.animation = '';
-                });
+        // Mettre à jour l'heure toutes les minutes
+        function updateTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('fr-FR');
+            document.querySelectorAll('.time-display').forEach(el => {
+                el.textContent = timeString;
             });
-            
-            // Notification de bienvenue
-            console.log('Bienvenue dans l\'administration, <?php echo htmlspecialchars($admin_username); ?>!');
-            
-            // Key shortcuts (optionnel)
-            document.addEventListener('keydown', function(e) {
-                // Ctrl + P pour produits
-                if (e.ctrlKey && e.key === 'p') {
-                    e.preventDefault();
-                    window.location.href = 'admin_produits.php';
-                }
-                
-                // Ctrl + N pour nouveau produit
-                if (e.ctrlKey && e.key === 'n') {
-                    e.preventDefault();
-                    window.location.href = 'admin_produits.php?action=add';
-                }
-                
-                // Ctrl + Q pour déconnexion
-                if (e.ctrlKey && e.key === 'q') {
-                    e.preventDefault();
-                    if (confirm('Déconnexion ?')) {
-                        window.location.href = 'login.php?logout=1';
-                    }
-                }
-            });
-            
-            // Afficher un message si des raccourcis sont disponibles
-            if (window.innerWidth > 768) {
-                console.log('Raccourcis clavier disponibles:');
-                console.log('Ctrl+P: Gestion des produits');
-                console.log('Ctrl+N: Nouveau produit');
-                console.log('Ctrl+Q: Déconnexion');
-            }
-        });
+        }
         
-        // Style pour l'animation pulse
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes pulse {
-                0% { transform: scale(1); }
-                50% { transform: scale(1.02); }
-                100% { transform: scale(1); }
-            }
-        `;
-        document.head.appendChild(style);
+        // Mettre à jour toutes les minutes
+        setInterval(updateTime, 60000);
+        
+        // Initialiser l'heure
+        updateTime();
+        
+        // Animation des cartes statistiques
+        document.addEventListener('DOMContentLoaded', function() {
+            const statCards = document.querySelectorAll('.stat-card');
+            statCards.forEach((card, index) => {
+                card.style.animationDelay = (index * 0.1) + 's';
+                card.classList.add('fade-in');
+            });
+        });
     </script>
 </body>
 </html>

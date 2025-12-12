@@ -1,5 +1,5 @@
 <?php
-// produitsprincipale.php - Page principale d'affichage des produits
+// index.php - Page principale d'affichage des produits
 session_start();
 
 // Configuration de la base de données DIRECTE (sans classe)
@@ -483,7 +483,7 @@ try {
             </a>
             <nav>
                 <a href="index.html" style="color: white; text-decoration: none; margin-left: 20px;">Accueil</a>
-                <a href="produitsprincipale.php" style="color: white; text-decoration: none; margin-left: 20px;">Produits</a>
+                <a href="index.php" style="color: white; text-decoration: none; margin-left: 20px;">Produits</a>
                 <a href="panier.html" style="color: white; text-decoration: none; margin-left: 20px; position: relative;">
                     <i class="fas fa-shopping-cart"></i> Panier
                     <span id="cartCount" class="cart-count" style="display: none;">0</span>
@@ -560,7 +560,7 @@ try {
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                         <p><strong><?= $totalProduits ?></strong> produit(s) trouvé(s)</p>
                         <div>
-                            <a href="produitsprincipale.php" style="padding: 8px 15px; background: #f8f9fa; color: #2c3e50; text-decoration: none; border-radius: 6px; margin-right: 10px;">
+                            <a href="index.php" style="padding: 8px 15px; background: #f8f9fa; color: #2c3e50; text-decoration: none; border-radius: 6px; margin-right: 10px;">
                                 <i class="fas fa-redo"></i> Réinitialiser
                             </a>
                         </div>
@@ -574,7 +574,7 @@ try {
                                 <i class="fas fa-search fa-3x" style="color: #ddd; margin-bottom: 20px;"></i>
                                 <h3>Aucun résultat trouvé</h3>
                                 <p>Essayez de modifier vos critères de recherche</p>
-                                <a href="produitsprincipale.php" style="display: inline-block; margin-top: 20px; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 6px;">
+                                <a href="index.php" style="display: inline-block; margin-top: 20px; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 6px;">
                                     <i class="fas fa-redo"></i> Réinitialiser la recherche
                                 </a>
                             </div>
@@ -673,7 +673,7 @@ try {
                         <?php if ($totalPages > 1): ?>
                         <div style="display: flex; justify-content: center; gap: 10px; margin-top: 30px;">
                             <?php if ($page > 1): ?>
-                            <a href="produitsprincipale.php?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>" 
+                            <a href="index.php?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>" 
                                style="padding: 10px 15px; background: #f8f9fa; color: #2c3e50; text-decoration: none; border-radius: 6px;">
                                 ← Précédent
                             </a>
@@ -682,7 +682,7 @@ try {
                             <span style="padding: 10px 15px;">Page <?= $page ?> sur <?= $totalPages ?></span>
                             
                             <?php if ($page < $totalPages): ?>
-                            <a href="produitsprincipale.php?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>" 
+                            <a href="index.php?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>" 
                                style="padding: 10px 15px; background: #f8f9fa; color: #2c3e50; text-decoration: none; border-radius: 6px;">
                                 Suivant →
                             </a>
@@ -703,7 +703,7 @@ try {
     </footer>
 
     <script>
-        // Gestionnaire de panier pour la page produitsprincipale.php
+        // Gestionnaire de panier pour la page index.php
         class PanierManager {
             constructor() {
                 this.apiUrl = 'api/panier.php';

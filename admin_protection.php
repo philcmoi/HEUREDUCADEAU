@@ -1,156 +1,134 @@
 <?php
-/**
- * admin_protection.php - VERSION SIMPLIFIÉE SANS ERREURS
- * @version 1.0 - Stable
- */
+// admin_protection.php - Adapté à heureducadeau
+// Démarrer la session UNIQUEMENT si elle n'est pas déjà démarrée
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-// ============ CLASSE CSRFProtection ============
-if (!class_exists('CSRFProtection')) {
-    class CSRFProtection {
-        private static $tokenName = 'admin_csrf_token';
+// ============================================
+// CORRECTION : Éviter la déclaration multiple
+// ============================================
+if (!function_exists('getClientIp')) {
+    function getClientIp() {
+        $ip = '';
         
-        public static function generateToken() {
-            if (!isset($_SESSION[self::$tokenName])) {
-                $_SESSION[self::$tokenName] = bin2hex(random_bytes(32));
-            }
-            return $_SESSION[self::$tokenName];
+        if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
+            $ip = $_SERVER['HTTP_CLIENT_IP'];
+        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+        } else {
+            $ip = $_SERVER['REMOTE_ADDR'];
         }
         
-        public static function validateToken($token) {
-            if (!isset($_SESSION[self::$tokenName])) {
-                return false;
-            }
-            
-            $isValid = hash_equals($_SESSION[self::$tokenName], $token);
-            
-            if ($isValid) {
-                unset($_SESSION[self::$tokenName]);
-            }
-            
-            return $isValid;
+        // Pour les proxies, prendre le premier IP si liste
+        if (strpos($ip, ',') !== false) {
+            $ips = explode(',', $ip);
+            $ip = trim($ips[0]);
         }
-    }
-}
-
-// ============ FONCTIONS DE BASE ============
-function isAuthenticated() {
-    return isset($_SESSION['admin_logged_in']) && 
-           $_SESSION['admin_logged_in'] === true &&
-           isset($_SESSION['admin_username']);
-}
-
-function getClientIp() {
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-    
-    // Vérifier les headers proxy
-    $headers = ['HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_FORWARDED'];
-    
-    foreach ($headers as $header) {
-        if (isset($_SERVER[$header]) && filter_var($_SERVER[$header], FILTER_VALIDATE_IP)) {
-            $ip = $_SERVER[$header];
-            break;
-        }
-    }
-    
-    return $ip;
-}
-
-function cleanInput($data) {
-    $data = trim($data);
-    $data = stripslashes($data);
-    $data = htmlspecialchars($data, ENT_QUOTES, 'UTF-8');
-    return $data;
-}
-
-// ============ FONCTION DE CONNEXION ============
-function adminLogin($username, $password) {
-    // Mode démo simple
-    $validUsers = [
-        'admin' => password_hash('admin123', PASSWORD_DEFAULT),
-        'superadmin' => password_hash('SuperAdmin123!', PASSWORD_DEFAULT)
-    ];
-    
-    // Nettoyer l'input
-    $username = cleanInput($username);
-    
-    // Vérifier l'utilisateur
-    if (isset($validUsers[$username]) && password_verify($password, $validUsers[$username])) {
-        $_SESSION['admin_logged_in'] = true;
-        $_SESSION['admin_id'] = 1;
-        $_SESSION['admin_username'] = $username;
-        $_SESSION['admin_role'] = ($username === 'superadmin') ? 'superadmin' : 'admin';
-        $_SESSION['admin_ip'] = getClientIp();
-        $_SESSION['last_activity'] = time();
         
-        return [
-            'success' => true,
-            'redirect' => 'dashboard.php'
-        ];
-    } else {
-        return [
-            'success' => false,
-            'message' => 'Nom d\'utilisateur ou mot de passe incorrect.'
-        ];
+        return $ip;
     }
 }
 
-// ============ FONCTION DE PROTECTION ============
-function requireAdmin($requiredRole = 'editor', $redirectOnFail = true) {
-    if (!isAuthenticated()) {
-        if ($redirectOnFail) {
-            header('Location: login.php?expired=1');
-            exit;
-        }
-        return false;
-    }
-    
-    // Vérification des rôles simple
-    $userRole = $_SESSION['admin_role'] ?? 'editor';
-    $roleHierarchy = [
-        'superadmin' => 4,
-        'admin' => 3, 
-        'moderator' => 2,
-        'editor' => 1
-    ];
-    
-    $userLevel = $roleHierarchy[$userRole] ?? 0;
-    $requiredLevel = $roleHierarchy[$requiredRole] ?? 0;
-    
-    if ($userLevel < $requiredLevel) {
-        if ($redirectOnFail) {
-            header('HTTP/1.0 403 Forbidden');
-            echo '<h1>Accès refusé</h1><p>Vous n\'avez pas les permissions nécessaires.</p>';
-            exit;
-        }
-        return false;
-    }
-    
-    return true;
+// ============================================
+// CONNEXION À LA BASE DE DONNÉES heureducadeau
+// ============================================
+$host = 'localhost';
+$dbname = 'heureducadeau';
+$username_db = 'root';
+$password_db = '';
+
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username_db, $password_db);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch(PDOException $e) {
+    die("Erreur de connexion à la base de données : " . $e->getMessage());
 }
 
-// ============ FONCTION DE DÉCONNEXION ============
-function adminLogout() {
-    $_SESSION = array();
+// ============================================
+// VÉRIFICATION DE LA SESSION ET DU RÔLE
+// ============================================
+
+// Vérifier si l'utilisateur est connecté
+if (!isset($_SESSION['admin_id']) || empty($_SESSION['admin_id'])) {
+    error_log("Redirection login: admin_id non défini");
+    header('Location: login.php?error=not_logged_in');
+    exit();
+}
+
+// Vérifier si le rôle est défini
+if (!isset($_SESSION['admin_role']) || empty($_SESSION['admin_role'])) {
+    error_log("Redirection login: admin_role non défini");
+    header('Location: login.php?error=no_role');
+    exit();
+}
+
+// Définir les rôles autorisés selon votre table administrateurs
+$allowed_roles = ['superadmin', 'admin', 'moderator', 'editor'];
+
+// Vérifier si le rôle est autorisé
+$admin_role = $_SESSION['admin_role'];
+if (!in_array($admin_role, $allowed_roles)) {
+    error_log("Redirection login: rôle non autorisé - " . $admin_role);
+    header('Location: login.php?error=insufficient_privileges&role=' . urlencode($admin_role));
+    exit();
+}
+
+// Vérifier si le compte est actif dans la base de données
+try {
+    $sql = "SELECT status FROM administrateurs WHERE id = :id AND username = :username";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([
+        'id' => $_SESSION['admin_id'],
+        'username' => $_SESSION['admin_username']
+    ]);
+    $admin = $stmt->fetch(PDO::FETCH_ASSOC);
     
-    // Détruire le cookie de session
-    if (ini_get("session.use_cookies")) {
-        $params = session_get_cookie_params();
-        setcookie(session_name(), '', time() - 42000,
-            $params["path"], $params["domain"],
-            $params["secure"], $params["httponly"]
-        );
+    if (!$admin) {
+        error_log("Redirection login: admin non trouvé en base");
+        session_destroy();
+        header('Location: login.php?error=account_not_found');
+        exit();
     }
     
+    if ($admin['status'] !== 'active') {
+        error_log("Redirection login: compte non actif - statut: " . $admin['status']);
+        header('Location: login.php?error=account_inactive');
+        exit();
+    }
+} catch(PDOException $e) {
+    error_log("Erreur vérification admin: " . $e->getMessage());
+}
+
+// Vérifier le timeout de session (optionnel)
+$session_timeout = 3600; // 1 heure en secondes
+if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > $session_timeout)) {
+    // Session expirée
+    session_unset();
     session_destroy();
+    error_log("Redirection login: session expirée");
+    header('Location: login.php?error=session_expired');
+    exit();
 }
 
-// ============ FONCTION POUR PAGE PROTÉGÉE ============
-function secureAdminPage($requiredRole = 'editor') {
-    // Vérifier l'accès
-    requireAdmin($requiredRole);
-    
-    // Ajouter des en-têtes de sécurité basiques
-    header('X-Frame-Options: DENY');
-    header('X-Content-Type-Options: nosniff');
+// Mettre à jour le timestamp de dernière activité
+$_SESSION['last_activity'] = time();
+
+// Mettre à jour la dernière connexion en base de données
+if (isset($_SESSION['admin_id'])) {
+    try {
+        $sql = "UPDATE administrateurs SET last_login = NOW() WHERE id = :id";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(['id' => $_SESSION['admin_id']]);
+    } catch(PDOException $e) {
+        error_log("Erreur mise à jour last_login: " . $e->getMessage());
+    }
+}
+
+// Debug mode : afficher les infos de session si demandé
+if (isset($_GET['debug_session']) && $_GET['debug_session'] == 1) {
+    echo '<pre>Session debug:<br>';
+    print_r($_SESSION);
+    echo '</pre>';
 }
 ?>

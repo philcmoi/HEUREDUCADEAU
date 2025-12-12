@@ -1,22 +1,15 @@
 <?php
 /**
- * add_admin_simple.php - Version simplifiée pour login_simple.php
+ * add_admin_simple.php - Version simplifiée pour login_simple.php PROTÉGÉ
  * Permet à tous les administrateurs connectés d'ajouter d'autres admins
  */
 
-// Démarrer la session
+// Démarrer la session et inclure la protection
 session_start();
+require_once 'admin_protection.php'; // AJOUTÉ
 
-// Vérifier si l'utilisateur est connecté
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    header('Location: login_simple.php');
-    exit;
-}
-
-// MODIFICATION ICI : Autoriser tous les admins, pas seulement les superadmins
-// if (!isset($_SESSION['admin_role']) || $_SESSION['admin_role'] !== 'superadmin') {
-//     die('<h1>Accès refusé</h1><p>Seuls les super administrateurs peuvent ajouter de nouveaux administrateurs.</p>');
-// }
+// Vérifier l'accès admin
+secureAdminPage('admin'); // AJOUTÉ
 
 // Titre de la page
 $page_title = "Ajouter un Administrateur";
@@ -33,6 +26,12 @@ $form_data = [
 
 // Traitement du formulaire
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Vérifier le token CSRF
+    $csrf_token = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken($csrf_token)) {
+        die('Token CSRF invalide. Action refusée.');
+    }
+    
     // Récupérer et nettoyer les données
     $form_data = [
         'username' => htmlspecialchars(trim($_POST['username'] ?? ''), ENT_QUOTES, 'UTF-8'),
@@ -43,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'confirm_password' => $_POST['confirm_password'] ?? ''
     ];
     
-    // MODIFICATION ICI : Si l'utilisateur n'est pas superadmin, il ne peut créer que des admin normaux
+    // Si l'utilisateur n'est pas superadmin, il ne peut créer que des admin normaux
     if (($_SESSION['admin_role'] ?? 'admin') !== 'superadmin') {
         $form_data['role'] = 'admin'; // Forcer le rôle admin
     }
@@ -186,6 +185,9 @@ function addAdminToLoginFile($data, $hashed_password) {
         'message' => 'Impossible de modifier le fichier login_simple.php.'
     ];
 }
+
+// Générer un token CSRF
+$csrf_token = CSRFProtection::generateToken();
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -336,6 +338,15 @@ function addAdminToLoginFile($data, $hashed_password) {
             margin-bottom: 15px;
             font-size: 14px;
         }
+        
+        .security-info {
+            background: #d4edda;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-size: 12px;
+            color: #155724;
+        }
     </style>
 </head>
 <body>
@@ -350,6 +361,7 @@ function addAdminToLoginFile($data, $hashed_password) {
         <div class="user-info <?php echo $is_superadmin ? 'superadmin' : ''; ?>">
             <strong>👤 <?php echo htmlspecialchars($_SESSION['admin_username'] ?? 'Inconnu'); ?></strong>
             | Rôle : <strong><?php echo htmlspecialchars($user_role); ?></strong>
+            | IP : <strong><?php echo getClientIp(); ?></strong>
             <?php if ($is_superadmin): ?>
                 <br><small>✨ Vous avez les droits complets</small>
             <?php else: ?>
@@ -379,6 +391,8 @@ function addAdminToLoginFile($data, $hashed_password) {
         
         <!-- Formulaire -->
         <form method="POST" action="">
+            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>"> <!-- AJOUTÉ -->
+            
             <div class="form-group">
                 <label for="username">Nom d'utilisateur *</label>
                 <input type="text" 
@@ -449,6 +463,12 @@ function addAdminToLoginFile($data, $hashed_password) {
                 </ul>
             </div>
             
+            <!-- Info sécurité -->
+            <div class="security-info">
+                <i class="fas fa-shield-alt"></i> 
+                <strong>Sécurité :</strong> Cette action est protégée par token CSRF
+            </div>
+            
             <button type="submit" class="btn">➕ Créer l'administrateur</button>
             <a href="dashboard.php" class="btn btn-secondary">← Retour au tableau de bord</a>
             <a href="login_simple.php?logout=1" class="btn btn-danger">🚪 Déconnexion</a>
@@ -457,7 +477,7 @@ function addAdminToLoginFile($data, $hashed_password) {
         <!-- Information -->
         <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #666; font-size: 14px;">
             <p><strong>💡 Note :</strong> L'administrateur sera ajouté directement dans le fichier login_simple.php</p>
-            <p>Utilisateurs actuels : admin, superadmin (mot de passe : password)</p>
+            <p><i class="fas fa-clock"></i> Session active depuis : <?php echo isset($_SESSION['last_activity']) ? date('H:i:s', $_SESSION['last_activity']) : 'N/A'; ?></p>
         </div>
     </div>
     
