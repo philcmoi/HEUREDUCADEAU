@@ -26,8 +26,8 @@ function getPDOConnection() {
         try {
             $pdo = new PDO(
                 "mysql:host=localhost;dbname=heureducadeau;charset=utf8",
-                "root",
-                "",
+                "Philippe",
+                "l@99339R",
                 [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
