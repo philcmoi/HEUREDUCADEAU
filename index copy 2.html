@@ -668,7 +668,7 @@
         <a href="index.html" class="logo">
           <i class="fas fa-gift logo-icon"></i>
           <span class="logo-text"
-            >HEURE<span class="logo-highlight"> DU CADEAU</span></span
+            >HEURE<span class="logo-highlight">DU CADEAU</span></span
           >
         </a>
 
@@ -681,7 +681,7 @@
               >
             </li>
             <li>
-              <a href="index.php" class="nav-link"
+              <a href="produitsprincipale.php" class="nav-link"
                 ><i class="fas fa-box-open"></i> Cadeaux</a
               >
             </li>
@@ -719,7 +719,7 @@
             >
           </li>
           <li>
-            <a href="index.php" class="nav-mobile-link"
+            <a href="produitsprincipale.php" class="nav-mobile-link"
               ><i class="fas fa-box-open"></i> Cadeaux</a
             >
           </li>
@@ -752,7 +752,7 @@
             les occasions
           </p>
           <div class="hero-buttons">
-            <a href="index.php" class="btn btn-primary"
+            <a href="produitsprincipale.php" class="btn btn-primary"
               >Explorer la collection</a
             >
             <a href="#categories" class="btn btn-secondary"
@@ -781,7 +781,9 @@
             </div>
             <h3>Anniversaires</h3>
             <p>Cadeaux uniques pour célébrer les anniversaires</p>
-            <a href="index.php?categorie=anniversaire" class="category-link"
+            <a
+              href="produitsprincipale.php?categorie=anniversaire"
+              class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -789,7 +791,9 @@
             <div class="category-icon"><i class="fas fa-heart"></i></div>
             <h3>Saint-Valentin</h3>
             <p>Romantique et mémorable</p>
-            <a href="index.php?categorie=valentin" class="category-link"
+            <a
+              href="produitsprincipale.php?categorie=valentin"
+              class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -797,7 +801,9 @@
             <div class="category-icon"><i class="fas fa-glass-cheers"></i></div>
             <h3>Mariage</h3>
             <p>Cadeaux de mariage élégants</p>
-            <a href="index.php?categorie=mariage" class="category-link"
+            <a
+              href="produitsprincipale.php?categorie=mariage"
+              class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -805,7 +811,9 @@
             <div class="category-icon"><i class="fas fa-baby"></i></div>
             <h3>Naissance</h3>
             <p>Pour accueillir bébé</p>
-            <a href="index.php?categorie=naissance" class="category-link"
+            <a
+              href="produitsprincipale.php?categorie=naissance"
+              class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -815,7 +823,9 @@
             </div>
             <h3>Diplômés</h3>
             <p>Pour célébrer la réussite</p>
-            <a href="index.php?categorie=diplome" class="category-link"
+            <a
+              href="produitsprincipale.php?categorie=diplome"
+              class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -825,7 +835,9 @@
             </div>
             <h3>Noël</h3>
             <p>Magie des fêtes de fin d'année</p>
-            <a href="index.php?categorie=noel" class="category-link"
+            <a
+              href="produitsprincipale.php?categorie=noel"
+              class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -847,7 +859,9 @@
         </div>
 
         <div class="text-center">
-          <a href="index.php" class="btn btn-primary">Voir tous les produits</a>
+          <a href="produitsprincipale.php" class="btn btn-primary"
+            >Voir tous les produits</a
+          >
         </div>
       </div>
     </section>
@@ -1017,7 +1031,7 @@
           <h3>Liens rapides</h3>
           <ul class="footer-links">
             <li><a href="index.html">Accueil</a></li>
-            <li><a href="index.php">Tous les cadeaux</a></li>
+            <li><a href="produitsprincipale.php">Tous les cadeaux</a></li>
             <li><a href="apropos.html">À propos</a></li>
             <li><a href="contact.html">Contact</a></li>
             <li><a href="panier.html">Mon panier</a></li>
@@ -1082,9 +1096,9 @@
       // CONFIGURATION AVEC BASE DE DONNÉES - VERSION CORRIGÉE
       // ==============================================
 
-      // CORRECTION IMPORTANTE
-      const API_PRODUITS_URL = "/api/produits.php?action=featured&limit=4";
-      const API_PANIER_URL = "/api/panier.php";
+      // CORRECTION IMPORTANTE : Ajouter /sean/ devant les URLs
+      const API_PRODUITS_URL = "/sean/api/produits.php?action=featured&limit=4";
+      const API_PANIER_URL = "/sean/api/panier.php";
 
       console.log("=== CONFIGURATION AVEC BASE DE DONNÉES ===");
       console.log("URL API Produits:", API_PRODUITS_URL);
@@ -1455,7 +1469,7 @@
 
           // Image du produit - CORRECTION : chemin complet
           const productImage =
-            "//" + (product.image || "img/default-product.jpg");
+            "/sean/" + (product.image || "img/default-product.jpg");
 
           // État du stock
           const stockQuantity = product.quantite_stock || 0;
@@ -1477,7 +1491,7 @@
               <div class="product-image">
                 <img src="${productImage}"
                      alt="${product.nom}"
-                     onerror="this.onerror=null;this.src='/img/default-product.jpg'">
+                     onerror="this.onerror=null;this.src='/sean/img/default-product.jpg'">
                 <div class="product-overlay">
                   <i class="fas fa-eye"></i>
                 </div>
@@ -1520,7 +1534,7 @@
                     <i class="fas fa-cart-plus"></i> 
                     ${isDisabled ? "Épuisé" : "Ajouter"}
                   </button>
-                  <a href="/index.php?categorie=${encodeURIComponent(
+                  <a href="/sean/produitsprincipale.php?categorie=${encodeURIComponent(
                     product.categorie_nom || ""
                   )}" 
                      class="btn-view">

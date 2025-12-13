@@ -1432,3 +1432,180 @@ input:checked + .toggle-slider:before {
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   }
 }
+
+/* Styles pour les vraies infos produits */
+.cart-item-category {
+  font-size: 0.8rem;
+  color: #3498db;
+  margin: 5px 0;
+  font-weight: 500;
+}
+
+.cart-item-desc {
+  font-size: 0.85rem;
+  color: #666;
+  margin: 5px 0;
+  line-height: 1.3;
+}
+
+.cart-item-rating {
+  margin: 5px 0;
+}
+
+.cart-item-rating .stars {
+  color: #f1c40f;
+  font-size: 0.9rem;
+}
+
+.stock-info {
+  display: block;
+  font-size: 0.75rem;
+  color: #7f8c8d;
+  margin-top: 5px;
+  text-align: center;
+}
+
+.quantity-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quantity-input:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+/* Style pour l'image produit */
+.cart-item-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+/* Notification améliorée */
+.cart-notification {
+  animation: notificationSlideIn 0.3s ease;
+  font-family: "Poppins", sans-serif;
+}
+
+@keyframes notificationSlideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes notificationSlideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Styles pour les vraies infos produits */
+.cart-item-category {
+  font-size: 0.8rem;
+  color: #3498db;
+  margin: 5px 0;
+  font-weight: 500;
+}
+
+.cart-item-desc {
+  font-size: 0.85rem;
+  color: #666;
+  margin: 5px 0;
+  line-height: 1.3;
+  max-height: 40px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cart-item-rating {
+  margin: 5px 0;
+}
+
+.cart-item-rating .stars {
+  color: #f1c40f;
+  font-size: 0.9rem;
+}
+
+.stock-info {
+  display: block;
+  font-size: 0.75rem;
+  color: #7f8c8d;
+  margin-top: 5px;
+  text-align: center;
+}
+
+.quantity-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Notification améliorée */
+@keyframes notificationSlideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes notificationSlideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Animation du compteur */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.cart-count.pulse {
+  animation: pulse 0.6s ease-in-out;
+}
+
+/* Image produit */
+.cart-item-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .cart-item-desc {
+    display: none;
+  }
+
+  .cart-item-category {
+    font-size: 0.7rem;
+  }
+}

@@ -9,8 +9,8 @@ header("Access-Control-Allow-Headers: Content-Type");
 // Configuration de la base de données
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'heureducadeau');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_USER', 'Philippe');
+define('DB_PASS', 'l@99339R');
 
 // Fonction de connexion PDO avec meilleure gestion d'erreurs
 function getPDOConnection() {
