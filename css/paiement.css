@@ -1,0 +1,467 @@
+/* Styles pour les pages de paiement */
+.paiement-page {
+  padding: 40px 0;
+  min-height: 70vh;
+}
+
+.paiement-progress {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 40px;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.progress-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  z-index: 2;
+}
+
+.progress-step .step-number {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #ddd;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  margin-bottom: 8px;
+  border: 3px solid #f0f0f0;
+}
+
+.progress-step.active .step-number {
+  background: #3498db;
+  color: white;
+  border-color: #3498db;
+}
+
+.progress-step.completed .step-number {
+  background: #2ecc71;
+  color: white;
+  border-color: #2ecc71;
+}
+
+.progress-step .step-text {
+  font-size: 0.9rem;
+  color: #666;
+  white-space: nowrap;
+}
+
+.progress-step.active .step-text {
+  color: #3498db;
+  font-weight: 500;
+}
+
+.progress-line {
+  flex: 1;
+  height: 3px;
+  background: #ddd;
+  margin: 0 20px;
+  position: relative;
+  top: -20px;
+}
+
+.progress-line.completed {
+  background: #2ecc71;
+}
+
+.progress-line.active {
+  background: #3498db;
+}
+
+.paiement-layout {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 30px;
+}
+
+@media (max-width: 992px) {
+  .paiement-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.recap-section {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 25px;
+  height: fit-content;
+}
+
+.recap-section h2 {
+  color: #2c3e50;
+  margin-bottom: 20px;
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.recap-card {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 25px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.recap-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.recap-row:last-child {
+  border-bottom: none;
+}
+
+.recap-row.total {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-top: 10px;
+  padding-top: 15px;
+  border-top: 2px solid #3498db;
+}
+
+.free-shipping {
+  color: #27ae60;
+  font-weight: 500;
+}
+
+.recap-divider {
+  height: 1px;
+  background: #ddd;
+  margin: 15px 0;
+}
+
+.adresse-livraison {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.adresse-livraison h3 {
+  color: #2c3e50;
+  margin-bottom: 15px;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#adresseDisplay {
+  margin-bottom: 15px;
+  line-height: 1.6;
+}
+
+#adresseDisplay p {
+  margin: 5px 0;
+}
+
+.btn-modifier {
+  background: none;
+  border: 1px solid #3498db;
+  color: #3498db;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.btn-modifier:hover {
+  background: #3498db;
+  color: white;
+}
+
+/* Options de paiement */
+.paiement-section {
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.paiement-section h2 {
+  color: #2c3e50;
+  margin-bottom: 25px;
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.paiement-option {
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  overflow: hidden;
+  transition: all 0.3s;
+}
+
+.paiement-option.active {
+  border-color: #3498db;
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.15);
+}
+
+.option-header {
+  display: flex;
+  align-items: center;
+  padding: 20px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+  cursor: pointer;
+}
+
+.option-header input[type="radio"] {
+  margin-right: 15px;
+  width: 20px;
+  height: 20px;
+}
+
+.option-header label {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: #2c3e50;
+  cursor: pointer;
+  flex: 1;
+}
+
+.option-header img {
+  height: 30px;
+  width: auto;
+}
+
+.option-body {
+  padding: 20px;
+  background: white;
+}
+
+.option-body p {
+  margin: 8px 0;
+  color: #555;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.option-body p i {
+  color: #2ecc71;
+}
+
+.paypal-buttons {
+  margin: 25px 0;
+}
+
+#paypal-button-container {
+  min-height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.alternative-paypal {
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid #eee;
+}
+
+.alternative-paypal p {
+  margin-bottom: 15px;
+  font-weight: 500;
+}
+
+.email-paiement {
+  display: flex;
+  gap: 10px;
+}
+
+.email-paiement input {
+  flex: 1;
+  padding: 12px 15px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+.email-paiement input:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+.card-icons {
+  display: flex;
+  gap: 15px;
+  margin: 15px 0;
+  font-size: 2rem;
+  color: #555;
+}
+
+.small-text {
+  font-size: 0.9rem;
+  color: #777;
+  margin-top: 10px;
+}
+
+/* Confirmation de paiement */
+.paiement-confirmation {
+  margin-top: 30px;
+  padding-top: 30px;
+  border-top: 1px solid #eee;
+  text-align: center;
+}
+
+.btn-large {
+  padding: 16px 32px;
+  font-size: 1.1rem;
+  min-width: 250px;
+}
+
+.securite-note {
+  margin-top: 15px;
+  color: #27ae60;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* Pages de confirmation */
+.confirmation-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.confirmation-card {
+  background: white;
+  border-radius: 20px;
+  padding: 40px;
+  max-width: 600px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+.confirmation-card.success {
+  border-top: 5px solid #2ecc71;
+}
+
+.confirmation-card.cancelled {
+  border-top: 5px solid #e74c3c;
+}
+
+.confirmation-icon {
+  font-size: 5rem;
+  margin-bottom: 20px;
+}
+
+.confirmation-card.success .confirmation-icon {
+  color: #2ecc71;
+}
+
+.confirmation-card.cancelled .confirmation-icon {
+  color: #e74c3c;
+}
+
+.confirmation-card h1 {
+  color: #2c3e50;
+  margin-bottom: 15px;
+  font-size: 2.2rem;
+}
+
+.confirmation-message {
+  color: #555;
+  font-size: 1.1rem;
+  line-height: 1.6;
+  margin-bottom: 30px;
+}
+
+.confirmation-details {
+  background: #f8f9fa;
+  border-radius: 10px;
+  padding: 20px;
+  margin: 25px 0;
+  text-align: left;
+}
+
+.confirmation-details p {
+  margin: 10px 0;
+  color: #444;
+}
+
+.commande-resume {
+  margin-top: 20px;
+}
+
+.commande-resume h3 {
+  color: #2c3e50;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.commande-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.commande-total {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px 0;
+  margin-top: 10px;
+  font-weight: 600;
+  font-size: 1.2rem;
+  border-top: 2px solid #3498db;
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  margin: 30px 0;
+  flex-wrap: wrap;
+}
+
+.confirmation-info {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #eee;
+  text-align: left;
+}
+
+.confirmation-info p {
+  margin: 10px 0;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.confirmation-info i {
+  color: #3498db;
+  width: 20px;
+}
