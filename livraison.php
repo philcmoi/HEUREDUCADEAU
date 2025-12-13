@@ -10,15 +10,67 @@ try {
     die("Erreur de connexion : " . $e->getMessage());
 }
 
-// Vérifier si l'utilisateur a un panier
-/*if (!isset($_SESSION['panier_id'])) {
-    // Rediriger vers le panier s'il n'y a pas de panier
-    header('Location: panier.php');
-    exit;
-}*/
-
-$panier_id = $_SESSION['panier_id'];
+// CORRECTION CRITIQUE : Récupérer le panier actif de l'utilisateur depuis la BDD
+$panier_id = null;
 $client_id = $_SESSION['client_id'] ?? null;
+
+// 1. D'abord, vérifier si on a un panier_id en session
+if (isset($_SESSION['panier_id'])) {
+    $panier_id = $_SESSION['panier_id'];
+    
+    // Vérifier que ce panier existe en base et est actif
+    $sqlVerifPanier = "SELECT id_panier, id_client FROM panier 
+                       WHERE id_panier = ? AND statut = 'actif'";
+    $stmtVerif = $pdo->prepare($sqlVerifPanier);
+    $stmtVerif->execute([$panier_id]);
+    $panierData = $stmtVerif->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$panierData) {
+        // Panier n'existe plus ou n'est plus actif
+        unset($_SESSION['panier_id']);
+        $panier_id = null;
+    } else {
+        // Synchroniser l'ID client si nécessaire
+        if ($client_id && $panierData['id_client'] != $client_id) {
+            // Mettre à jour le panier avec le bon client_id
+            $sqlUpdatePanier = "UPDATE panier SET id_client = ? WHERE id_panier = ?";
+            $stmtUpdate = $pdo->prepare($sqlUpdatePanier);
+            $stmtUpdate->execute([$client_id, $panier_id]);
+        }
+    }
+}
+
+// 2. Si pas de panier_id en session mais client connecté, chercher son panier actif
+if (!$panier_id && $client_id) {
+    $sqlPanierClient = "SELECT id_panier FROM panier 
+                       WHERE id_client = ? AND statut = 'actif' 
+                       ORDER BY date_creation DESC LIMIT 1";
+    $stmtPanierClient = $pdo->prepare($sqlPanierClient);
+    $stmtPanierClient->execute([$client_id]);
+    $panierClient = $stmtPanierClient->fetch(PDO::FETCH_ASSOC);
+    
+    if ($panierClient) {
+        $panier_id = $panierClient['id_panier'];
+        $_SESSION['panier_id'] = $panier_id;
+    }
+}
+
+// 3. Si toujours pas de panier, créer un nouveau panier vide (pour visiteurs)
+if (!$panier_id) {
+    try {
+        // Créer un nouveau panier
+        $sqlCreatePanier = "INSERT INTO panier (id_client, statut, date_creation) 
+                           VALUES (?, 'actif', NOW())";
+        $stmtCreate = $pdo->prepare($sqlCreatePanier);
+        $stmtCreate->execute([$client_id]);
+        $panier_id = $pdo->lastInsertId();
+        $_SESSION['panier_id'] = $panier_id;
+    } catch (Exception $e) {
+        // Erreur création panier
+        error_log("Erreur création panier: " . $e->getMessage());
+    }
+}
+
 $errors = [];
 $success = false;
 
@@ -28,12 +80,28 @@ $totalArticles = 0;
 $itemsPanier = [];
 
 if ($panier_id) {
-    $sqlPanier = "SELECT pi.*, p.nom, p.reference, p.prix_ttc, 
-                  p.personnalisable, p.made_in_france, p.ecologique, p.artisanal,
-                  p.description_courte, p.quantite_stock
+    // CORRECTION : Récupérer les produits du panier depuis la table panier_items
+    $sqlPanier = "SELECT 
+                    pi.id_item,
+                    pi.id_produit,
+                    pi.quantite,
+                    pi.prix_unitaire,
+                    p.nom,
+                    p.reference,
+                    p.prix_ttc,
+                    p.personnalisable,
+                    p.made_in_france,
+                    p.ecologique,
+                    p.artisanal,
+                    p.description_courte,
+                    p.quantite_stock,
+                    img.url_image as image
                   FROM panier_items pi 
                   JOIN produits p ON pi.id_produit = p.id_produit 
-                  WHERE pi.id_panier = ?";
+                  LEFT JOIN images_produits img ON p.id_produit = img.id_produit AND img.principale = 1
+                  WHERE pi.id_panier = ? AND p.statut = 'actif'
+                  ORDER BY pi.date_ajout DESC";
+    
     $stmtPanier = $pdo->prepare($sqlPanier);
     $stmtPanier->execute([$panier_id]);
     $itemsPanier = $stmtPanier->fetchAll(PDO::FETCH_ASSOC);
@@ -44,9 +112,10 @@ if ($panier_id) {
     }
 }
 
-// CORRECTION : Ne rediriger vers le panier que si ce n'est pas une soumission POST
-// ET si le panier est vraiment vide
+// CORRECTION : Vérifier si le panier est vide et rediriger si nécessaire
 /*if ($_SERVER['REQUEST_METHOD'] !== 'POST' && empty($itemsPanier)) {
+    // Panier vide, rediriger vers la page panier ou produits
+    $_SESSION['error_message'] = "Votre panier est vide. Veuillez ajouter des produits avant de passer commande.";
     header('Location: panier.php');
     exit;
 }*/
@@ -269,7 +338,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmtItem->execute([
                     $id_commande,
                     $item['id_produit'],
-                    $item['id_variant'],
+                    $item['id_variant'] ?? null,
                     $item['reference'],
                     $item['nom'],
                     $item['quantite'],
@@ -292,8 +361,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Générer une référence de transaction
                 $reference_paiement = 'TXN-' . date('Ymd') . '-' . str_pad(rand(1000, 9999), 4, '0', STR_PAD_LEFT);
                 
-                // Stocker les infos de carte (en pratique, utiliser un service sécurisé comme Stripe)
-                // Ici, on ne stocke que la référence et on simule le paiement
                 $sqlTransaction = "INSERT INTO transactions (
                     numero_transaction, id_commande, id_client, montant,
                     methode_paiement, reference_paiement, statut,
@@ -350,6 +417,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } catch (Exception $e) {
             $pdo->rollBack();
             $errors['general'] = "Erreur lors du traitement de la commande : " . $e->getMessage();
+            error_log("Erreur commande: " . $e->getMessage());
+            error_log("Trace: " . $e->getTraceAsString());
         }
     }
 }
@@ -372,6 +441,44 @@ while ($row = $stmtConfig->fetch(PDO::FETCH_ASSOC)) {
     <link rel="stylesheet" href="css/livraison.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* Styles supplémentaires pour afficher les images */
+        .recap-item-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+        
+        .recap-item-image i {
+            font-size: 2rem;
+        }
+        
+        /* Message d'erreur panier vide */
+        .cart-empty-message {
+            text-align: center;
+            padding: 40px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+        
+        .cart-empty-message i {
+            font-size: 3rem;
+            color: #bdc3c7;
+            margin-bottom: 20px;
+        }
+        
+        .cart-empty-message h3 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .cart-empty-message p {
+            color: #7f8c8d;
+            margin-bottom: 20px;
+        }
+    </style>
 </head>
 <body>
     <!-- Header -->
@@ -403,6 +510,21 @@ while ($row = $stmtConfig->fetch(PDO::FETCH_ASSOC)) {
             </div>
             <?php endif; ?>
 
+            <?php if (empty($itemsPanier)): ?>
+            <!-- Message panier vide -->
+            <div class="cart-empty-message">
+                <i class="fas fa-shopping-cart"></i>
+                <h3>Votre panier est vide</h3>
+                <p>Ajoutez des produits dans votre panier avant de passer à la livraison.</p>
+                <a href="index.php" class="btn btn-primary">
+                    <i class="fas fa-shopping-bag"></i> Voir les produits
+                </a>
+                <a href="panier.php" class="btn btn-secondary" style="margin-left: 10px;">
+                    <i class="fas fa-shopping-cart"></i> Voir le panier
+                </a>
+            </div>
+            <?php else: ?>
+            
             <form method="POST" action="" id="checkoutForm" class="checkout-layout">
                 <div class="checkout-form">
                     <!-- Section Livraison -->
@@ -775,27 +897,43 @@ while ($row = $stmtConfig->fetch(PDO::FETCH_ASSOC)) {
                     
                     <?php if (!empty($itemsPanier)): ?>
                     <div class="recap-items">
-                        <?php foreach ($itemsPanier as $item): ?>
+                        <?php foreach ($itemsPanier as $item): 
+                            $prixTotalItem = $item['prix_unitaire'] * $item['quantite'];
+                            $imageUrl = !empty($item['image']) ? $item['image'] : 'img/default-product.jpg';
+                        ?>
                         <div class="recap-item">
                             <div class="recap-item-info">
                                 <div class="recap-item-image">
-                                    <!-- Image du produit (à implémenter avec images_produits) -->
+                                    <?php if (!empty($item['image'])): ?>
+                                    <img src="<?php echo htmlspecialchars($imageUrl); ?>" 
+                                         alt="<?php echo htmlspecialchars($item['nom']); ?>"
+                                         onerror="this.src='img/default-product.jpg'">
+                                    <?php else: ?>
                                     <i class="fas fa-gift" style="color: #5a67d8;"></i>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="recap-item-details">
                                     <div class="recap-item-name"><?php echo htmlspecialchars($item['nom']); ?></div>
+                                    <div class="recap-item-quantity-badge">x<?php echo $item['quantite']; ?></div>
                                     <div class="recap-item-price"><?php echo number_format($item['prix_unitaire'], 2, ',', ' '); ?> €</div>
                                     <div class="recap-item-reference">Réf: <?php echo htmlspecialchars($item['reference']); ?></div>
+                                    <?php if (!empty($item['description_courte'])): ?>
+                                    <div class="recap-item-description">
+                                        <?php echo htmlspecialchars(substr($item['description_courte'], 0, 50)) . '...'; ?>
+                                    </div>
+                                    <?php endif; ?>
                                 </div>
                             </div>
-                            <div class="recap-item-quantity">x<?php echo $item['quantite']; ?></div>
+                            <div class="recap-item-total">
+                                <?php echo number_format($prixTotalItem, 2, ',', ' '); ?> €
+                            </div>
                         </div>
                         <?php endforeach; ?>
                     </div>
 
                     <div class="recap-totals">
                         <div class="recap-row">
-                            <span>Sous-total</span>
+                            <span>Sous-total (<?php echo $totalArticles; ?> article<?php echo $totalArticles > 1 ? 's' : ''; ?>)</span>
                             <span id="sousTotal"><?php echo number_format($panierTotal, 2, ',', ' '); ?> €</span>
                         </div>
                         <div class="recap-row">
@@ -810,7 +948,7 @@ while ($row = $stmtConfig->fetch(PDO::FETCH_ASSOC)) {
                     <?php else: ?>
                     <div class="alert alert-info">
                         <i class="fas fa-shopping-cart"></i>
-                        Votre panier est vide. <a href="index.html">Continuez vos achats</a>
+                        Votre panier est vide. <a href="produits.php">Continuez vos achats</a>
                     </div>
                     <?php endif; ?>
 
@@ -826,7 +964,7 @@ while ($row = $stmtConfig->fetch(PDO::FETCH_ASSOC)) {
 
                     <!-- Boutons d'action -->
                     <div class="form-actions">
-                        <a href="panier.html" class="btn btn-secondary">
+                        <a href="panier.php" class="btn btn-secondary">
                             <i class="fas fa-arrow-left"></i> Retour au panier
                         </a>
                         <?php if (!empty($itemsPanier)): ?>
@@ -849,6 +987,7 @@ while ($row = $stmtConfig->fetch(PDO::FETCH_ASSOC)) {
                     </div>
                 </div>
             </form>
+            <?php endif; ?>
         </div>
     </main>
 
@@ -1040,6 +1179,28 @@ while ($row = $stmtConfig->fetch(PDO::FETCH_ASSOC)) {
             errorSpan.textContent = message;
             element.parentNode.appendChild(errorSpan);
         }
+        
+        // Charger automatiquement le mode de livraison standard s'il n'y en a pas
+        document.addEventListener('DOMContentLoaded', function() {
+            const livraisonChecked = document.querySelector('input[name="mode_livraison"]:checked');
+            if (!livraisonChecked) {
+                const standardLivraison = document.getElementById('standard');
+                if (standardLivraison) {
+                    standardLivraison.checked = true;
+                    standardLivraison.dispatchEvent(new Event('change'));
+                }
+            }
+            
+            // Vérifier si le panier a des articles
+            const cartItems = <?php echo json_encode($itemsPanier); ?>;
+            if (!cartItems || cartItems.length === 0) {
+                const checkoutBtn = document.getElementById('validerCommande');
+                if (checkoutBtn) {
+                    checkoutBtn.disabled = true;
+                    checkoutBtn.innerHTML = '<i class="fas fa-shopping-cart"></i> Panier vide';
+                }
+            }
+        });
     </script>
 </body>
 </html>
