@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Confirmation - HEURE DU CADEAU</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <style>
+      .confirmation-page {
+        padding: 60px 0;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        min-height: calc(100vh - 200px);
+        text-align: center;
+      }
+
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+
+      .confirmation-card {
+        background: white;
+        padding: 50px;
+        border-radius: 16px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .confirmation-icon {
+        width: 100px;
+        height: 100px;
+        background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 30px;
+        color: white;
+        font-size: 48px;
+        animation: bounce 1s ease;
+      }
+
+      @keyframes bounce {
+        0%,
+        20%,
+        50%,
+        80%,
+        100% {
+          transform: translateY(0);
+        }
+        40% {
+          transform: translateY(-30px);
+        }
+        60% {
+          transform: translateY(-15px);
+        }
+      }
+
+      h1 {
+        color: #2d3748;
+        margin-bottom: 20px;
+        font-size: 36px;
+      }
+
+      .confirmation-message {
+        color: #718096;
+        font-size: 18px;
+        line-height: 1.6;
+        margin-bottom: 40px;
+      }
+
+      .order-details {
+        background: #f7fafc;
+        padding: 30px;
+        border-radius: 12px;
+        margin: 40px 0;
+        text-align: left;
+      }
+
+      .detail-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 15px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+
+      .detail-row:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+      }
+
+      .detail-label {
+        font-weight: 600;
+        color: #4a5568;
+      }
+
+      .detail-value {
+        color: #2d3748;
+        font-weight: 500;
+      }
+
+      .detail-value.order-number {
+        color: #5a67d8;
+        font-weight: 700;
+        font-size: 18px;
+      }
+
+      .next-steps {
+        margin: 40px 0;
+        padding: 30px;
+        background: linear-gradient(135deg, #ebf4ff 0%, #c3dafe 100%);
+        border-radius: 12px;
+        text-align: left;
+      }
+
+      .next-steps h3 {
+        color: #2d3748;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .step {
+        display: flex;
+        align-items: flex-start;
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+
+      .step-number {
+        width: 30px;
+        height: 30px;
+        background: #5a67d8;
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        flex-shrink: 0;
+      }
+
+      .step-content h4 {
+        color: #2d3748;
+        margin-bottom: 5px;
+      }
+
+      .step-content p {
+        color: #718096;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .action-buttons {
+        display: flex;
+        gap: 20px;
+        justify-content: center;
+        margin-top: 40px;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 15px 30px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 16px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        border: none;
+        min-width: 200px;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, #5a67d8 0%, #4c51bf 100%);
+        color: white;
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(90, 103, 216, 0.3);
+      }
+
+      .btn-secondary {
+        background: white;
+        color: #5a67d8;
+        border: 2px solid #5a67d8;
+      }
+
+      .btn-secondary:hover {
+        background: #f7fafc;
+        transform: translateY(-2px);
+      }
+
+      .email-notice {
+        margin-top: 30px;
+        padding: 20px;
+        background: #feebc8;
+        border-radius: 8px;
+        color: #744210;
+      }
+
+      @media (max-width: 768px) {
+        .confirmation-card {
+          padding: 30px 20px;
+        }
+
+        .action-buttons {
+          flex-direction: column;
+        }
+
+        .btn {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <?php include 'partials/header.php'; ?>
+
+    <main class="confirmation-page">
+      <div class="container">
+        <div class="confirmation-card">
+          <div class="confirmation-icon">
+            <i class="fas fa-check"></i>
+          </div>
+
+          <h1>Commande confirmée !</h1>
+
+          <div class="confirmation-message" id="confirmationMessage">
+            <!-- Chargé par JavaScript -->
+          </div>
+
+          <div class="order-details" id="orderDetails">
+            <!-- Chargé par JavaScript -->
+          </div>
+
+          <div class="next-steps">
+            <h3><i class="fas fa-list-ol"></i> Prochaines étapes</h3>
+
+            <div class="step">
+              <div class="step-number">1</div>
+              <div class="step-content">
+                <h4>Email de confirmation</h4>
+                <p>
+                  Vous recevrez un email de confirmation dans les prochaines
+                  minutes avec tous les détails de votre commande.
+                </p>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-number">2</div>
+              <div class="step-content">
+                <h4>Préparation de votre commande</h4>
+                <p>
+                  Notre équipe prépare votre commande avec soin. Vous serez
+                  informé dès son expédition.
+                </p>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-number">3</div>
+              <div class="step-content">
+                <h4>Livraison</h4>
+                <p>
+                  Suivez votre colis grâce au numéro de suivi qui vous sera
+                  envoyé par email.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="email-notice">
+            <i class="fas fa-envelope"></i>
+            <strong>Vérifiez vos spams !</strong>
+            <p style="margin: 5px 0 0 0">
+              Si vous ne recevez pas l'email de confirmation, pensez à vérifier
+              votre dossier de courriers indésirables.
+            </p>
+          </div>
+
+          <div class="action-buttons">
+            <a href="index.html" class="btn btn-primary">
+              <i class="fas fa-home"></i> Retour à l'accueil
+            </a>
+            <a href="produits.php" class="btn btn-secondary">
+              <i class="fas fa-shopping-bag"></i> Continuer mes achats
+            </a>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <?php include 'partials/footer.php'; ?>
+
+    <script>
+      // Récupérer le numéro de commande depuis l'URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const orderNumber =
+        urlParams.get("cmd") ||
+        sessionStorage.getItem("lastOrder") ||
+        "CMD-000000";
+
+      // Formatage de la date
+      function formatDate(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleDateString("fr-FR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
+
+      // Générer un numéro de commande aléatoire si en mode démo
+      function generateDemoOrder() {
+        const now = new Date();
+        const dateStr = now.toISOString().split("T")[0].replace(/-/g, "");
+        const randomStr = Math.random().toString(36).substr(2, 6).toUpperCase();
+        return `CMD-${dateStr}-${randomStr}`;
+      }
+
+      // Afficher les détails de la commande
+      function afficherDetails() {
+        const message = document.getElementById("confirmationMessage");
+        const details = document.getElementById("orderDetails");
+
+        const finalOrderNumber =
+          orderNumber === "CMD-000000" ? generateDemoOrder() : orderNumber;
+        const currentDate = new Date().toISOString();
+
+        // Sauvegarder pour cette session
+        sessionStorage.setItem("lastOrder", finalOrderNumber);
+
+        // Message de confirmation
+        message.innerHTML = `
+                <p>Merci pour votre commande ! Elle a bien été enregistrée et sera traitée dans les plus brefs délais.</p>
+                <p>Un email récapitulatif vous a été envoyé à l'adresse associée à votre commande.</p>
+            `;
+
+        // Détails de la commande
+        details.innerHTML = `
+                <div class="detail-row">
+                    <span class="detail-label">Numéro de commande</span>
+                    <span class="detail-value order-number">${finalOrderNumber}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Date de la commande</span>
+                    <span class="detail-value">${formatDate(currentDate)}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Statut</span>
+                    <span class="detail-value" style="color: #38a169;">
+                        <i class="fas fa-check-circle"></i> Confirmée
+                    </span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Mode de livraison</span>
+                    <span class="detail-value">Livraison standard (3-5 jours)</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Email de contact</span>
+                    <span class="detail-value">${
+                      sessionStorage.getItem("orderEmail") ||
+                      "contact@heureducadeau.fr"
+                    }</span>
+                </div>
+            `;
+      }
+
+      // Charger au démarrage
+      document.addEventListener("DOMContentLoaded", function () {
+        afficherDetails();
+
+        // Nettoyer le localStorage si nécessaire
+        sessionStorage.removeItem("livraisonData");
+
+        // Mettre à jour le compteur du panier (doit être à 0)
+        const cartCounts = document.querySelectorAll(".cart-count");
+        cartCounts.forEach((el) => {
+          el.textContent = "0";
+          el.style.display = "none";
+        });
+      });
+    </script>
+  </body>
+</html>

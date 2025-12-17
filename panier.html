@@ -1023,7 +1023,7 @@
         });
       }
 
-      // CORRECTION : PROCÉDER AU PAIEMENT - REDIRECTION VERS LIVRAISON.PHP
+      // PROCÉDER AU PAIEMENT - REDIRECTION VERS LIVRAISON
       function initialiserPaiement() {
         const checkoutBtn = document.getElementById("checkoutBtn");
         if (!checkoutBtn) return;
@@ -1060,42 +1060,32 @@
               return;
             }
 
-            // Vérifier si tous les articles sont en stock
-            let outOfStockItems = [];
-            data.items.forEach((item) => {
-              const quantitePanier = parseInt(item.quantite);
-              const stockDisponible =
-                parseInt(item.stock_max) || parseInt(item.quantite_stock) || 99;
+            // Sauvegarder le total et l'emballage cadeau dans le localStorage
+            const giftWrapChecked =
+              document.getElementById("giftWrapToggle")?.checked || false;
+            const orderSummary = {
+              total: total,
+              subtotal: parseFloat(
+                document
+                  .getElementById("subtotal")
+                  .textContent.replace(" €", "")
+                  .replace(",", ".")
+              ),
+              giftWrap: giftWrapChecked,
+              giftWrapPrice: giftWrapChecked ? 3.9 : 0,
+              itemCount: data.items.length,
+              timestamp: new Date().toISOString(),
+            };
 
-              if (quantitePanier > stockDisponible) {
-                outOfStockItems.push(item.nom);
-              }
-            });
+            localStorage.setItem("orderSummary", JSON.stringify(orderSummary));
 
-            if (outOfStockItems.length > 0) {
-              showNotification(
-                `Certains articles ne sont plus disponibles en quantité suffisante: ${outOfStockItems.join(
-                  ", "
-                )}`,
-                "error"
-              );
-              // Synchroniser pour ajuster les quantités
-              await synchroniserPanier();
-              return;
-            }
-
-            // CORRECTION : Redirection directe vers livraison.php
-            // Pas besoin de localStorage, la page livraison.php récupérera les données depuis la BDD
-            console.log("✅ Panier valide, redirection vers livraison.php");
-
-            // Afficher notification et rediriger
+            // Redirection vers la page de livraison
             showNotification("✅ Redirection vers la livraison...", "success");
 
-            // Délai court pour laisser voir la notification puis redirection
+            // Délai court pour laisser voir la notification
             setTimeout(() => {
-              // CORRECTION : Redirection vers livraison.php (et NON PAS paiement.php)
-              window.location.href = "livraison.php";
-            }, 800);
+              window.location.href = "livraison.html";
+            }, 1000);
           } catch (error) {
             console.error("Erreur lors de la vérification:", error);
             showNotification(
@@ -1163,7 +1153,7 @@
         initialiserBoutonViderPanier();
         initialiserEmballageCadeau();
         initialiserCodePromo();
-        initialiserPaiement(); // CORRECTION : Cette fonction redirige maintenant vers livraison.php
+        initialiserPaiement();
 
         // Si sur page panier, charger les articles
         if (window.location.pathname.includes("panier.html")) {

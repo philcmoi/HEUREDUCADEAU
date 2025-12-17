@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Livraison & Paiement - HEURE DU CADEAU</title>
+    <title>Livraison - HEURE DU CADEAU</title>
     <link rel="stylesheet" href="css/style.css" />
     <link rel="stylesheet" href="css/paiement.css" />
     <link
@@ -32,7 +32,6 @@
         box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
         overflow: hidden;
         padding: 30px;
-        margin-bottom: 40px;
       }
 
       .paiement-progress {
@@ -106,16 +105,7 @@
         background-color: #5a67d8;
       }
 
-      /* Layout principal */
-      .checkout-layout {
-        display: grid;
-        grid-template-columns: 1fr 350px;
-        gap: 30px;
-      }
-
-      /* Section livraison */
-      .livraison-form h2,
-      .paiement-form h2 {
+      .livraison-form h2 {
         color: #2d3748;
         margin-bottom: 25px;
         padding-bottom: 15px;
@@ -125,8 +115,7 @@
         gap: 10px;
       }
 
-      .livraison-form h2 i,
-      .paiement-form h2 i {
+      .livraison-form h2 i {
         color: #5a67d8;
       }
 
@@ -160,8 +149,7 @@
       }
 
       .form-group input,
-      .form-group select,
-      .form-group textarea {
+      .form-group select {
         width: 100%;
         padding: 14px 16px;
         border: 1.5px solid #e2e8f0;
@@ -172,8 +160,7 @@
       }
 
       .form-group input:focus,
-      .form-group select:focus,
-      .form-group textarea:focus {
+      .form-group select:focus {
         outline: none;
         border-color: #5a67d8;
         box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.1);
@@ -183,283 +170,6 @@
         color: #a0aec0;
       }
 
-      /* Section récapitulatif */
-      .recap-section {
-        background-color: #f8fafc;
-        border-radius: 12px;
-        padding: 25px;
-        border: 1px solid #e2e8f0;
-      }
-
-      .recap-section h3 {
-        color: #2d3748;
-        margin-bottom: 20px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .recap-section h3 i {
-        color: #5a67d8;
-      }
-
-      .recap-items {
-        margin-bottom: 25px;
-      }
-
-      .recap-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 15px 0;
-        border-bottom: 1px solid #e2e8f0;
-      }
-
-      .recap-item:last-child {
-        border-bottom: none;
-      }
-
-      .recap-item-info {
-        display: flex;
-        align-items: center;
-        gap: 15px;
-      }
-
-      .recap-item-image {
-        width: 60px;
-        height: 60px;
-        border-radius: 8px;
-        background-color: #e2e8f0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .recap-item-details {
-        flex: 1;
-      }
-
-      .recap-item-name {
-        font-weight: 600;
-        color: #2d3748;
-        margin-bottom: 5px;
-      }
-
-      .recap-item-price {
-        color: #718096;
-        font-size: 14px;
-      }
-
-      .recap-item-quantity {
-        color: #718096;
-        font-size: 14px;
-      }
-
-      .recap-totals {
-        margin-top: 25px;
-      }
-
-      .recap-row {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 12px;
-        padding: 8px 0;
-      }
-
-      .recap-row.total {
-        border-top: 2px solid #e2e8f0;
-        margin-top: 15px;
-        padding-top: 15px;
-        font-weight: 700;
-        font-size: 18px;
-        color: #2d3748;
-      }
-
-      .free-shipping {
-        color: #38a169;
-        font-weight: 600;
-      }
-
-      /* Section paiement */
-      .paiement-methods {
-        margin-bottom: 30px;
-      }
-
-      .paiement-method {
-        margin-bottom: 15px;
-        border: 2px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 20px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-      }
-
-      .paiement-method:hover {
-        border-color: #cbd5e0;
-      }
-
-      .paiement-method.selected {
-        border-color: #5a67d8;
-        background-color: rgba(90, 103, 216, 0.05);
-      }
-
-      .paiement-method-header {
-        display: flex;
-        align-items: center;
-        gap: 15px;
-        margin-bottom: 10px;
-      }
-
-      .paiement-method-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 8px;
-        background-color: #edf2f7;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #5a67d8;
-        font-size: 20px;
-      }
-
-      .paiement-method-title {
-        font-weight: 600;
-        color: #2d3748;
-        flex: 1;
-      }
-
-      .paiement-method-desc {
-        color: #718096;
-        font-size: 14px;
-        margin-left: 55px;
-      }
-
-      /* Champs carte bancaire */
-      .card-details {
-        margin-top: 20px;
-        padding-top: 20px;
-        border-top: 1px solid #e2e8f0;
-        display: none;
-      }
-
-      .card-details.active {
-        display: block;
-      }
-
-      .card-row {
-        display: flex;
-        gap: 15px;
-        margin-bottom: 15px;
-      }
-
-      .card-row .form-group {
-        flex: 1;
-        margin-bottom: 0;
-      }
-
-      .card-small {
-        max-width: 120px;
-      }
-
-      .card-logos {
-        display: flex;
-        gap: 10px;
-        margin-top: 10px;
-      }
-
-      .card-logo {
-        height: 30px;
-        filter: grayscale(100%);
-        opacity: 0.5;
-      }
-
-      .card-logo.active {
-        filter: none;
-        opacity: 1;
-      }
-
-      /* Sécurité */
-      .security-info {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-top: 20px;
-        padding: 15px;
-        background-color: #f0fff4;
-        border-radius: 8px;
-        border-left: 4px solid #38a169;
-      }
-
-      .security-info i {
-        color: #38a169;
-        font-size: 20px;
-      }
-
-      .security-text {
-        font-size: 14px;
-        color: #2d3748;
-      }
-
-      /* Section livraison */
-      .livraison-options {
-        margin-bottom: 30px;
-      }
-
-      .livraison-option {
-        border: 2px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 20px;
-        margin-bottom: 15px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-      }
-
-      .livraison-option:hover {
-        border-color: #cbd5e0;
-      }
-
-      .livraison-option.selected {
-        border-color: #5a67d8;
-        background-color: rgba(90, 103, 216, 0.05);
-      }
-
-      .livraison-option-header {
-        display: flex;
-        align-items: center;
-        gap: 15px;
-        margin-bottom: 10px;
-      }
-
-      .livraison-option-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 8px;
-        background-color: #edf2f7;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #5a67d8;
-        font-size: 20px;
-      }
-
-      .livraison-option-title {
-        font-weight: 600;
-        color: #2d3748;
-        flex: 1;
-      }
-
-      .livraison-option-price {
-        font-weight: 600;
-        color: #5a67d8;
-      }
-
-      .livraison-option-desc {
-        color: #718096;
-        font-size: 14px;
-        margin-left: 55px;
-      }
-
-      /* Boutons */
       .form-actions {
         display: flex;
         justify-content: space-between;
@@ -494,13 +204,6 @@
         box-shadow: 0 4px 12px rgba(90, 103, 216, 0.3);
       }
 
-      .btn-primary:disabled {
-        background-color: #cbd5e0;
-        cursor: not-allowed;
-        transform: none;
-        box-shadow: none;
-      }
-
       .btn-secondary {
         background-color: #edf2f7;
         color: #4a5568;
@@ -512,16 +215,6 @@
       }
 
       /* Responsive */
-      @media (max-width: 992px) {
-        .checkout-layout {
-          grid-template-columns: 1fr;
-        }
-
-        .recap-section {
-          order: -1;
-        }
-      }
-
       @media (max-width: 768px) {
         .form-row {
           flex-direction: column;
@@ -548,15 +241,6 @@
 
         .btn {
           width: 100%;
-        }
-
-        .card-row {
-          flex-direction: column;
-          gap: 15px;
-        }
-
-        .card-small {
-          max-width: 100%;
         }
       }
 
@@ -595,36 +279,6 @@
       .progress-step.active .step-number {
         animation: pulse 2s infinite;
       }
-
-      /* Loader */
-      .loader {
-        display: none;
-        text-align: center;
-        padding: 20px;
-      }
-
-      .loader.active {
-        display: block;
-      }
-
-      .spinner {
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid #5a67d8;
-        border-radius: 50%;
-        width: 40px;
-        height: 40px;
-        animation: spin 1s linear infinite;
-        margin: 0 auto 15px;
-      }
-
-      @keyframes spin {
-        0% {
-          transform: rotate(0deg);
-        }
-        100% {
-          transform: rotate(360deg);
-        }
-      }
     </style>
   </head>
   <body>
@@ -656,398 +310,124 @@
             <span class="step-number">2</span>
             <span class="step-text">Livraison</span>
           </div>
-          <div class="progress-line active"></div>
-          <div class="progress-step active">
+          <div class="progress-line"></div>
+          <div class="progress-step">
             <span class="step-number">3</span>
             <span class="step-text">Paiement</span>
           </div>
         </div>
 
-        <div class="checkout-layout">
-          <!-- Colonne de gauche : Formulaire de livraison et paiement -->
-          <div class="checkout-form">
-            <!-- Section Livraison -->
-            <div class="livraison-form">
-              <h2><i class="fas fa-truck"></i> Adresse de livraison</h2>
+        <div class="livraison-form">
+          <h2><i class="fas fa-truck"></i> Adresse de livraison</h2>
 
-              <form id="formLivraison">
-                <div class="form-group">
-                  <label for="email"
-                    ><i class="fas fa-envelope"></i> Email *</label
-                  >
-                  <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    required
-                    placeholder="exemple@email.com"
-                  />
-                </div>
+          <form id="formLivraison">
+            <div class="form-group">
+              <label for="email"><i class="fas fa-envelope"></i> Email *</label>
+              <input
+                type="email"
+                id="email"
+                name="email"
+                required
+                placeholder="exemple@email.com"
+              />
+            </div>
 
-                <div class="form-row">
-                  <div class="form-group">
-                    <label for="nom"><i class="fas fa-user"></i> Nom *</label>
-                    <input type="text" id="nom" name="nom" required />
-                  </div>
-                  <div class="form-group">
-                    <label for="prenom"
-                      ><i class="fas fa-user"></i> Prénom *</label
-                    >
-                    <input type="text" id="prenom" name="prenom" required />
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label for="adresse"
-                    ><i class="fas fa-map-marker-alt"></i> Adresse *</label
-                  >
-                  <input
-                    type="text"
-                    id="adresse"
-                    name="adresse"
-                    required
-                    placeholder="Numéro et nom de rue"
-                  />
-                </div>
-
-                <div class="form-group">
-                  <label for="complement"
-                    ><i class="fas fa-building"></i> Complément d'adresse</label
-                  >
-                  <input
-                    type="text"
-                    id="complement"
-                    name="complement"
-                    placeholder="Appartement, étage, etc."
-                  />
-                </div>
-
-                <div class="form-row">
-                  <div class="form-group">
-                    <label for="code_postal"
-                      ><i class="fas fa-mailbox"></i> Code postal *</label
-                    >
-                    <input
-                      type="text"
-                      id="code_postal"
-                      name="code_postal"
-                      required
-                      pattern="[0-9]{5}"
-                      placeholder="75001"
-                    />
-                  </div>
-                  <div class="form-group">
-                    <label for="ville"
-                      ><i class="fas fa-city"></i> Ville *</label
-                    >
-                    <input
-                      type="text"
-                      id="ville"
-                      name="ville"
-                      required
-                      placeholder="Paris"
-                    />
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label for="pays"><i class="fas fa-globe"></i> Pays *</label>
-                  <select id="pays" name="pays" required>
-                    <option value="France" selected>France</option>
-                    <option value="Belgique">Belgique</option>
-                    <option value="Suisse">Suisse</option>
-                    <option value="Luxembourg">Luxembourg</option>
-                    <option value="autre">Autre pays</option>
-                  </select>
-                </div>
-
-                <div class="form-row">
-                  <div class="form-group">
-                    <label for="telephone"
-                      ><i class="fas fa-phone"></i> Téléphone
-                    </label>
-                    <input
-                      type="tel"
-                      id="telephone"
-                      name="telephone"
-                      pattern="[0-9]{10}"
-                      placeholder="0123456789"
-                    />
-                  </div>
-                </div>
-              </form>
-
-              <!-- Options de livraison -->
-              <h3 style="margin-top: 40px">
-                <i class="fas fa-shipping-fast"></i> Mode de livraison
-              </h3>
-              <div class="livraison-options">
-                <div class="livraison-option selected" data-price="0">
-                  <div class="livraison-option-header">
-                    <div class="livraison-option-icon">
-                      <i class="fas fa-truck"></i>
-                    </div>
-                    <div class="livraison-option-title">Livraison Standard</div>
-                    <div class="livraison-option-price">GRATUIT</div>
-                  </div>
-                  <div class="livraison-option-desc">
-                    Livraison en 3-5 jours ouvrés
-                  </div>
-                </div>
-
-                <div class="livraison-option" data-price="9.90">
-                  <div class="livraison-option-header">
-                    <div class="livraison-option-icon">
-                      <i class="fas fa-bolt"></i>
-                    </div>
-                    <div class="livraison-option-title">Livraison Express</div>
-                    <div class="livraison-option-price">9,90 €</div>
-                  </div>
-                  <div class="livraison-option-desc">
-                    Livraison en 24-48h (jours ouvrés)
-                  </div>
-                </div>
-
-                <div class="livraison-option" data-price="4.90">
-                  <div class="livraison-option-header">
-                    <div class="livraison-option-icon">
-                      <i class="fas fa-store"></i>
-                    </div>
-                    <div class="livraison-option-title">Point Relais</div>
-                    <div class="livraison-option-price">4,90 €</div>
-                  </div>
-                  <div class="livraison-option-desc">
-                    Retrait en point relais sous 2-3 jours
-                  </div>
-                </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="nom"><i class="fas fa-user"></i> Nom *</label>
+                <input type="text" id="nom" name="nom" required />
+              </div>
+              <div class="form-group">
+                <label for="prenom"><i class="fas fa-user"></i> Prénom *</label>
+                <input type="text" id="prenom" name="prenom" required />
               </div>
             </div>
 
-            <!-- Section Paiement -->
-            <div class="paiement-form" style="margin-top: 40px">
-              <h2><i class="fas fa-credit-card"></i> Moyen de paiement</h2>
-
-              <div class="paiement-methods">
-                <div class="paiement-method selected" data-method="card">
-                  <div class="paiement-method-header">
-                    <div class="paiement-method-icon">
-                      <i class="fas fa-credit-card"></i>
-                    </div>
-                    <div class="paiement-method-title">Carte bancaire</div>
-                  </div>
-                  <div class="paiement-method-desc">
-                    Paiement sécurisé par carte Visa, Mastercard ou CB
-                  </div>
-
-                  <!-- Détails carte bancaire -->
-                  <div class="card-details active">
-                    <div class="form-group">
-                      <label for="cardNumber">Numéro de carte *</label>
-                      <input
-                        type="text"
-                        id="cardNumber"
-                        name="cardNumber"
-                        placeholder="1234 5678 9012 3456"
-                        maxlength="19"
-                      />
-                    </div>
-
-                    <div class="card-row">
-                      <div class="form-group">
-                        <label for="cardName">Nom sur la carte *</label>
-                        <input
-                          type="text"
-                          id="cardName"
-                          name="cardName"
-                          placeholder="M. DUPONT Jean"
-                        />
-                      </div>
-                    </div>
-
-                    <div class="card-row">
-                      <div class="form-group card-small">
-                        <label for="cardExpiry">Date d'expiration *</label>
-                        <input
-                          type="text"
-                          id="cardExpiry"
-                          name="cardExpiry"
-                          placeholder="MM/AA"
-                          maxlength="5"
-                        />
-                      </div>
-                      <div class="form-group card-small">
-                        <label for="cardCVC">Cryptogramme *</label>
-                        <input
-                          type="text"
-                          id="cardCVC"
-                          name="cardCVC"
-                          placeholder="123"
-                          maxlength="3"
-                        />
-                      </div>
-                    </div>
-
-                    <div class="card-logos">
-                      <img
-                        src="https://img.icons8.com/color/48/000000/visa.png"
-                        alt="Visa"
-                        class="card-logo active"
-                      />
-                      <img
-                        src="https://img.icons8.com/color/48/000000/mastercard.png"
-                        alt="Mastercard"
-                        class="card-logo"
-                      />
-                      <img
-                        src="https://img.icons8.com/color/48/000000/amex.png"
-                        alt="American Express"
-                        class="card-logo"
-                      />
-                      <img
-                        src="https://img.icons8.com/color/48/000000/paypal.png"
-                        alt="PayPal"
-                        class="card-logo"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div class="paiement-method" data-method="paypal">
-                  <div class="paiement-method-header">
-                    <div class="paiement-method-icon">
-                      <i class="fab fa-paypal"></i>
-                    </div>
-                    <div class="paiement-method-title">PayPal</div>
-                  </div>
-                  <div class="paiement-method-desc">
-                    Paiement rapide et sécurisé via votre compte PayPal
-                  </div>
-                </div>
-
-                <div class="paiement-method" data-method="applepay">
-                  <div class="paiement-method-header">
-                    <div class="paiement-method-icon">
-                      <i class="fab fa-apple-pay"></i>
-                    </div>
-                    <div class="paiement-method-title">Apple Pay</div>
-                  </div>
-                  <div class="paiement-method-desc">
-                    Paiement rapide et sécurisé avec Apple Pay
-                  </div>
-                </div>
-              </div>
-
-              <div class="security-info">
-                <i class="fas fa-lock"></i>
-                <div class="security-text">
-                  <strong>Paiement 100% sécurisé</strong><br />
-                  Vos informations de paiement sont cryptées et protégées
-                </div>
-              </div>
-            </div>
-
-            <!-- Conditions générales -->
-            <div class="form-group" style="margin-top: 30px">
-              <div style="display: flex; align-items: flex-start; gap: 10px">
-                <input
-                  type="checkbox"
-                  id="conditions"
-                  name="conditions"
-                  required
-                  style="margin-top: 5px"
-                />
-                <label
-                  for="conditions"
-                  style="font-weight: normal; cursor: pointer"
-                >
-                  J'accepte les
-                  <a href="#" style="color: #5a67d8"
-                    >conditions générales de vente</a
-                  >
-                  et j'ai pris connaissance de la
-                  <a href="#" style="color: #5a67d8"
-                    >politique de confidentialité</a
-                  >. *
-                </label>
-              </div>
-            </div>
-
-            <!-- Boutons d'action -->
-            <div class="form-actions">
-              <a href="panier.html" class="btn btn-secondary">
-                <i class="fas fa-arrow-left"></i> Retour au panier
-              </a>
-              <button
-                type="button"
-                class="btn btn-primary"
-                id="validerCommande"
+            <div class="form-group">
+              <label for="adresse"
+                ><i class="fas fa-map-marker-alt"></i> Adresse *</label
               >
-                <i class="fas fa-lock"></i> Payer et confirmer la commande
-              </button>
+              <input
+                type="text"
+                id="adresse"
+                name="adresse"
+                required
+                placeholder="Numéro et nom de rue"
+              />
             </div>
 
-            <!-- Loader -->
-            <div class="loader" id="paymentLoader">
-              <div class="spinner"></div>
-              <p>Traitement du paiement en cours...</p>
+            <div class="form-group">
+              <label for="complement"
+                ><i class="fas fa-building"></i> Complément d'adresse</label
+              >
+              <input
+                type="text"
+                id="complement"
+                name="complement"
+                placeholder="Appartement, étage, etc."
+              />
             </div>
-          </div>
 
-          <!-- Colonne de droite : Récapitulatif -->
-          <div class="recap-section">
-            <h3><i class="fas fa-receipt"></i> Récapitulatif de commande</h3>
-
-            <div class="recap-items">
-              <!-- Exemple d'articles -->
-              <div class="recap-item">
-                <div class="recap-item-info">
-                  <div class="recap-item-image">
-                    <i class="fas fa-gift" style="color: #5a67d8"></i>
-                  </div>
-                  <div class="recap-item-details">
-                    <div class="recap-item-name">Coffret Cadeau Premium</div>
-                    <div class="recap-item-price">49,90 €</div>
-                  </div>
-                </div>
-                <div class="recap-item-quantity">x1</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="code_postal"
+                  ><i class="fas fa-mailbox"></i> Code postal *</label
+                >
+                <input
+                  type="text"
+                  id="code_postal"
+                  name="code_postal"
+                  required
+                  pattern="[0-9]{5}"
+                  placeholder="75001"
+                />
               </div>
-
-              <div class="recap-item">
-                <div class="recap-item-info">
-                  <div class="recap-item-image">
-                    <i class="fas fa-wine-bottle" style="color: #5a67d8"></i>
-                  </div>
-                  <div class="recap-item-details">
-                    <div class="recap-item-name">Champagne Brut</div>
-                    <div class="recap-item-price">29,90 €</div>
-                  </div>
-                </div>
-                <div class="recap-item-quantity">x2</div>
+              <div class="form-group">
+                <label for="ville"><i class="fas fa-city"></i> Ville *</label>
+                <input
+                  type="text"
+                  id="ville"
+                  name="ville"
+                  required
+                  placeholder="Paris"
+                />
               </div>
             </div>
 
-            <div class="recap-totals">
-              <div class="recap-row">
-                <span>Sous-total</span>
-                <span>109,70 €</span>
-              </div>
-              <div class="recap-row">
-                <span>Livraison</span>
-                <span class="free-shipping" id="shippingCost">GRATUIT</span>
-              </div>
-              <div class="recap-row total">
-                <span>Total TTC</span>
-                <span id="totalAmount">109,70 €</span>
+            <div class="form-group">
+              <label for="pays"><i class="fas fa-globe"></i> Pays *</label>
+              <select id="pays" name="pays" required>
+                <option value="France" selected>France</option>
+                <option value="Belgique">Belgique</option>
+                <option value="Suisse">Suisse</option>
+                <option value="Luxembourg">Luxembourg</option>
+                <option value="autre">Autre pays</option>
+              </select>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="telephone"
+                  ><i class="fas fa-phone"></i> Téléphone
+                </label>
+                <input
+                  type="tel"
+                  id="telephone"
+                  name="telephone"
+                  pattern="[0-9]{10}"
+                  placeholder="0123456789"
+                />
               </div>
             </div>
 
             <div
+              class="form-group"
               style="
                 margin-top: 30px;
                 padding: 20px;
-                background-color: #f0fff4;
+                background-color: #f7fafc;
                 border-radius: 8px;
-                border-left: 4px solid #38a169;
+                border-left: 4px solid #5a67d8;
               "
             >
               <div
@@ -1058,151 +438,38 @@
                   margin-bottom: 10px;
                 "
               >
-                <i class="fas fa-info-circle" style="color: #38a169"></i>
-                <strong style="color: #2d3748">Garantie satisfaction</strong>
+                <i class="fas fa-info-circle" style="color: #5a67d8"></i>
+                <h3 style="margin: 0; font-size: 16px">
+                  Informations importantes
+                </h3>
               </div>
               <p style="margin: 0; color: #4a5568; font-size: 14px">
-                Satisfait ou remboursé sous 30 jours. Livraison gratuite en
-                France métropolitaine.
+                Les champs marqués d'un astérisque (*) sont obligatoires. Vos
+                informations de livraison seront utilisées uniquement pour la
+                livraison de votre commande.
               </p>
             </div>
-          </div>
+
+            <div class="form-actions">
+              <a href="panier.html" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Retour au panier
+              </a>
+              <button type="submit" class="btn btn-primary">
+                Continuer vers le paiement <i class="fas fa-arrow-right"></i>
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </main>
 
     <script>
-      // Données de l'exemple
-      const sousTotal = 109.7;
-
-      // Gestion des options de livraison
-      document.querySelectorAll(".livraison-option").forEach((option) => {
-        option.addEventListener("click", function () {
-          // Retirer la sélection de toutes les options
-          document.querySelectorAll(".livraison-option").forEach((opt) => {
-            opt.classList.remove("selected");
-          });
-
-          // Ajouter la sélection à l'option cliquée
-          this.classList.add("selected");
-
-          // Mettre à jour le prix de livraison
-          const shippingPrice = parseFloat(this.dataset.price);
-          const shippingCostElement = document.getElementById("shippingCost");
-          const totalAmountElement = document.getElementById("totalAmount");
-
-          if (shippingPrice === 0) {
-            shippingCostElement.textContent = "GRATUIT";
-            shippingCostElement.className = "free-shipping";
-          } else {
-            shippingCostElement.textContent = `${shippingPrice
-              .toFixed(2)
-              .replace(".", ",")} €`;
-            shippingCostElement.className = "";
-          }
-
-          // Mettre à jour le total
-          const total = sousTotal + shippingPrice;
-          totalAmountElement.textContent = `${total
-            .toFixed(2)
-            .replace(".", ",")} €`;
-        });
-      });
-
-      // Gestion des méthodes de paiement
-      document.querySelectorAll(".paiement-method").forEach((method) => {
-        method.addEventListener("click", function () {
-          // Retirer la sélection de toutes les méthodes
-          document.querySelectorAll(".paiement-method").forEach((meth) => {
-            meth.classList.remove("selected");
-            const cardDetails = meth.querySelector(".card-details");
-            if (cardDetails) {
-              cardDetails.classList.remove("active");
-            }
-          });
-
-          // Ajouter la sélection à la méthode cliquée
-          this.classList.add("selected");
-
-          // Afficher les détails de la carte si c'est la méthode sélectionnée
-          const paymentMethod = this.dataset.method;
-          if (paymentMethod === "card") {
-            const cardDetails = this.querySelector(".card-details");
-            if (cardDetails) {
-              cardDetails.classList.add("active");
-            }
-          }
-        });
-      });
-
-      // Formatage du numéro de carte
       document
-        .getElementById("cardNumber")
-        ?.addEventListener("input", function (e) {
-          let value = e.target.value.replace(/\D/g, "");
-          if (value.length > 16) value = value.substring(0, 16);
+        .getElementById("formLivraison")
+        .addEventListener("submit", function (e) {
+          e.preventDefault();
 
-          let formatted = "";
-          for (let i = 0; i < value.length; i++) {
-            if (i > 0 && i % 4 === 0) {
-              formatted += " ";
-            }
-            formatted += value[i];
-          }
-          e.target.value = formatted;
-        });
-
-      // Formatage de la date d'expiration
-      document
-        .getElementById("cardExpiry")
-        ?.addEventListener("input", function (e) {
-          let value = e.target.value.replace(/\D/g, "");
-          if (value.length > 4) value = value.substring(0, 4);
-
-          if (value.length >= 2) {
-            let month = value.substring(0, 2);
-            if (parseInt(month) > 12) {
-              month = "12";
-            }
-            if (parseInt(month) < 1) {
-              month = "01";
-            }
-            value = month + value.substring(2);
-          }
-
-          let formatted = value;
-          if (value.length >= 2) {
-            formatted = value.substring(0, 2) + "/" + value.substring(2);
-          }
-          e.target.value = formatted;
-        });
-
-      // Formatage automatique du téléphone
-      const phoneInput = document.getElementById("telephone");
-      if (phoneInput) {
-        phoneInput.addEventListener("input", function (e) {
-          let value = e.target.value.replace(/\D/g, "");
-          if (value.length > 10) value = value.substring(0, 10);
-
-          let formatted = "";
-          for (let i = 0; i < value.length; i++) {
-            if (i === 2 || i === 4 || i === 6 || i === 8) {
-              formatted += " ";
-            }
-            formatted += value[i];
-          }
-          e.target.value = formatted;
-        });
-      }
-
-      // Validation et soumission du formulaire
-      document
-        .getElementById("validerCommande")
-        .addEventListener("click", function () {
-          const submitBtn = this;
-          const loader = document.getElementById("paymentLoader");
-
-          // Validation du formulaire de livraison
+          // Validation des champs
           const requiredFields = [
             "nom",
             "prenom",
@@ -1213,14 +480,11 @@
           ];
 
           let isValid = true;
-          let firstInvalidField = null;
-
           requiredFields.forEach((fieldId) => {
             const field = document.getElementById(fieldId);
             if (!field.value.trim()) {
               isValid = false;
               field.style.borderColor = "#e53e3e";
-              if (!firstInvalidField) firstInvalidField = field;
             } else {
               field.style.borderColor = "#e2e8f0";
             }
@@ -1231,84 +495,30 @@
           if (!/^[0-9]{5}$/.test(codePostal.value)) {
             isValid = false;
             codePostal.style.borderColor = "#e53e3e";
-            if (!firstInvalidField) firstInvalidField = codePostal;
           }
 
           // Validation spécifique pour le téléphone
           const telephone = document.getElementById("telephone");
-          if (!/^[0-9]{10}$/.test(telephone.value.replace(/\s/g, ""))) {
+          if (!/^[0-9]{10}$/.test(telephone.value)) {
             isValid = false;
             telephone.style.borderColor = "#e53e3e";
-            if (!firstInvalidField) firstInvalidField = telephone;
           }
 
           // Validation spécifique pour l'email
           const email = document.getElementById("email");
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!emailRegex.test(email.value)) {
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) {
             isValid = false;
             email.style.borderColor = "#e53e3e";
-            if (!firstInvalidField) firstInvalidField = email;
-          }
-
-          // Validation des conditions générales
-          const conditions = document.getElementById("conditions");
-          if (!conditions.checked) {
-            isValid = false;
-            conditions.style.outline = "2px solid #e53e3e";
-            alert("Veuillez accepter les conditions générales de vente.");
-            return;
-          } else {
-            conditions.style.outline = "none";
-          }
-
-          // Validation des détails de paiement si carte bancaire sélectionnée
-          const selectedPaymentMethod = document.querySelector(
-            ".paiement-method.selected"
-          );
-          if (selectedPaymentMethod) {
-            const paymentMethod = selectedPaymentMethod.dataset.method;
-
-            if (paymentMethod === "card") {
-              const cardNumber = document
-                .getElementById("cardNumber")
-                .value.replace(/\s/g, "");
-              const cardName = document.getElementById("cardName").value;
-              const cardExpiry = document.getElementById("cardExpiry").value;
-              const cardCVC = document.getElementById("cardCVC").value;
-
-              if (!/^\d{16}$/.test(cardNumber)) {
-                alert(
-                  "Veuillez saisir un numéro de carte valide (16 chiffres)"
-                );
-                isValid = false;
-              }
-
-              if (!cardName.trim()) {
-                alert("Veuillez saisir le nom figurant sur la carte");
-                isValid = false;
-              }
-
-              if (!/^\d{2}\/\d{2}$/.test(cardExpiry)) {
-                alert("Veuillez saisir une date d'expiration valide (MM/AA)");
-                isValid = false;
-              }
-
-              if (!/^\d{3}$/.test(cardCVC)) {
-                alert("Veuillez saisir un cryptogramme valide (3 chiffres)");
-                isValid = false;
-              }
-            }
           }
 
           if (!isValid) {
-            if (firstInvalidField) {
-              firstInvalidField.focus();
-              firstInvalidField.style.animation = "none";
+            // Animation pour indiquer l'erreur
+            document.querySelectorAll("input:invalid").forEach((input) => {
+              input.style.animation = "none";
               setTimeout(() => {
-                firstInvalidField.style.animation = "pulse 0.5s";
+                input.style.animation = "pulse 0.5s";
               }, 10);
-            }
+            });
 
             alert(
               "Veuillez remplir correctement tous les champs obligatoires."
@@ -1318,179 +528,40 @@
 
           // Récupérer les données du formulaire
           const formData = {
-            livraison: {
-              nom: document.getElementById("nom").value,
-              prenom: document.getElementById("prenom").value,
-              adresse: document.getElementById("adresse").value,
-              complement: document.getElementById("complement").value,
-              code_postal: document.getElementById("code_postal").value,
-              ville: document.getElementById("ville").value,
-              pays: document.getElementById("pays").value,
-              telephone: document
-                .getElementById("telephone")
-                .value.replace(/\s/g, ""),
-              email: document.getElementById("email").value,
-            },
-            livraisonOption: {
-              type: document.querySelector(
-                ".livraison-option.selected .livraison-option-title"
-              ).textContent,
-              prix: parseFloat(
-                document.querySelector(".livraison-option.selected").dataset
-                  .price
-              ),
-            },
-            paiement: {
-              method: document.querySelector(".paiement-method.selected")
-                .dataset.method,
-              details: {},
-            },
-            commande: {
-              sousTotal: sousTotal,
-              livraison: parseFloat(
-                document.querySelector(".livraison-option.selected").dataset
-                  .price
-              ),
-              total:
-                sousTotal +
-                parseFloat(
-                  document.querySelector(".livraison-option.selected").dataset
-                    .price
-                ),
-            },
+            nom: document.getElementById("nom").value,
+            prenom: document.getElementById("prenom").value,
+            adresse: document.getElementById("adresse").value,
+            complement: document.getElementById("complement").value,
+            code_postal: document.getElementById("code_postal").value,
+            ville: document.getElementById("ville").value,
+            pays: document.getElementById("pays").value,
+            telephone: document.getElementById("telephone").value,
+            email: document.getElementById("email").value,
           };
 
-          // Ajouter les détails de la carte si méthode carte bancaire
-          if (formData.paiement.method === "card") {
-            formData.paiement.details = {
-              cardNumber: document
-                .getElementById("cardNumber")
-                .value.replace(/\s/g, ""),
-              cardName: document.getElementById("cardName").value,
-              cardExpiry: document.getElementById("cardExpiry").value,
-              cardCVC: document.getElementById("cardCVC").value,
-            };
-          }
+          // Sauvegarder en session
+          sessionStorage.setItem("adresseLivraison", JSON.stringify(formData));
 
-          // Sauvegarder en sessionStorage
-          sessionStorage.setItem("commandeData", JSON.stringify(formData));
+          // Animation de succès avant la redirection
+          const submitBtn = document.querySelector(".btn-primary");
+          submitBtn.innerHTML = '<i class="fas fa-check"></i> Redirection...';
+          submitBtn.style.backgroundColor = "#38a169";
 
-          // Afficher le loader
-          submitBtn.disabled = true;
-          loader.classList.add("active");
-
-          // Simulation du traitement du paiement
-          console.log("Données de commande:", formData);
-
-          // Simulation d'un délai de traitement
+          // Rediriger vers la page de paiement
           setTimeout(() => {
-            // Masquer le loader
-            loader.classList.remove("active");
-
-            // Afficher le succès
-            submitBtn.innerHTML =
-              '<i class="fas fa-check"></i> Commande validée !';
-            submitBtn.style.backgroundColor = "#38a169";
-
-            // Redirection vers la page de confirmation
-            setTimeout(() => {
-              window.location.href = "confirmation.html";
-            }, 1500);
-          }, 3000);
+            window.location.href = "paiement.php";
+          }, 800);
         });
 
-      // Pré-remplir si des données existent dans sessionStorage
+      // Pré-remplir si des données existent
       document.addEventListener("DOMContentLoaded", function () {
-        const savedData = sessionStorage.getItem("commandeData");
+        const savedData = sessionStorage.getItem("adresseLivraison");
         if (savedData) {
-          try {
-            const data = JSON.parse(savedData);
-
-            // Pré-remplir les champs de livraison
-            if (data.livraison) {
-              Object.keys(data.livraison).forEach((key) => {
-                const element = document.getElementById(key);
-                if (element) {
-                  if (key === "telephone" && data.livraison[key]) {
-                    // Formater le téléphone pour l'affichage
-                    let phone = data.livraison[key];
-                    let formatted = "";
-                    for (let i = 0; i < phone.length; i++) {
-                      if (i === 2 || i === 4 || i === 6 || i === 8) {
-                        formatted += " ";
-                      }
-                      formatted += phone[i];
-                    }
-                    element.value = formatted;
-                  } else {
-                    element.value = data.livraison[key];
-                  }
-                }
-              });
-            }
-
-            // Sélectionner l'option de livraison
-            if (data.livraisonOption) {
-              document
-                .querySelectorAll(".livraison-option")
-                .forEach((option) => {
-                  if (
-                    parseFloat(option.dataset.price) ===
-                    data.livraisonOption.prix
-                  ) {
-                    option.click();
-                  }
-                });
-            }
-
-            // Sélectionner la méthode de paiement
-            if (data.paiement && data.paiement.method) {
-              document
-                .querySelectorAll(".paiement-method")
-                .forEach((method) => {
-                  if (method.dataset.method === data.paiement.method) {
-                    method.click();
-                  }
-                });
-
-              // Pré-remplir les détails de la carte
-              if (data.paiement.method === "card" && data.paiement.details) {
-                const cardNumber = document.getElementById("cardNumber");
-                const cardName = document.getElementById("cardName");
-                const cardExpiry = document.getElementById("cardExpiry");
-                const cardCVC = document.getElementById("cardCVC");
-
-                if (cardNumber && data.paiement.details.cardNumber) {
-                  let formatted = "";
-                  for (
-                    let i = 0;
-                    i < data.paiement.details.cardNumber.length;
-                    i++
-                  ) {
-                    if (i > 0 && i % 4 === 0) {
-                      formatted += " ";
-                    }
-                    formatted += data.paiement.details.cardNumber[i];
-                  }
-                  cardNumber.value = formatted;
-                }
-
-                if (cardName && data.paiement.details.cardName) {
-                  cardName.value = data.paiement.details.cardName;
-                }
-
-                if (cardExpiry && data.paiement.details.cardExpiry) {
-                  cardExpiry.value = data.paiement.details.cardExpiry;
-                }
-
-                if (cardCVC && data.paiement.details.cardCVC) {
-                  cardCVC.value = data.paiement.details.cardCVC;
-                }
-              }
-            }
-          } catch (e) {
-            console.error("Erreur lors du parsing des données:", e);
-          }
+          const data = JSON.parse(savedData);
+          Object.keys(data).forEach((key) => {
+            const element = document.getElementById(key);
+            if (element) element.value = data[key];
+          });
         }
 
         // Ajouter un indicateur visuel pour les champs obligatoires
