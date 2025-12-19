@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Confirmation - HEURE DU CADEAU</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <style>
+      /* VOTRE CSS EXISTANT (inchangé) */
+      .confirmation-page {
+        padding: 60px 0;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        min-height: calc(100vh - 200px);
+        text-align: center;
+      }
+      /* ... TOUT LE CSS EXISTANT ... */
+
+      /* NOUVEAU STYLE POUR LA CRÉATION DE COMPTE */
+      .account-creation-section {
+        margin: 40px 0;
+        padding: 30px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+        text-align: left;
+      }
+
+      .account-creation-section h3 {
+        color: #2d3748;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .account-benefits {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+        margin: 20px 0;
+      }
+
+      .benefit-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 15px;
+        background: #f7fafc;
+        border-radius: 8px;
+      }
+
+      .benefit-item i {
+        color: #5a67d8;
+        font-size: 20px;
+        margin-top: 2px;
+      }
+
+      .benefit-content h4 {
+        margin: 0 0 5px 0;
+        color: #2d3748;
+        font-size: 14px;
+      }
+
+      .benefit-content p {
+        margin: 0;
+        color: #718096;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .account-form {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #e2e8f0;
+      }
+
+      .form-row {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .form-group {
+        flex: 1;
+        margin-bottom: 15px;
+      }
+
+      .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: #4a5568;
+      }
+
+      .form-group input {
+        width: 100%;
+        padding: 12px 15px;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 14px;
+      }
+
+      .form-group input:focus {
+        outline: none;
+        border-color: #5a67d8;
+        box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.1);
+      }
+
+      .form-actions {
+        display: flex;
+        gap: 15px;
+        margin-top: 25px;
+      }
+
+      .btn-account {
+        padding: 12px 25px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 15px;
+        cursor: pointer;
+        border: none;
+        transition: all 0.3s ease;
+      }
+
+      .btn-create {
+        background: #5a67d8;
+        color: white;
+      }
+
+      .btn-create:hover {
+        background: #4c51bf;
+        transform: translateY(-2px);
+      }
+
+      .btn-skip {
+        background: #edf2f7;
+        color: #4a5568;
+      }
+
+      .btn-skip:hover {
+        background: #e2e8f0;
+      }
+
+      .password-strength {
+        margin-top: 5px;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .password-strength.weak {
+        color: #e53e3e;
+      }
+      .password-strength.medium {
+        color: #d69e2e;
+      }
+      .password-strength.strong {
+        color: #38a169;
+      }
+
+      @media (max-width: 768px) {
+        .form-row {
+          flex-direction: column;
+          gap: 0;
+        }
+
+        .account-benefits {
+          grid-template-columns: 1fr;
+        }
+
+        .form-actions {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <?php include 'partials/header.php'; ?>
+
+    <main class="confirmation-page">
+      <div class="container">
+        <div class="confirmation-card">
+          <div class="confirmation-icon">
+            <i class="fas fa-check"></i>
+          </div>
+
+          <h1>Commande confirmée !</h1>
+
+          <div class="confirmation-message" id="confirmationMessage">
+            <!-- Chargé par JavaScript -->
+          </div>
+
+          <div class="order-details" id="orderDetails">
+            <!-- Chargé par JavaScript -->
+          </div>
+
+          <!-- SECTION CRÉATION DE COMPTE (NOUVELLE) -->
+          <div
+            id="accountCreationSection"
+            class="account-creation-section"
+            style="display: none"
+          >
+            <h3>
+              <i class="fas fa-user-plus"></i> Créez votre compte permanent
+            </h3>
+
+            <p>Profitez de ces avantages en créant un compte :</p>
+
+            <div class="account-benefits">
+              <div class="benefit-item">
+                <i class="fas fa-shipping-fast"></i>
+                <div class="benefit-content">
+                  <h4>Suivi de commande</h4>
+                  <p>Suivez l'état de votre commande en temps réel</p>
+                </div>
+              </div>
+
+              <div class="benefit-item">
+                <i class="fas fa-history"></i>
+                <div class="benefit-content">
+                  <h4>Historique d'achats</h4>
+                  <p>Retrouvez tous vos achats passés</p>
+                </div>
+              </div>
+
+              <div class="benefit-item">
+                <i class="fas fa-map-marker-alt"></i>
+                <div class="benefit-content">
+                  <h4>Adresses sauvegardées</h4>
+                  <p>Vos adresses enregistrées pour commander plus vite</p>
+                </div>
+              </div>
+
+              <div class="benefit-item">
+                <i class="fas fa-gift"></i>
+                <div class="benefit-content">
+                  <h4>Promotions exclusives</h4>
+                  <p>Recevez des offres spéciales en avant-première</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="account-form">
+              <form id="createAccountForm">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="password">Mot de passe *</label>
+                    <input
+                      type="password"
+                      id="password"
+                      name="password"
+                      required
+                      minlength="6"
+                    />
+                    <div id="passwordStrength" class="password-strength"></div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="confirmPassword"
+                      >Confirmer le mot de passe *</label
+                    >
+                    <input
+                      type="password"
+                      id="confirmPassword"
+                      name="confirmPassword"
+                      required
+                      minlength="6"
+                    />
+                    <div
+                      id="passwordMatch"
+                      style="font-size: 12px; margin-top: 5px"
+                    ></div>
+                  </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 20px">
+                  <label
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 10px;
+                      cursor: pointer;
+                    "
+                  >
+                    <input
+                      type="checkbox"
+                      id="newsletter"
+                      name="newsletter"
+                      value="1"
+                      checked
+                    />
+                    <span
+                      >Je souhaite recevoir les offres spéciales et nouveautés
+                      par email</span
+                    >
+                  </label>
+                </div>
+
+                <div class="form-actions">
+                  <button
+                    type="submit"
+                    class="btn-account btn-create"
+                    id="createAccountBtn"
+                  >
+                    <i class="fas fa-check"></i> Créer mon compte
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-account btn-skip"
+                    id="skipAccountBtn"
+                  >
+                    <i class="fas fa-times"></i> Plus tard
+                  </button>
+                </div>
+              </form>
+
+              <div
+                id="accountSuccess"
+                style="
+                  display: none;
+                  padding: 20px;
+                  background: #c6f6d5;
+                  border-radius: 8px;
+                  margin-top: 20px;
+                "
+              >
+                <p
+                  style="
+                    margin: 0;
+                    color: #22543d;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                  "
+                >
+                  <i class="fas fa-check-circle"></i>
+                  <strong>Compte créé avec succès !</strong> Vous pouvez
+                  maintenant vous connecter.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="next-steps">
+            <h3><i class="fas fa-list-ol"></i> Prochaines étapes</h3>
+
+            <div class="step">
+              <div class="step-number">1</div>
+              <div class="step-content">
+                <h4>Email de confirmation</h4>
+                <p>
+                  Vous recevrez un email de confirmation dans les prochaines
+                  minutes avec tous les détails de votre commande.
+                </p>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-number">2</div>
+              <div class="step-content">
+                <h4>Préparation de votre commande</h4>
+                <p>
+                  Notre équipe prépare votre commande avec soin. Vous serez
+                  informé dès son expédition.
+                </p>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-number">3</div>
+              <div class="step-content">
+                <h4>Livraison</h4>
+                <p>
+                  Suivez votre colis grâce au numéro de suivi qui vous sera
+                  envoyé par email.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="email-notice">
+            <i class="fas fa-envelope"></i>
+            <strong>Vérifiez vos spams !</strong>
+            <p style="margin: 5px 0 0 0">
+              Si vous ne recevez pas l'email de confirmation, pensez à vérifier
+              votre dossier de courriers indésirables.
+            </p>
+          </div>
+
+          <div class="action-buttons">
+            <a href="index.html" class="btn btn-primary">
+              <i class="fas fa-home"></i> Retour à l'accueil
+            </a>
+            <a href="produits.php" class="btn btn-secondary">
+              <i class="fas fa-shopping-bag"></i> Continuer mes achats
+            </a>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <?php include 'partials/footer.php'; ?>
+
+    <script>
+      // Récupérer le numéro de commande depuis l'URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const orderNumber = urlParams.get("cmd") || sessionStorage.getItem("lastOrder") || "CMD-000000";
+      const orderEmail = sessionStorage.getItem("orderEmail") || "contact@heureducadeau.fr";
+
+      // Formatage de la date
+      function formatDate(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleDateString("fr-FR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
+
+      // Vérifier si un client temporaire existe
+      function checkTempClient() {
+        // Vérifier dans sessionStorage ou dans la session PHP
+        const tempClient = sessionStorage.getItem('tempClientId') ||
+                          (<?php echo isset($_SESSION['client_temp']) ? 'true' : 'false'; ?>);
+
+        return tempClient;
+      }
+
+      // Afficher les détails de la commande
+      function afficherDetails() {
+        const message = document.getElementById("confirmationMessage");
+        const details = document.getElementById("orderDetails");
+
+        // Générer un numéro de commande
+        const now = new Date();
+        const dateStr = now.toISOString().split("T")[0].replace(/-/g, "");
+        const randomStr = Math.random().toString(36).substr(2, 6).toUpperCase();
+        const finalOrderNumber = orderNumber === "CMD-000000" ? `CMD-${dateStr}-${randomStr}` : orderNumber;
+
+        // Sauvegarder pour cette session
+        sessionStorage.setItem("lastOrder", finalOrderNumber);
+
+        // Message de confirmation
+        message.innerHTML = `
+          <p>Merci pour votre commande ! Elle a bien été enregistrée et sera traitée dans les plus brefs délais.</p>
+          <p>Un email récapitulatif vous a été envoyé à l'adresse <strong>${orderEmail}</strong>.</p>
+        `;
+
+        // Détails de la commande
+        details.innerHTML = `
+          <div class="detail-row">
+            <span class="detail-label">Numéro de commande</span>
+            <span class="detail-value order-number">${finalOrderNumber}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Date de la commande</span>
+            <span class="detail-value">${formatDate(new Date().toISOString())}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Statut</span>
+            <span class="detail-value" style="color: #38a169;">
+              <i class="fas fa-check-circle"></i> Confirmée
+            </span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Email de contact</span>
+            <span class="detail-value">${orderEmail}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Mode de livraison</span>
+            <span class="detail-value">Livraison standard (3-5 jours)</span>
+          </div>
+        `;
+
+        // Vérifier si on doit afficher la section création de compte
+        if (checkTempClient()) {
+          document.getElementById('accountCreationSection').style.display = 'block';
+        }
+      }
+
+      // Gestion de la force du mot de passe
+      document.getElementById('password').addEventListener('input', function(e) {
+        const password = e.target.value;
+        const strengthDiv = document.getElementById('passwordStrength');
+
+        if (password.length === 0) {
+          strengthDiv.textContent = '';
+          strengthDiv.className = 'password-strength';
+          return;
+        }
+
+        let strength = 'weak';
+        let message = 'Faible';
+
+        if (password.length >= 8 && /[A-Z]/.test(password) && /[0-9]/.test(password)) {
+          strength = 'strong';
+          message = 'Fort';
+        } else if (password.length >= 6) {
+          strength = 'medium';
+          message = 'Moyen';
+        }
+
+        strengthDiv.textContent = `Sécurité : ${message}`;
+        strengthDiv.className = `password-strength ${strength}`;
+      });
+
+      // Vérification de la correspondance des mots de passe
+      document.getElementById('confirmPassword').addEventListener('input', function(e) {
+        const password = document.getElementById('password').value;
+        const confirmPassword = e.target.value;
+        const matchDiv = document.getElementById('passwordMatch');
+
+        if (confirmPassword.length === 0) {
+          matchDiv.textContent = '';
+          return;
+        }
+
+        if (password === confirmPassword) {
+          matchDiv.textContent = '✓ Les mots de passe correspondent';
+          matchDiv.style.color = '#38a169';
+        } else {
+          matchText = '✗ Les mots de passe ne correspondent pas';
+          matchDiv.textContent = matchText;
+          matchDiv.style.color = '#e53e3e';
+        }
+      });
+
+      // Création du compte
+      document.getElementById('createAccountForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const password = document.getElementById('password').value;
+        const confirmPassword = document.getElementById('confirmPassword').value;
+        const newsletter = document.getElementById('newsletter').checked;
+
+        // Validation
+        if (password.length < 6) {
+          alert('Le mot de passe doit contenir au moins 6 caractères');
+          return;
+        }
+
+        if (password !== confirmPassword) {
+          alert('Les mots de passe ne correspondent pas');
+          return;
+        }
+
+        // Désactiver le bouton
+        const submitBtn = document.getElementById('createAccountBtn');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Création en cours...';
+
+        try {
+          const response = await fetch('/api/clients.php?action=convert_to_permanent', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              password: password,
+              confirm_password: confirmPassword,
+              newsletter: newsletter ? 1 : 0
+            })
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            // Afficher le succès
+            document.getElementById('accountSuccess').style.display = 'block';
+            document.getElementById('createAccountForm').style.display = 'none';
+
+            // Nettoyer le localStorage
+            sessionStorage.removeItem('tempClientId');
+
+            // Mettre à jour le header si nécessaire
+            const cartCounts = document.querySelectorAll('.cart-count');
+            cartCounts.forEach((el) => {
+              el.textContent = "0";
+              el.style.display = "none";
+            });
+          } else {
+            alert('Erreur: ' + data.message);
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-check"></i> Créer mon compte';
+          }
+        } catch (error) {
+          console.error('Erreur:', error);
+          alert('Une erreur est survenue. Veuillez réessayer.');
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<i class="fas fa-check"></i> Créer mon compte';
+        }
+      });
+
+      // Ignorer la création de compte
+      document.getElementById('skipAccountBtn').addEventListener('click', function() {
+        if (confirm('Vous pourrez créer un compte plus tard en utilisant le lien dans l\'email de confirmation. Continuer ?')) {
+          document.getElementById('accountCreationSection').style.display = 'none';
+        }
+      });
+
+      // Charger au démarrage
+      document.addEventListener("DOMContentLoaded", function () {
+        afficherDetails();
+
+        // Nettoyer le localStorage si nécessaire
+        sessionStorage.removeItem("livraisonData");
+
+        // Mettre à jour le compteur du panier (doit être à 0)
+        const cartCounts = document.querySelectorAll(".cart-count");
+        cartCounts.forEach((el) => {
+          el.textContent = "0";
+          el.style.display = "none";
+        });
+      });
+    </script>
+  </body>
+</html>
