@@ -1,40 +1,106 @@
 <?php
+// ============================================
+// VÉRIFICATION D'ACCÈS - PROTECTION CONTRE ACCÈS DIRECT
+// ============================================
+
+/**
+ * Vérifie si l'accès à la page est autorisé
+ */
+function checkAccess() {
+    // DÉMARRER LA SESSION EN PREMIER
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    
+    // Autoriser les requêtes API
+    if (isset($_GET['api']) && $_GET['api'] == '1') {
+        return true;
+    }
+    
+    // Autoriser les soumissions POST (formulaire)
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        return true;
+    }
+    
+    // Vérifier si l'utilisateur a un panier non vide DANS LA SESSION PHP
+    if (isset($_SESSION['panier']) && !empty($_SESSION['panier'])) {
+        return true;
+    }
+    
+    // Vérifier si le checkout a été autorisé par l'API panier
+    if (isset($_SESSION['checkout_authorized']) && $_SESSION['checkout_authorized'] === true) {
+        // Vérifier que l'autorisation n'est pas expirée (10 minutes)
+        if (isset($_SESSION['checkout_time']) && (time() - $_SESSION['checkout_time']) <= 600) {
+            return true;
+        } else {
+            // Autorisation expirée, nettoyer
+            unset($_SESSION['checkout_authorized']);
+            unset($_SESSION['checkout_time']);
+        }
+    }
+    
+    // Vérifier si l'utilisateur vient d'une page autorisée
+    $referer = $_SERVER['HTTP_REFERER'] ?? '';
+    $allowed_referers = ['panier.html', 'panier.php', 'commande.html', 'livraison.php', 'index.php'];
+    $has_allowed_referer = false;
+    
+    foreach ($allowed_referers as $allowed) {
+        if (stripos($referer, $allowed) !== false) {
+            $has_allowed_referer = true;
+            break;
+        }
+    }
+    
+    // Autoriser si l'utilisateur vient d'une page autorisée ET a un panier
+    if ($has_allowed_referer && isset($_SESSION['panier']) && !empty($_SESSION['panier'])) {
+        return true;
+    }
+    
+    // Vérifier si c'est un rafraîchissement de la page (même URL)
+    $current_url = $_SERVER['REQUEST_URI'];
+    $is_refresh = $referer && strpos($referer, $current_url) !== false;
+    
+    if ($is_refresh && isset($_SESSION['panier']) && !empty($_SESSION['panier'])) {
+        return true;
+    }
+    
+    // Si aucune condition n'est remplie, accès non autorisé
+    return false;
+}
+
+// Vérifier l'accès avant de continuer
+if (!checkAccess() && !isset($_GET['api'])) {
+    // Pour les requêtes AJAX/API, retourner une erreur JSON
+    if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && 
+        strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => false,
+            'message' => 'Accès non autorisé. Veuillez d\'abord remplir votre panier.',
+            'redirect' => 'panier.html'
+        ]);
+        exit();
+    }
+    
+    // Sinon rediriger vers la page du panier
+    header('Location: panier.html');
+    exit();
+}
+
+// ============================================
+// DÉBUT DU CODE EXISTANT
+// ============================================
+
 // livraison.php - VERSION CORRIGÉE COMPLÈTE
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 
-session_start();
+require_once 'db_config.php';
 
 // ============================================
 // FONCTIONS DE CONNEXION BDD
 // ============================================
-
-/**
- * Connexion à la base de données
- */
-function getDB() {
-    static $db = null;
-    
-    if ($db === null) {
-        try {
-            // Inclure db_config.php pour obtenir les constantes
-            require_once 'db_config.php';
-            
-            $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8";
-            $db = new PDO($dsn, DB_USER, DB_PASS);
-            $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-            
-            error_log("DEBUG: Connexion BDD établie avec succès");
-        } catch (PDOException $e) {
-            error_log("ERREUR CRITIQUE: Connexion BDD échouée: " . $e->getMessage());
-            return false;
-        }
-    }
-    
-    return $db;
-}
 
 /**
  * Vérifie si la table existe

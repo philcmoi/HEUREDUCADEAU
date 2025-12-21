@@ -1,5 +1,5 @@
 <?php
-// api/panier.php - VERSION CORRIGÉE ET COMPLÈTE
+// api/panier.php - VERSION COMPLÈTE AVEC INIT_CHECKOUT
 
 // Activer le débogage temporairement
 error_reporting(E_ALL);
@@ -353,7 +353,7 @@ if (empty($action)) {
     echo json_encode([
         'success' => false, 
         'message' => 'Action non spécifiée',
-        'available_actions' => ['test', 'compter', 'ajouter', 'get', 'update_quantite', 'supprimer', 'vider'],
+        'available_actions' => ['test', 'compter', 'ajouter', 'get', 'update_quantite', 'supprimer', 'vider', 'init_checkout'],
         'session_id' => session_id()
     ]);
     exit;
@@ -770,6 +770,73 @@ switch ($action) {
         ]);
         break;
         
+    case 'init_checkout':
+        try {
+            // Vérifier si le panier n'est pas vide
+            $total = compterArticlesPanier();
+            
+            if ($total === 0) {
+                echo json_encode([
+                    'success' => false, 
+                    'message' => 'Votre panier est vide'
+                ]);
+                exit;
+            }
+            
+            // Vérifier la disponibilité des produits
+            $panier_details = [];
+            if ($id_panier_bdd) {
+                $panier_details = getPanierFromBDD($id_panier_bdd);
+            }
+            
+            if (empty($panier_details) && isset($_SESSION['panier']) && !empty($_SESSION['panier'])) {
+                foreach ($_SESSION['panier'] as $item) {
+                    $produit = getProductDetails($item['id_produit']);
+                    if ($produit) {
+                        $panier_details[] = [
+                            'id_produit' => $item['id_produit'],
+                            'quantite' => $item['quantite'],
+                            'nom' => $produit['nom'],
+                            'disponible' => ($produit['statut'] === 'actif' && $produit['quantite_stock'] >= $item['quantite'])
+                        ];
+                    }
+                }
+            }
+            
+            // Vérifier si tous les produits sont disponibles
+            $unavailable_items = array_filter($panier_details, function($item) {
+                return !$item['disponible'];
+            });
+            
+            if (count($unavailable_items) > 0) {
+                echo json_encode([
+                    'success' => false, 
+                    'message' => 'Certains produits ne sont pas disponibles',
+                    'unavailable_items' => $unavailable_items
+                ]);
+                exit;
+            }
+            
+            // Si tout est bon, autoriser l'accès à livraison.php
+            $_SESSION['checkout_authorized'] = true;
+            $_SESSION['checkout_time'] = time();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Checkout autorisé',
+                'redirect_url' => 'livraison.php',
+                'items_count' => $total
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false, 
+                'message' => 'Erreur lors de l\'initialisation du checkout',
+                'error' => $e->getMessage()
+            ]);
+        }
+        break;
+        
     case 'synchroniser':
         // Synchroniser la session avec la BDD
         if ($id_panier_bdd && !empty($_SESSION['panier'])) {
@@ -804,6 +871,7 @@ switch ($action) {
                 'update_quantite', 
                 'supprimer', 
                 'vider',
+                'init_checkout',
                 'synchroniser'
             ]
         ]);

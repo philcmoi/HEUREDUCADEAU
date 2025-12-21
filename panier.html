@@ -10,6 +10,7 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
     />
     <style>
+      /* TOUT LE CSS RESTE IDENTIQUE - SEUL LE JAVASCRIPT EST MODIFIÉ */
       * {
         margin: 0;
         padding: 0;
@@ -780,7 +781,7 @@
     <script>
       class CartManager {
         constructor() {
-          this.apiUrl = "api/panier.php"; // Correction : chemin relatif correct
+          this.apiUrl = "api/panier.php";
           this.cartCountElement = document.getElementById("cartCount");
           this.cartMessageElement = document.getElementById("cartMessage");
           this.isProcessing = false;
@@ -1093,48 +1094,38 @@
         }
 
         async checkout() {
-          // Vérifier si tous les produits sont disponibles
+          // NOUVELLE MÉTHODE AVEC VÉRIFICATION API
           try {
-            const response = await fetch(`${this.apiUrl}?action=get`);
+            // 1. Vérifier avec l'API si le checkout est autorisé
+            const response = await fetch(`${this.apiUrl}?action=init_checkout`);
             const data = await response.json();
 
-            if (data.success && data.panier) {
-              const unavailableItems = data.panier.filter(
-                (item) => !item.disponible
-              );
-
-              if (unavailableItems.length > 0) {
-                this.showNotification(
-                  "Certains produits ne sont pas disponibles. Veuillez les retirer du panier.",
-                  "error"
-                );
-                return;
-              }
-
-              if (data.panier.length === 0) {
-                this.showNotification("Votre panier est vide", "warning");
-                return;
-              }
-
-              // REDIRECTION RÉELLE VERS LA PAGE DE PAIEMENT
+            if (data.success) {
               this.showNotification(
-                "Redirection vers le paiement...",
+                "Redirection vers la livraison...",
                 "success"
               );
 
-              // Attendre un peu pour que l'utilisateur voie la notification
+              // 2. Rediriger vers livraison.php
               setTimeout(() => {
-                // Redirection vers la page de livraison (étape avant paiement)
                 window.location.href = "livraison.php";
               }, 1500);
             } else {
+              // 3. Si échec, afficher le message d'erreur
               this.showNotification(
-                "Erreur lors de la vérification du panier",
+                data.message || "Impossible de procéder au paiement",
                 "error"
               );
+
+              // 4. Si des produits ne sont pas disponibles, recharger le panier
+              if (data.unavailable_items) {
+                setTimeout(() => {
+                  this.loadCart();
+                }, 2000);
+              }
             }
           } catch (error) {
-            console.error("Erreur vérification panier:", error);
+            console.error("Erreur checkout:", error);
             this.showNotification("Erreur de connexion au serveur", "error");
           }
         }
