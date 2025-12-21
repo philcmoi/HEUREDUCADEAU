@@ -177,20 +177,20 @@ function getCategoriesAvecCompteur() {
     }
 }
 
-// Récupérer les paramètres de recherche
-$recherche = $_GET['q'] ?? '';
-$categorie = $_GET['categorie'] ?? '';
-$prix_min = $_GET['prix_min'] ?? '';
-$prix_max = $_GET['prix_max'] ?? '';
-$tri = $_GET['tri'] ?? 'pertinence';
+// Récupérer les paramètres de recherche avec sanitisation
+$recherche = htmlspecialchars(trim($_GET['q'] ?? ''));
+$categorie = intval($_GET['categorie'] ?? 0);
+$prix_min = filter_var($_GET['prix_min'] ?? '', FILTER_VALIDATE_FLOAT);
+$prix_max = filter_var($_GET['prix_max'] ?? '', FILTER_VALIDATE_FLOAT);
+$tri = htmlspecialchars($_GET['tri'] ?? 'pertinence');
 $page = max(1, intval($_GET['page'] ?? 1));
 
 // Construire les filtres
 $filtres = [
     'recherche' => $recherche,
-    'categorie' => $categorie,
-    'prix_min' => $prix_min,
-    'prix_max' => $prix_max,
+    'categorie' => $categorie > 0 ? $categorie : '',
+    'prix_min' => $prix_min !== false ? $prix_min : '',
+    'prix_max' => $prix_max !== false ? $prix_max : '',
     'tri' => $tri,
     'page' => $page,
     'limit' => 12
@@ -206,7 +206,7 @@ $categories = getCategoriesAvecCompteur();
 $pdo = getPDOConnection();
 $sqlCount = "SELECT COUNT(*) as total 
              FROM produits p 
-             JOIN categories c ON p.id_categorie = c.id_categorie
+             LEFT JOIN categories c ON p.id_categorie = c.id_categorie
              WHERE p.statut = 'actif'";
              
 $paramsCount = [];
@@ -220,7 +220,7 @@ if (!empty($recherche)) {
     $paramsCount[] = $searchTerm;
 }
 
-if (!empty($categorie)) {
+if (!empty($categorie) && $categorie > 0) {
     $conditionsCount[] = "p.id_categorie = ?";
     $paramsCount[] = $categorie;
 }
@@ -525,14 +525,14 @@ try {
                         
                         <div style="margin-bottom: 20px;">
                             <label>Prix min:</label>
-                            <input type="number" name="prix_min" value="<?= $prix_min ?>" 
+                            <input type="number" name="prix_min" value="<?= $prix_min !== false ? $prix_min : '' ?>" 
                                    style="width: 100%; padding: 10px; margin-top: 5px;"
                                    placeholder="0" min="0" step="0.01">
                         </div>
                         
                         <div style="margin-bottom: 20px;">
                             <label>Prix max:</label>
-                            <input type="number" name="prix_max" value="<?= $prix_max ?>" 
+                            <input type="number" name="prix_max" value="<?= $prix_max !== false ? $prix_max : '' ?>" 
                                    style="width: 100%; padding: 10px; margin-top: 5px;"
                                    placeholder="1000" min="0" step="0.01">
                         </div>
@@ -599,13 +599,12 @@ try {
                                 $note = $produit['note_moyenne'] ?? 0;
                                 $nombreAvis = $produit['nombre_avis'] ?? 0;
                                 $imageUrl = !empty($produit['image']) ? htmlspecialchars($produit['image']) : 'img/default-product.jpg';
-                                $imageOnError = "this.src='img/default-product.jpg'";
                             ?>
                             <div class="product-card" data-id="<?= $produit['id_produit'] ?>">
                                 <div class="product-image">
                                     <img src="<?= $imageUrl ?>" 
                                          alt="<?= htmlspecialchars($produit['nom']) ?>"
-                                         onerror="<?= $imageOnError ?>">
+                                         onerror="this.src='img/default-product.jpg'">
                                 </div>
                                 
                                 <div class="product-info">
