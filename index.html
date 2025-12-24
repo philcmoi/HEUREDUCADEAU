@@ -781,7 +781,7 @@
             </div>
             <h3>Anniversaires</h3>
             <p>Cadeaux uniques pour célébrer les anniversaires</p>
-            <a href="index.php?categorie=anniversaire" class="category-link"
+            <a href="index.php?categorie=1" class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -789,7 +789,7 @@
             <div class="category-icon"><i class="fas fa-heart"></i></div>
             <h3>Saint-Valentin</h3>
             <p>Romantique et mémorable</p>
-            <a href="index.php?categorie=valentin" class="category-link"
+            <a href="index.php?categorie=2" class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -797,7 +797,7 @@
             <div class="category-icon"><i class="fas fa-glass-cheers"></i></div>
             <h3>Mariage</h3>
             <p>Cadeaux de mariage élégants</p>
-            <a href="index.php?categorie=mariage" class="category-link"
+            <a href="index.php?categorie=3" class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -805,7 +805,7 @@
             <div class="category-icon"><i class="fas fa-baby"></i></div>
             <h3>Naissance</h3>
             <p>Pour accueillir bébé</p>
-            <a href="index.php?categorie=naissance" class="category-link"
+            <a href="index.php?categorie=4" class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -815,7 +815,7 @@
             </div>
             <h3>Diplômés</h3>
             <p>Pour célébrer la réussite</p>
-            <a href="index.php?categorie=diplome" class="category-link"
+            <a href="index.php?categorie=5" class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -825,7 +825,7 @@
             </div>
             <h3>Noël</h3>
             <p>Magie des fêtes de fin d'année</p>
-            <a href="index.php?categorie=noel" class="category-link"
+            <a href="index.php?categorie=6" class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -849,42 +849,6 @@
         <div class="text-center">
           <a href="index.php" class="btn btn-primary">Voir tous les produits</a>
         </div>
-      </div>
-    </section>
-
-    <!-- Section de débogage (visible uniquement en développement) -->
-    <section class="debug-section" style="display: block">
-      <div class="container">
-        <h4 style="margin-bottom: 10px">Outils de débogage</h4>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap">
-          <button onclick="testAPI()" class="btn-test-api">
-            <i class="fas fa-bug"></i> Tester l'API
-          </button>
-          <button onclick="checkDatabase()" class="btn-test-api">
-            <i class="fas fa-database"></i> Vérifier la base
-          </button>
-          <button
-            onclick="localStorage.clear(); location.reload();"
-            class="btn-test-api"
-          >
-            <i class="fas fa-trash"></i> Effacer le cache
-          </button>
-          <button onclick="loadFeaturedProducts()" class="btn-test-api">
-            <i class="fas fa-redo"></i> Recharger produits
-          </button>
-        </div>
-        <div
-          id="debugOutput"
-          style="
-            margin-top: 15px;
-            padding: 10px;
-            background: white;
-            border-radius: 6px;
-            font-family: monospace;
-            font-size: 0.85rem;
-            display: none;
-          "
-        ></div>
       </div>
     </section>
 
@@ -1041,7 +1005,7 @@
               Paris
             </li>
             <li><i class="fas fa-phone"></i> 01 23 45 67 89</li>
-            <li><i class="fas fa-envelope"></i> contact@cHEUREDUCADEAU.fr</li>
+            <li><i class="fas fa-envelope"></i> contact@cadeauxelegance.fr</li>
             <li><i class="fas fa-clock"></i> Lun-Ven: 9h-18h</li>
           </ul>
         </div>
@@ -1076,19 +1040,368 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/main.js"></script>
     <script>
       // ==============================================
-      // CONFIGURATION AVEC BASE DE DONNÉES - VERSION CORRIGÉE
+      // GESTIONNAIRE DE PANIER - VERSION CORRIGÉE
       // ==============================================
 
-      // CORRECTION IMPORTANTE
-      const API_PRODUITS_URL = "/api/produits.php?action=featured&limit=4";
-      const API_PANIER_URL = "/api/panier.php";
+      // Configuration
+      const API_PRODUITS_URL = "api/produits.php?action=featured&limit=4";
+      const API_PANIER_URL = "api/panier.php";
 
-      console.log("=== CONFIGURATION AVEC BASE DE DONNÉES ===");
-      console.log("URL API Produits:", API_PRODUITS_URL);
+      console.log("=== INITIALISATION DU PANIER ===");
       console.log("URL API Panier:", API_PANIER_URL);
+
+      // Classe PanierManager corrigée
+      class PanierManager {
+        constructor() {
+          this.apiUrl = API_PANIER_URL;
+          this.cartModal = document.getElementById("cartModal");
+          this.cartModalBody = document.getElementById("cartModalBody");
+          this.cartCountElements = document.querySelectorAll(".cart-count");
+          this.initEvents();
+          this.updateCartCount();
+          console.log("PanierManager initialisé");
+        }
+
+        initEvents() {
+          // Fermer la modal
+          document
+            .getElementById("closeCartModal")
+            ?.addEventListener("click", () => {
+              this.cartModal.classList.remove("show");
+            });
+
+          document
+            .getElementById("continueShopping")
+            ?.addEventListener("click", () => {
+              this.cartModal.classList.remove("show");
+            });
+
+          this.cartModal?.addEventListener("click", (e) => {
+            if (e.target === this.cartModal) {
+              this.cartModal.classList.remove("show");
+            }
+          });
+        }
+
+        // Méthode pour ajouter au panier - VERSION FIABLE
+        async ajouterAuPanier(id_produit, quantite = 1, button = null) {
+          console.log(
+            `[PanierManager] Ajout panier: ID=${id_produit}, Qty=${quantite}`
+          );
+
+          if (!id_produit || id_produit <= 0) {
+            this.showNotification("Erreur: Produit invalide", "error");
+            return false;
+          }
+
+          // Sauvegarder l'état du bouton
+          let originalHTML = "";
+          let originalDisabled = false;
+
+          if (button) {
+            originalHTML = button.innerHTML;
+            originalDisabled = button.disabled;
+            button.disabled = true;
+            button.innerHTML =
+              '<i class="fas fa-spinner fa-spin"></i> Ajout...';
+            button.classList.add("loading");
+          }
+
+          try {
+            // Envoyer la requête
+            const response = await fetch(this.apiUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                action: "ajouter",
+                id_produit: parseInt(id_produit),
+                quantite: parseInt(quantite),
+              }),
+            });
+
+            const data = await response.json();
+            console.log("Réponse API:", data);
+
+            if (data.success) {
+              // Succès
+              await this.updateCartCount();
+
+              // Afficher la modal
+              const productInfo = await this.getProductInfo(id_produit);
+              this.showCartModal(productInfo);
+
+              this.showNotification(
+                `"${data.produit_nom || productInfo.nom}" ajouté au panier !`
+              );
+
+              return true;
+            } else {
+              // Échec API
+              this.showNotification(
+                data.message || "Erreur lors de l'ajout",
+                "error"
+              );
+              return false;
+            }
+          } catch (error) {
+            console.error("Erreur ajout panier:", error);
+
+            // Fallback: utiliser localStorage comme solution temporaire
+            this.showNotification(
+              "Erreur de connexion. Utilisation du panier local...",
+              "error"
+            );
+
+            // Utiliser localStorage comme fallback
+            return this.addToLocalStorage(id_produit, quantite, button);
+          } finally {
+            // Restaurer l'état du bouton
+            if (button) {
+              setTimeout(() => {
+                button.disabled = originalDisabled;
+                button.innerHTML = originalHTML;
+                button.classList.remove("loading");
+              }, 1000);
+            }
+          }
+        }
+
+        // Fallback: localStorage
+        async addToLocalStorage(id_produit, quantite, button) {
+          try {
+            let panier = JSON.parse(localStorage.getItem("panier") || "[]");
+
+            // Chercher si le produit existe déjà
+            const index = panier.findIndex(
+              (item) => item.id_produit == id_produit
+            );
+
+            if (index !== -1) {
+              panier[index].quantite += quantite;
+            } else {
+              // Récupérer les infos produit
+              const productInfo = await this.getProductInfo(id_produit);
+              panier.push({
+                id_produit: id_produit,
+                quantite: quantite,
+                nom: productInfo.nom,
+                prix: productInfo.prix_ttc,
+                image: productInfo.image,
+                date_ajout: new Date().toISOString(),
+              });
+            }
+
+            // Sauvegarder dans localStorage
+            localStorage.setItem("panier", JSON.stringify(panier));
+
+            // Mettre à jour l'affichage
+            this.updateCartCount();
+
+            // Afficher la modal
+            const productInfo = await this.getProductInfo(id_produit);
+            this.showCartModal(productInfo);
+
+            this.showNotification(`${productInfo.nom} ajouté au panier local`);
+
+            return true;
+          } catch (error) {
+            console.error("Erreur localStorage:", error);
+            this.showNotification("Erreur d'ajout au panier", "error");
+            return false;
+          }
+        }
+
+        // Récupérer les infos produit
+        async getProductInfo(id_produit) {
+          try {
+            // Essayer l'API produits
+            const response = await fetch(
+              `api/produits.php?action=get&id=${id_produit}&_=${Date.now()}`
+            );
+            if (response.ok) {
+              const data = await response.json();
+              if (data.success && data.produit) {
+                return data.produit;
+              }
+            }
+
+            // Fallback: chercher dans le DOM
+            const productCard = document.querySelector(
+              `.product-card[data-id="${id_produit}"]`
+            );
+            if (productCard) {
+              const nom =
+                productCard.querySelector("h3")?.textContent ||
+                `Produit #${id_produit}`;
+              const prixElement = productCard.querySelector(".product-price");
+              let prix = "19,99";
+
+              if (prixElement) {
+                const priceText =
+                  prixElement.textContent || prixElement.innerHTML;
+                const priceMatch = priceText.match(/(\d+[\.,]\d+)/);
+                if (priceMatch) {
+                  prix = priceMatch[1];
+                }
+              }
+
+              const image =
+                productCard.querySelector("img")?.src ||
+                "img/default-product.jpg";
+
+              return {
+                nom: nom,
+                prix_ttc: prix.replace(",", "."),
+                image: image,
+                reference: `REF${id_produit}`,
+                id_produit: id_produit,
+              };
+            }
+
+            // Dernier recours
+            return {
+              nom: `Produit #${id_produit}`,
+              prix_ttc: "19.99",
+              image: "img/default-product.jpg",
+              reference: `REF${id_produit}`,
+              id_produit: id_produit,
+            };
+          } catch (error) {
+            console.error("Erreur récupération produit:", error);
+            return {
+              nom: `Produit #${id_produit}`,
+              prix_ttc: "19.99",
+              image: "img/default-product.jpg",
+              reference: `REF${id_produit}`,
+              id_produit: id_produit,
+            };
+          }
+        }
+
+        // Afficher la modal
+        showCartModal(product) {
+          if (!product || !this.cartModalBody) return;
+
+          const prix = product.prix_ttc
+            ? parseFloat(product.prix_ttc).toFixed(2).replace(".", ",")
+            : "0,00";
+
+          this.cartModalBody.innerHTML = `
+                  <div class="cart-modal-product">
+                      <div class="modal-product-image">
+                          <img src="${product.image}" 
+                               alt="${product.nom}"
+                               onerror="this.src='img/default-product.jpg'">
+                      </div>
+                      <div class="modal-product-info">
+                          <h4>${product.nom}</h4>
+                          <p class="modal-product-ref">Réf: ${
+                            product.reference || product.id_produit
+                          }</p>
+                          <p class="modal-product-price">${prix} €</p>
+                          <p class="modal-success-message">
+                              <i class="fas fa-check-circle"></i>
+                              Article ajouté avec succès !
+                          </p>
+                      </div>
+                  </div>
+              `;
+
+          this.cartModal.classList.add("show");
+        }
+
+        // Mettre à jour le compteur - VERSION AMÉLIORÉE
+        async updateCartCount() {
+          try {
+            console.log("[PanierManager] Mise à jour compteur...");
+
+            // Essayer l'API d'abord
+            const response = await fetch(
+              `${this.apiUrl}?action=compter&_=${Date.now()}`
+            );
+
+            if (response.ok) {
+              const data = await response.json();
+
+              if (data.success) {
+                const count = data.total || 0;
+                this.updateCartCountDisplay(count);
+                return count;
+              }
+            }
+
+            // Fallback: vérifier localStorage
+            const localPanier = JSON.parse(
+              localStorage.getItem("panier") || "[]"
+            );
+            const localCount = localPanier.reduce(
+              (total, item) => total + (item.quantite || 0),
+              0
+            );
+
+            this.updateCartCountDisplay(localCount);
+            return localCount;
+          } catch (error) {
+            console.error("Erreur mise à jour compteur:", error);
+            this.updateCartCountDisplay(0);
+            return 0;
+          }
+        }
+
+        // Mettre à jour l'affichage du compteur
+        updateCartCountDisplay(count) {
+          this.cartCountElements.forEach((element) => {
+            if (count > 0) {
+              element.textContent = count;
+              element.style.display = "inline-flex";
+              element.classList.add("pulse");
+              setTimeout(() => element.classList.remove("pulse"), 600);
+            } else {
+              element.textContent = "0";
+              element.style.display = "none";
+            }
+          });
+
+          console.log(`Compteur panier mis à jour: ${count}`);
+        }
+
+        // Afficher une notification
+        showNotification(message, type = "success") {
+          // Supprimer les notifications existantes
+          document.querySelectorAll(".toast-notification").forEach((toast) => {
+            toast.remove();
+          });
+
+          const toast = document.createElement("div");
+          toast.className = `toast-notification toast-${type}`;
+          toast.innerHTML = `
+                  <div class="toast-icon"><i class="fas fa-${
+                    type === "success" ? "check-circle" : "exclamation-triangle"
+                  }"></i></div>
+                  <div class="toast-message">${message}</div>
+                  <button class="toast-close"><i class="fas fa-times"></i></button>
+              `;
+          document.body.appendChild(toast);
+
+          // Fermer au clic
+          toast
+            .querySelector(".toast-close")
+            .addEventListener("click", () => toast.remove());
+
+          // Fermer automatiquement après 5 secondes
+          setTimeout(() => {
+            if (toast.parentElement) toast.remove();
+          }, 5000);
+        }
+      }
+
+      // ==============================================
+      // FONCTIONS DE GESTION DES PRODUITS
+      // ==============================================
 
       // Fonction pour générer les étoiles de notation
       function generateRatingStars(rating) {
@@ -1108,342 +1421,41 @@
         return stars;
       }
 
-      // Fonction pour afficher une notification
-      function showNotification(message, type = "success") {
-        const toast = document.createElement("div");
-        toast.className = `toast-notification toast-${type}`;
-        toast.innerHTML = `
-          <div class="toast-icon"><i class="fas fa-${
-            type === "success" ? "check-circle" : "exclamation-triangle"
-          }"></i></div>
-          <div class="toast-message">${message}</div>
-          <button class="toast-close"><i class="fas fa-times"></i></button>
-        `;
-        document.body.appendChild(toast);
-        toast
-          .querySelector(".toast-close")
-          .addEventListener("click", () => toast.remove());
-        setTimeout(() => {
-          if (toast.parentElement) toast.remove();
-        }, 5000);
-      }
-
-      // Classe PanierManager avec chemin corrigé
-      class PanierManager {
-        constructor() {
-          this.apiUrl = API_PANIER_URL; // Utilise le chemin corrigé
-          this.cartModal = document.getElementById("cartModal");
-          this.cartModalBody = document.getElementById("cartModalBody");
-          this.cartKey = "cadeaux_elegance_panier";
-          this.initEvents();
-          console.log("PanierManager initialisé avec URL:", this.apiUrl);
-        }
-
-        initEvents() {
-          document
-            .getElementById("closeCartModal")
-            ?.addEventListener("click", () => {
-              this.cartModal.classList.remove("show");
-            });
-          document
-            .getElementById("continueShopping")
-            ?.addEventListener("click", () => {
-              this.cartModal.classList.remove("show");
-            });
-          this.cartModal?.addEventListener("click", (e) => {
-            if (e.target === this.cartModal)
-              this.cartModal.classList.remove("show");
-          });
-        }
-
-        // Méthode pour ajouter au panier
-        async ajouterAuPanier(id_produit, quantite = 1, button = null) {
-          console.log(
-            `[PanierManager] Ajouter au panier: ID=${id_produit}, Quantité=${quantite}`
-          );
-
-          if (!id_produit) {
-            showNotification("Erreur: Produit invalide", "error");
-            return false;
-          }
-
-          if (!quantite || quantite < 1) {
-            quantite = 1;
-          }
-
-          // Désactiver le bouton pendant l'opération
-          if (button) {
-            const originalHTML = button.innerHTML;
-            button.disabled = true;
-            button.innerHTML =
-              '<i class="fas fa-spinner fa-spin"></i> Ajout...';
-            button.classList.add("loading");
-
-            try {
-              const response = await fetch(this.apiUrl, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  action: "ajouter",
-                  id_produit: parseInt(id_produit),
-                  quantite: parseInt(quantite),
-                }),
-              });
-
-              console.log("Réponse statut:", response.status);
-              const data = await response.json();
-              console.log("Données reçues:", data);
-
-              if (data.success) {
-                await this.updateCartCount();
-
-                // Afficher la modal
-                const productInfo = await this.getProductInfo(id_produit);
-                this.showCartModal(productInfo);
-
-                showNotification(
-                  `"${data.produit_nom || productInfo.nom}" ajouté au panier !`
-                );
-                return true;
-              } else {
-                console.error("Erreur API:", data.message);
-                showNotification(
-                  data.message || "Erreur lors de l'ajout",
-                  "error"
-                );
-                return false;
-              }
-            } catch (error) {
-              console.error("Erreur ajout panier:", error);
-              showNotification("Erreur de connexion au serveur", "error");
-              return false;
-            } finally {
-              // Réactiver le bouton
-              setTimeout(() => {
-                button.disabled = false;
-                button.innerHTML = originalHTML;
-                button.classList.remove("loading");
-              }, 500);
-            }
-          } else {
-            // Si pas de bouton (appel direct)
-            try {
-              const response = await fetch(this.apiUrl, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  action: "ajouter",
-                  id_produit: parseInt(id_produit),
-                  quantite: parseInt(quantite),
-                }),
-              });
-
-              const data = await response.json();
-
-              if (data.success) {
-                await this.updateCartCount();
-                showNotification("Produit ajouté au panier !");
-                return true;
-              }
-              return false;
-            } catch (error) {
-              console.error("Erreur:", error);
-              return false;
-            }
-          }
-
-          return false;
-        }
-
-        // Récupérer les infos d'un produit depuis les cartes affichées
-        async getProductInfo(id_produit) {
-          const productCard = document.querySelector(
-            `.product-card[data-id="${id_produit}"]`
-          );
-          const nom =
-            productCard?.querySelector("h3")?.textContent ||
-            `Produit #${id_produit}`;
-          const prixElement = productCard?.querySelector(".product-price");
-          let prix = "19,99";
-
-          if (prixElement) {
-            // Extraire le prix du HTML
-            const priceText = prixElement.textContent || prixElement.innerHTML;
-            const priceMatch = priceText.match(/(\d+[\.,]\d+)/);
-            if (priceMatch) {
-              prix = priceMatch[1].replace(",", ".");
-            }
-          }
-
-          return {
-            nom: nom,
-            prix_ttc: prix,
-            image:
-              productCard?.querySelector("img")?.src ||
-              "img/default-product.jpg",
-            id_produit: id_produit,
-          };
-        }
-
-        // Afficher la modal panier
-        showCartModal(product) {
-          if (!product) return;
-
-          const prix = product.prix_ttc
-            ? parseFloat(product.prix_ttc).toFixed(2).replace(".", ",")
-            : "0,00";
-
-          this.cartModalBody.innerHTML = `
-                <div class="cart-modal-product">
-                    <div class="modal-product-image">
-                        <img src="${
-                          product.image || "img/default-product.jpg"
-                        }" 
-                             alt="${product.nom}"
-                             onerror="this.onerror=null;this.src='img/default-product.jpg'">
-                    </div>
-                    <div class="modal-product-info">
-                        <h4>${product.nom}</h4>
-                        <p class="modal-product-ref">Réf: ${
-                          product.id_produit || "N/A"
-                        }</p>
-                        <p class="modal-product-price">${prix} €</p>
-                        <p class="modal-success-message">
-                            <i class="fas fa-check-circle"></i>
-                            Article ajouté avec succès !
-                        </p>
-                    </div>
-                </div>
-            `;
-
-          this.cartModal.classList.add("show");
-        }
-
-        // Mettre à jour le compteur panier
-        async updateCartCount() {
-          try {
-            console.log("[PanierManager] Mise à jour compteur...");
-
-            let count = 0;
-
-            // Essayer l'API d'abord
-            try {
-              const response = await fetch(`${this.apiUrl}?action=compter`);
-              console.log("API compteur - Statut:", response.status);
-
-              if (response.ok) {
-                const data = await response.json();
-                count = data.total || 0;
-                console.log("Compteur API:", count);
-              } else {
-                console.log("API non disponible, statut:", response.status);
-              }
-            } catch (apiError) {
-              console.log("API panier non disponible", apiError.message);
-            }
-
-            // Mettre à jour l'affichage
-            const cartCountElements = document.querySelectorAll(".cart-count");
-            cartCountElements.forEach((element) => {
-              if (count > 0) {
-                element.textContent = count;
-                element.style.display = "inline-flex";
-                element.classList.add("pulse");
-                setTimeout(() => element.classList.remove("pulse"), 600);
-              } else {
-                element.textContent = "0";
-                element.style.display = "none";
-              }
-            });
-
-            console.log("Compteur final:", count);
-            return count;
-          } catch (error) {
-            console.error("Erreur mise à jour compteur:", error);
-            return 0;
-          }
-        }
-      }
-
-      // Fonction pour charger les produits phares avec chemin corrigé
+      // Fonction pour charger les produits phares
       async function loadFeaturedProducts() {
         try {
           const container = document.getElementById("featuredProducts");
-
-          // Afficher un indicateur de chargement
           container.innerHTML = `
-            <div class="products-loading">
-              <i class="fas fa-spinner fa-spin"></i>
-              <p>Chargement des produits depuis la base de données...</p>
-              <div style="margin-top: 10px; font-size: 0.9em; color: #7f8c8d;">
-                Connexion à l'API: ${API_PRODUITS_URL}
-              </div>
-            </div>
-          `;
+                  <div class="products-loading">
+                      <i class="fas fa-spinner fa-spin"></i>
+                      <p>Chargement des produits...</p>
+                  </div>
+              `;
 
-          console.log("Tentative de chargement depuis:", API_PRODUITS_URL);
+          const response = await fetch(API_PRODUITS_URL + "&_=" + Date.now());
 
-          // Ajouter un timestamp pour éviter le cache
-          const urlWithCacheBuster = API_PRODUITS_URL + "&_=" + Date.now();
-
-          const response = await fetch(urlWithCacheBuster, {
-            method: "GET",
-            headers: {
-              Accept: "application/json",
-              "Cache-Control": "no-cache",
-            },
-            mode: "cors",
-          });
-
-          console.log("Statut réponse:", response.status, response.statusText);
-
-          let data;
-          try {
-            data = await response.json();
-            console.log("Données API reçues:", data);
-          } catch (parseError) {
-            console.error("Erreur parsing JSON:", parseError);
-            throw new Error("L'API a retourné une réponse invalide");
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
           }
+
+          const data = await response.json();
 
           if (data.success && data.products && data.products.length > 0) {
-            // Affichage normal
             displayProductsFromDatabase(data.products);
-
-            // Afficher un message de debug si présent
-            if (data.debug) {
-              console.log("Debug API:", data.debug);
-            }
-          } else if (
-            data.success &&
-            (!data.products || data.products.length === 0)
-          ) {
-            // Cas où l'API retourne success:true mais pas de produits
-            console.warn("API retourne succès mais aucun produit");
-            displayNoProductsMessage();
           } else {
-            // Cas où l'API retourne success:false
-            console.error("API retourne success:false", data.message || data);
-            displayApiError(data.message || "Erreur de l'API");
+            displayNoProductsMessage();
           }
         } catch (error) {
-          console.error("Erreur complète chargement produits:", error);
+          console.error("Erreur chargement produits:", error);
           displayNetworkError(error);
         }
       }
 
-      // Fonction pour afficher les produits depuis la base de données
+      // Fonction pour afficher les produits
       function displayProductsFromDatabase(products) {
-        if (!products || products.length === 0) {
-          displayNoProductsMessage();
-          return;
-        }
-
+        const container = document.getElementById("featuredProducts");
         let html = "";
+
         products.forEach((product) => {
           const prix = product.prix_ttc
             ? parseFloat(product.prix_ttc).toFixed(2).replace(".", ",")
@@ -1452,13 +1464,9 @@
           const ratingStars = generateRatingStars(
             parseFloat(product.note_moyenne || 0)
           );
-
-          // Image du produit - CORRECTION : chemin complet
-          const productImage =
-            "//" + (product.image || "img/default-product.jpg");
-
-          // État du stock
+          const productImage = product.image || "img/default-product.jpg";
           const stockQuantity = product.quantite_stock || 0;
+
           let stockBadge = "";
           let isDisabled = false;
 
@@ -1472,170 +1480,121 @@
           }
 
           html += `
-            <div class="product-card" data-id="${product.id_produit}">
-              ${stockBadge}
-              <div class="product-image">
-                <img src="${productImage}"
-                     alt="${product.nom}"
-                     onerror="this.onerror=null;this.src='/img/default-product.jpg'">
-                <div class="product-overlay">
-                  <i class="fas fa-eye"></i>
-                </div>
-              </div>
-              <div class="product-info">
-                <span class="product-category">${
-                  product.categorie_nom || "Cadeau"
-                }</span>
-                <h3>${product.nom}</h3>
-                <p class="product-price">${prix} €</p>
-                
-                ${
-                  product.description_courte
-                    ? `
-                  <p style="color: #666; font-size: 0.9rem; margin: 8px 0;">
-                    ${product.description_courte}
-                  </p>
-                `
-                    : ""
-                }
-                
-                ${
-                  product.note_moyenne && parseFloat(product.note_moyenne) > 0
-                    ? `
-                  <div class="product-rating">
-                    ${ratingStars}
-                    <span class="rating-count">(${
-                      product.nombre_avis || 0
-                    })</span>
+                  <div class="product-card" data-id="${product.id_produit}">
+                      ${stockBadge}
+                      <div class="product-image">
+                          <img src="${productImage}"
+                               alt="${product.nom}"
+                               onerror="this.onerror=null;this.src='img/default-product.jpg'">
+                          <div class="product-overlay">
+                              <i class="fas fa-eye"></i>
+                          </div>
+                      </div>
+                      <div class="product-info">
+                          <span class="product-category">${
+                            product.categorie_nom || "Cadeau"
+                          }</span>
+                          <h3>${product.nom}</h3>
+                          <p class="product-price">${prix} €</p>
+                          
+                          ${
+                            product.description_courte
+                              ? `
+                          <p style="color: #666; font-size: 0.9rem; margin: 8px 0;">
+                              ${product.description_courte}
+                          </p>
+                          `
+                              : ""
+                          }
+                          
+                          ${
+                            product.note_moyenne &&
+                            parseFloat(product.note_moyenne) > 0
+                              ? `
+                          <div class="product-rating">
+                              ${ratingStars}
+                              <span class="rating-count">(${
+                                product.nombre_avis || 0
+                              })</span>
+                          </div>
+                          `
+                              : ""
+                          }
+                          
+                          <div class="product-actions">
+                              <button class="btn-add-to-cart"
+                                      data-id="${product.id_produit}"
+                                      title="Ajouter au panier"
+                                      ${isDisabled ? "disabled" : ""}>
+                                  <i class="fas fa-cart-plus"></i> 
+                                  ${isDisabled ? "Épuisé" : "Ajouter"}
+                              </button>
+                              <a href="index.php?categorie=${
+                                product.id_categorie || ""
+                              }" 
+                                 class="btn-view">
+                                  <i class="fas fa-eye"></i> Voir
+                              </a>
+                          </div>
+                      </div>
                   </div>
-                `
-                    : ""
-                }
-                
-                <div class="product-actions">
-                  <button class="btn-add-to-cart"
-                          data-id="${product.id_produit}"
-                          title="Ajouter au panier"
-                          ${isDisabled ? "disabled" : ""}>
-                    <i class="fas fa-cart-plus"></i> 
-                    ${isDisabled ? "Épuisé" : "Ajouter"}
-                  </button>
-                  <a href="/index.php?categorie=${encodeURIComponent(
-                    product.categorie_nom || ""
-                  )}" 
-                     class="btn-view">
-                    <i class="fas fa-eye"></i> Voir
-                  </a>
-                </div>
-              </div>
-            </div>
-          `;
+              `;
         });
 
-        document.getElementById("featuredProducts").innerHTML = html;
-        console.log(
-          `${products.length} produits affichés depuis la base de données`
-        );
-
-        // Vérifier que les boutons sont accessibles
-        const buttons = document.querySelectorAll(".btn-add-to-cart");
-        console.log(`${buttons.length} boutons "Ajouter" disponibles`);
+        container.innerHTML = html;
       }
 
       // Fonctions d'affichage d'erreur
       function displayNoProductsMessage() {
         const container = document.getElementById("featuredProducts");
         container.innerHTML = `
-          <div class="products-empty">
-            <i class="fas fa-gift fa-3x" style="color: #ddd; margin-bottom: 20px;"></i>
-            <h3>Aucun produit disponible</h3>
-            <p>La boutique est actuellement en cours de configuration.</p>
-            <p style="margin-top: 20px; font-size: 0.9em; color: #7f8c8d;">
-              <i class="fas fa-info-circle"></i> 
-              Ajoutez des produits dans la base de données via phpMyAdmin.
-            </p>
-            <button onclick="loadFeaturedProducts()" class="btn btn-secondary" style="margin-top: 20px;">
-              <i class="fas fa-redo"></i> Actualiser
-            </button>
-          </div>
-        `;
-      }
-
-      function displayApiError(message) {
-        const container = document.getElementById("featuredProducts");
-        container.innerHTML = `
-          <div class="products-api-error">
-            <i class="fas fa-exclamation-triangle fa-3x" style="color: #e74c3c; margin-bottom: 20px;"></i>
-            <h3>Erreur de l'API</h3>
-            <p>${message || "L'API a rencontré une erreur"}</p>
-            <div style="margin-top: 20px; background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: left; max-width: 500px; margin: 20px auto;">
-              <h4>Pour tester manuellement :</h4>
-              <ol style="text-align: left; margin-left: 20px;">
-                <li>Ouvrez <a href="${API_PRODUITS_URL}" target="_blank">${API_PRODUITS_URL}</a></li>
-                <li>Vérifiez que JSON s'affiche</li>
-                <li>Vérifiez le fichier api/produits.php</li>
-              </ol>
-            </div>
-            <button onclick="loadFeaturedProducts()" class="btn btn-secondary" style="margin-top: 20px;">
-              <i class="fas fa-redo"></i> Réessayer
-            </button>
-          </div>
-        `;
+              <div class="products-empty">
+                  <i class="fas fa-gift fa-3x" style="color: #ddd; margin-bottom: 20px;"></i>
+                  <h3>Aucun produit disponible</h3>
+                  <p>La boutique est actuellement en cours de configuration.</p>
+                  <button onclick="loadFeaturedProducts()" class="btn btn-secondary" style="margin-top: 20px;">
+                      <i class="fas fa-redo"></i> Actualiser
+                  </button>
+              </div>
+          `;
       }
 
       function displayNetworkError(error) {
         const container = document.getElementById("featuredProducts");
         container.innerHTML = `
-          <div class="products-network-error">
-            <i class="fas fa-wifi fa-3x" style="color: #f39c12; margin-bottom: 20px;"></i>
-            <h3>Problème de connexion</h3>
-            <p>Impossible de contacter le serveur.</p>
-            <p><small>${error.message}</small></p>
-            <div style="margin-top: 20px; background: #fff3cd; padding: 15px; border-radius: 8px; max-width: 500px; margin: 20px auto;">
-              <h4 style="color: #856404;">Solutions possibles :</h4>
-              <ul style="text-align: left; margin-left: 20px;">
-                <li>Vérifiez que XAMPP/WAMP est démarré</li>
-                <li>Vérifiez que MySQL est en cours d'exécution</li>
-                <li>Testez l'URL <code>${API_PRODUITS_URL}</code> dans le navigateur</li>
-              </ul>
-            </div>
-            <button onclick="loadFeaturedProducts()" class="btn btn-secondary" style="margin-top: 20px;">
-              <i class="fas fa-redo"></i> Réessayer
-            </button>
-          </div>
-        `;
+              <div class="products-network-error">
+                  <i class="fas fa-wifi fa-3x" style="color: #f39c12; margin-bottom: 20px;"></i>
+                  <h3>Problème de connexion</h3>
+                  <p>Impossible de contacter le serveur.</p>
+                  <p><small>${error.message}</small></p>
+                  <button onclick="loadFeaturedProducts()" class="btn btn-secondary" style="margin-top: 20px;">
+                      <i class="fas fa-redo"></i> Réessayer
+                  </button>
+              </div>
+          `;
       }
 
-      // Initialisation avec chemins corrigés
-      document.addEventListener("DOMContentLoaded", async () => {
-        console.log("=== INITIALISATION AVEC BASE DE DONNÉES ===");
+      // ==============================================
+      // INITIALISATION ET ÉVÉNEMENTS
+      // ==============================================
 
-        // Test de l'API immédiatement
-        try {
-          const testResponse = await fetch(API_PRODUITS_URL);
-          console.log("Test API Produits - Statut:", testResponse.status);
-          const testData = await testResponse.json();
-          console.log("Test API - Données:", testData);
-        } catch (error) {
-          console.error("Test API échoué:", error.message);
-        }
+      document.addEventListener("DOMContentLoaded", async () => {
+        console.log("=== DÉMARRAGE DE L'APPLICATION ===");
 
         // Initialiser le gestionnaire de panier
         window.panierManager = new PanierManager();
 
-        // Mettre à jour le compteur panier IMMÉDIATEMENT
-        await window.panierManager.updateCartCount();
-
-        // Gestion clic boutons Ajouter
+        // Gestion des clics sur boutons "Ajouter au panier"
         document.addEventListener("click", async (e) => {
           const addToCartBtn = e.target.closest(".btn-add-to-cart");
           if (addToCartBtn && !addToCartBtn.disabled) {
             e.preventDefault();
             e.stopPropagation();
+
             const id_produit = addToCartBtn.dataset.id
               ? parseInt(addToCartBtn.dataset.id)
               : null;
-            console.log("Clic sur bouton Ajouter - ID:", id_produit);
+            console.log("Clic bouton Ajouter - ID:", id_produit);
 
             if (id_produit) {
               await window.panierManager.ajouterAuPanier(
@@ -1647,13 +1606,17 @@
           }
         });
 
-        // Charger les produits phares DEPUIS LA BASE DE DONNÉES
+        // Charger les produits phares
         await loadFeaturedProducts();
 
-        console.log("=== INITIALISATION TERMINÉE ===");
+        console.log("=== APPLICATION PRÊTE ===");
       });
 
-      // Fonctions globales
+      // ==============================================
+      // FONCTIONS GLOBALES (pour debug)
+      // ==============================================
+
+      // Fonctions globales exposées
       window.ajouterAuPanier = function (
         id_produit,
         quantite = 1,
@@ -1673,76 +1636,34 @@
 
       // Fonction de test API
       async function testAPI() {
-        const debugOutput = document.getElementById("debugOutput");
-        debugOutput.style.display = "block";
-        debugOutput.innerHTML =
-          '<p><i class="fas fa-spinner fa-spin"></i> Test en cours...</p>';
-
         try {
           const response = await fetch(API_PRODUITS_URL + "&_=" + Date.now());
-          const status = response.status;
           const text = await response.text();
 
-          let html = `<p><strong>Statut HTTP:</strong> ${status}</p>`;
-
-          try {
-            const data = JSON.parse(text);
-            html += `<p><strong>JSON valide:</strong> Oui</p>`;
-            html += `<p><strong>Success:</strong> ${data.success}</p>`;
-            html += `<p><strong>Nombre de produits:</strong> ${
-              data.products ? data.products.length : 0
-            }</p>`;
-            html += `<p><strong>Debug:</strong> ${data.debug || "Aucun"}</p>`;
-            html += `<pre style="max-height: 200px; overflow: auto; background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 10px;">${JSON.stringify(
-              data,
-              null,
-              2
-            )}</pre>`;
-          } catch (e) {
-            html += `<p><strong>JSON valide:</strong> Non</p>`;
-            html += `<pre style="max-height: 200px; overflow: auto; background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 10px;">${text.substring(
-              0,
-              500
-            )}</pre>`;
-          }
-
-          debugOutput.innerHTML = html;
+          alert(
+            `Statut: ${response.status}\nRéponse: ${text.substring(0, 200)}...`
+          );
         } catch (error) {
-          debugOutput.innerHTML = `<p style="color: #e74c3c;"><strong>Erreur:</strong> ${error.message}</p>`;
+          alert("Erreur: " + error.message);
         }
       }
 
       // Vérification de la base de données
       window.checkDatabase = async function () {
-        console.log("=== VÉRIFICATION BASE DE DONNÉES ===");
         try {
-          const response = await fetch(API_PRODUITS_URL);
+          const response = await fetch(API_PRODUITS_URL + "&_=" + Date.now());
           const data = await response.json();
-          console.log("Base de données:", data);
 
           if (data.success && data.products) {
-            console.log(
-              `✅ ${data.products.length} produits trouvés dans la base`
-            );
+            console.log(`${data.products.length} produits trouvés`);
             data.products.forEach((p, i) => {
-              console.log(
-                `   ${i + 1}. ${p.nom} - ${p.prix_ttc}€ (Catégorie: ${
-                  p.categorie_nom || "Non catégorisé"
-                })`
-              );
+              console.log(`${i + 1}. ${p.nom} - ${p.prix_ttc}€`);
             });
-          } else {
-            console.log("❌ Aucun produit trouvé ou erreur API");
           }
         } catch (error) {
-          console.log("❌ Impossible de contacter l'API:", error.message);
+          console.log("Erreur:", error.message);
         }
       };
-
-      // Exécuter la vérification au chargement
-      setTimeout(() => {
-        window.checkDatabase();
-      }, 1000);
     </script>
   </body>
 </html>

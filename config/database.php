@@ -1,26 +1,15 @@
 <?php
-// admin_produits.php
-
-// INCLURE la classe Database
-require_once __DIR__ . '/Database.php';
-
-session_start();
-
-// Vérifier si l'utilisateur est connecté en tant qu'admin
-if (!isset($_SESSION['admin']) || $_SESSION['admin'] !== true) {
-    header('Location: login.php');
-    exit();
-}
+// config/database.php
+$host = 'localhost';
+$dbname = 'heureducadeau';
+$username = 'Philippe';
+$password = 'l@99339R';
 
 try {
-    $db = Database::getInstance();
-    // Pour utiliser la connexion : $db->getConnection()
-    $conn = $db->getConnection();
-    
-    // Le reste de votre code...
-} catch (Exception $e) {
-    die('Erreur de connexion à la base de données: ' . $e->getMessage());
+    $db = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    die("Erreur de connexion : " . $e->getMessage());
 }
-
-// ... reste du code
 ?>
