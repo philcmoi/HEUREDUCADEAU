@@ -239,6 +239,24 @@
       <!-- Messages d'erreur depuis session PHP -->
       <?php 
       session_start();
+
+
+
+
+
+
+// livraison_redirect.php
+header('Location: livraison.php');
+exit();
+
+
+
+
+
+
+
+
+
       if (isset($_SESSION['erreurs_livraison'])): ?>
       <div class="message error">
         <strong>Erreurs :</strong>

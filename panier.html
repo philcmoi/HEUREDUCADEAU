@@ -3,13 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mon Panier - Cadeaux Élégance</title>
+    <title>Mon Panier - HEURE DU CADEAU</title>
     <link rel="stylesheet" href="css/style.css" />
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
     />
     <style>
+      /* TOUT LE CSS RESTE IDENTIQUE - SEUL LE JAVASCRIPT EST MODIFIÉ */
       * {
         margin: 0;
         padding: 0;
@@ -734,7 +735,7 @@
       <div class="container">
         <div class="header-content">
           <a href="index.html" class="logo">
-            <i class="fas fa-gift"></i> Cadeaux Élégance
+            <i class="fas fa-gift"></i> HEURE DU CADEAU
           </a>
           <nav>
             <a href="index.html">Accueil</a>
@@ -771,7 +772,7 @@
     <footer>
       <div class="container">
         <div class="footer-content">
-          <p>&copy; 2025 Cadeaux Élégance - Tous droits réservés</p>
+          <p>&copy; 2025 HEURE DU CADEAU - Tous droits réservés</p>
           <p>Votre boutique de cadeaux élégants en ligne</p>
         </div>
       </div>
@@ -1093,56 +1094,86 @@
         }
 
         async checkout() {
-          // Vérifier si tous les produits sont disponibles
+          // EMPÊCHER LES CLICS MULTIPLES
+          if (this.isProcessing) return;
+          this.isProcessing = true;
+
           try {
+            // DÉSACTIVER LE BOUTON PENDANT LE TRAITEMENT
+            const checkoutBtn = document.querySelector(".btn-checkout");
+            if (checkoutBtn) {
+              const originalText = checkoutBtn.innerHTML;
+              checkoutBtn.innerHTML =
+                '<i class="fas fa-spinner fa-spin"></i> Vérification...';
+              checkoutBtn.disabled = true;
+            }
+
+            // VÉRIFIER RAPIDEMENT SI LE PANIER EST VALIDE
             const response = await fetch(`${this.apiUrl}?action=get`);
             const data = await response.json();
 
-            if (data.success && data.panier) {
-              const unavailableItems = data.panier.filter(
-                (item) => !item.disponible
+            if (data.success && data.panier && data.panier.length > 0) {
+              // VÉRIFIER SI TOUS LES ARTICLES SONT DISPONIBLES
+              const allAvailable = data.panier.every(
+                (item) => item.disponible !== false
               );
 
-              if (unavailableItems.length > 0) {
+              if (!allAvailable) {
                 this.showNotification(
-                  "Certains produits ne sont pas disponibles. Veuillez les retirer du panier.",
+                  "Certains articles ne sont pas disponibles. Veuillez vérifier votre panier.",
                   "error"
                 );
+
+                // RECHARGER LE PANIER POUR METTRE À JOUR L'AFFICHAGE
+                setTimeout(() => {
+                  this.loadCart();
+                }, 1500);
+
+                // RÉACTIVER LE BOUTON
+                if (checkoutBtn) {
+                  checkoutBtn.innerHTML =
+                    '<i class="fas fa-lock"></i> Procéder au paiement';
+                  checkoutBtn.disabled = false;
+                }
+                this.isProcessing = false;
                 return;
               }
 
-              if (data.panier.length === 0) {
-                this.showNotification("Votre panier est vide", "warning");
-                return;
-              }
-            }
-          } catch (error) {
-            console.error("Erreur vérification panier:", error);
-          }
-
-          this.showNotification("Redirection vers le paiement...", "success");
-
-          // Simulation de redirection vers le paiement
-          setTimeout(() => {
-            // Ici vous devriez rediriger vers votre page de paiement
-            // window.location.href = "paiement.php";
-
-            // Pour l'instant, on simule
-            const proceed = confirm(
-              "Paiement\n\nCette fonctionnalité est en cours de développement.\n\nVoulez-vous simuler une commande réussie ?"
-            );
-
-            if (proceed) {
               this.showNotification(
-                "Commande simulée avec succès !",
+                "Redirection vers la livraison...",
                 "success"
               );
-              // Vider le panier après commande réussie
+
+              // REDIRECTION SIMPLE APRÈS UN COURT DÉLAI
               setTimeout(() => {
-                this.loadCart();
-              }, 2000);
+                window.location.href = "livraison_form.php";
+              }, 1000);
+            } else {
+              this.showNotification(
+                "Votre panier est vide ou contient des articles indisponibles",
+                "error"
+              );
+
+              // RÉACTIVER LE BOUTON
+              if (checkoutBtn) {
+                checkoutBtn.innerHTML =
+                  '<i class="fas fa-lock"></i> Procéder au paiement';
+                checkoutBtn.disabled = false;
+              }
+              this.isProcessing = false;
             }
-          }, 1500);
+          } catch (error) {
+            console.error("Erreur checkout:", error);
+
+            // FALLBACK: REDIRECTION DIRECTE MÊME EN CAS D'ERREUR
+            this.showNotification(
+              "Redirection vers la livraison...",
+              "success"
+            );
+            setTimeout(() => {
+              window.location.href = "livraison_form.php";
+            }, 1500);
+          }
         }
 
         updateCartCount(count) {
@@ -1157,9 +1188,9 @@
 
           // Mettre à jour le titre de la page
           if (count > 0) {
-            document.title = `(${count}) Mon Panier - Cadeaux Élégance`;
+            document.title = `(${count}) Mon Panier - HEURE DU CADEAU`;
           } else {
-            document.title = "Mon Panier - Cadeaux Élégance";
+            document.title = "Mon Panier - HEURE DU CADEAU";
           }
         }
 

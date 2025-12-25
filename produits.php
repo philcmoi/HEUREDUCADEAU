@@ -18,45 +18,6 @@
     />
   </head>
   <body>
-    <?php
-    require_once 'config/database.php';
-    
-    // Récupérer les paramètres de recherche
-    $recherche = $_GET['q'] ?? '';
-    $categorie = $_GET['categorie'] ?? '';
-    $prix_min = $_GET['prix_min'] ?? '';
-    $prix_max = $_GET['prix_max'] ?? '';
-    $tri = $_GET['tri'] ?? 'pertinence';
-    $page = max(1, intval($_GET['page'] ?? 1));
-    
-    // Construire les filtres
-    $filtres = [
-        'recherche' => $recherche,
-        'categorie' => $categorie,
-        'prix_min' => $prix_min,
-        'prix_max' => $prix_max,
-        'tri' => $tri,
-        'page' => $page,
-        'limit' => 12
-    ];
-    
-    // Récupérer les produits
-    $produits = getProduitsFiltres($filtres);
-    
-    // Récupérer les catégories pour les filtres
-    $categories = getCategoriesAvecCompteur();
-    
-    // Compter le total des produits pour la pagination
-    $db = Database::getInstance();
-    $sqlCount = "SELECT COUNT(*) as total FROM produits p WHERE p.statut = 'actif'";
-    // Ajouter les mêmes conditions que pour la recherche
-    // ... (votre logique de comptage ici)
-    $stmtCount = $db->prepare($sqlCount);
-    $stmtCount->execute($paramsCount);
-    $totalProduits = $stmtCount->fetch()['total'];
-    $totalPages = ceil($totalProduits / $filtres['limit']);
-    ?>
-    
     <!-- Header (identique à l'accueil) -->
     <header class="header">
       <div class="container header-container">
@@ -75,7 +36,7 @@
               >
             </li>
             <li>
-              <a href="produits.php" class="nav-link active"
+              <a href="produits.html" class="nav-link active"
                 ><i class="fas fa-box-open"></i> Cadeaux</a
               >
             </li>
@@ -113,7 +74,7 @@
             >
           </li>
           <li>
-            <a href="produits.php" class="nav-mobile-link active"
+            <a href="produits.html" class="nav-mobile-link active"
               ><i class="fas fa-box-open"></i> Cadeaux</a
             >
           </li>
@@ -146,18 +107,16 @@
           </p>
 
           <!-- Barre de recherche principale -->
-          <form method="GET" class="main-search-bar">
+          <div class="main-search-bar">
             <div class="search-input-group">
               <i class="fas fa-search search-icon"></i>
               <input
                 type="text"
                 id="mainSearchInput"
-                name="q"
-                value="<?= htmlspecialchars($recherche) ?>"
                 placeholder="Rechercher un cadeau, une occasion, un budget..."
                 autocomplete="off"
               />
-              <button type="submit" class="search-btn" id="mainSearchBtn">
+              <button class="search-btn" id="mainSearchBtn">
                 <i class="fas fa-search"></i> Rechercher
               </button>
             </div>
@@ -179,7 +138,7 @@
                 >Écologique</a
               >
             </div>
-          </form>
+          </div>
 
           <!-- Filtres rapides -->
           <div class="quick-filters">
@@ -217,9 +176,9 @@
             <div class="sidebar-section">
               <h3 class="sidebar-title">
                 <i class="fas fa-filter"></i> Filtres
-                <a href="produits.php" class="clear-filters">
+                <button class="clear-filters" id="clearFilters">
                   Tout effacer
-                </a>
+                </button>
               </h3>
 
               <!-- Recherche dans les filtres -->
@@ -237,23 +196,97 @@
             <div class="sidebar-section">
               <h4 class="filter-title">
                 <i class="fas fa-tags"></i> Catégories
-                <span class="filter-count" id="categoryCount"><?= count($categories) ?></span>
+                <span class="filter-count" id="categoryCount">0</span>
               </h4>
               <div class="filter-options" id="categoryFilters">
-                <?php foreach ($categories as $cat): ?>
                 <label class="filter-option">
                   <input
                     type="checkbox"
                     name="category"
-                    value="<?= $cat['id_categorie'] ?>"
+                    value="anniversaire"
                     data-filter="category"
-                    <?= $categorie == $cat['id_categorie'] ? 'checked' : '' ?>
                   />
                   <span class="checkmark"></span>
-                  <span class="option-text"><?= htmlspecialchars($cat['nom']) ?></span>
-                  <span class="option-count"><?= $cat['nb_produits'] ?></span>
+                  <span class="option-text">Anniversaires</span>
+                  <span class="option-count">42</span>
                 </label>
-                <?php endforeach; ?>
+                <label class="filter-option">
+                  <input
+                    type="checkbox"
+                    name="category"
+                    value="valentin"
+                    data-filter="category"
+                  />
+                  <span class="checkmark"></span>
+                  <span class="option-text">Saint-Valentin</span>
+                  <span class="option-count">28</span>
+                </label>
+                <label class="filter-option">
+                  <input
+                    type="checkbox"
+                    name="category"
+                    value="mariage"
+                    data-filter="category"
+                  />
+                  <span class="checkmark"></span>
+                  <span class="option-text">Mariage</span>
+                  <span class="option-count">35</span>
+                </label>
+                <label class="filter-option">
+                  <input
+                    type="checkbox"
+                    name="category"
+                    value="naissance"
+                    data-filter="category"
+                  />
+                  <span class="checkmark"></span>
+                  <span class="option-text">Naissance</span>
+                  <span class="option-count">23</span>
+                </label>
+                <label class="filter-option">
+                  <input
+                    type="checkbox"
+                    name="category"
+                    value="diplome"
+                    data-filter="category"
+                  />
+                  <span class="checkmark"></span>
+                  <span class="option-text">Diplômés</span>
+                  <span class="option-count">19</span>
+                </label>
+                <label class="filter-option">
+                  <input
+                    type="checkbox"
+                    name="category"
+                    value="noel"
+                    data-filter="category"
+                  />
+                  <span class="checkmark"></span>
+                  <span class="option-text">Noël</span>
+                  <span class="option-count">47</span>
+                </label>
+                <label class="filter-option">
+                  <input
+                    type="checkbox"
+                    name="category"
+                    value="entreprise"
+                    data-filter="category"
+                  />
+                  <span class="checkmark"></span>
+                  <span class="option-text">Cadeaux d'entreprise</span>
+                  <span class="option-count">31</span>
+                </label>
+                <label class="filter-option">
+                  <input
+                    type="checkbox"
+                    name="category"
+                    value="retraite"
+                    data-filter="category"
+                  />
+                  <span class="checkmark"></span>
+                  <span class="option-text">Retraite</span>
+                  <span class="option-count">15</span>
+                </label>
               </div>
             </div>
 
@@ -263,63 +296,55 @@
                 <i class="fas fa-euro-sign"></i> Fourchette de prix
               </h4>
               <div class="price-filter">
-                <form method="GET" id="priceForm">
-                  <div class="price-inputs">
-                    <div class="price-input-group">
-                      <label>Min</label>
-                      <input
-                        type="number"
-                        name="prix_min"
-                        id="priceMin"
-                        placeholder="0"
-                        min="0"
-                        max="1000"
-                        value="<?= $prix_min ?: '0' ?>"
-                      />
-                      <span>€</span>
-                    </div>
-                    <div class="price-separator">-</div>
-                    <div class="price-input-group">
-                      <label>Max</label>
-                      <input
-                        type="number"
-                        name="prix_max"
-                        id="priceMax"
-                        placeholder="500"
-                        min="0"
-                        max="1000"
-                        value="<?= $prix_max ?: '500' ?>"
-                      />
-                      <span>€</span>
-                    </div>
-                  </div>
-                  <div class="price-slider">
+                <div class="price-inputs">
+                  <div class="price-input-group">
+                    <label>Min</label>
                     <input
-                      type="range"
-                      id="priceSliderMin"
+                      type="number"
+                      id="priceMin"
+                      placeholder="0"
                       min="0"
                       max="1000"
-                      value="<?= $prix_min ?: '0' ?>"
-                      step="10"
+                      value="0"
                     />
+                    <span>€</span>
+                  </div>
+                  <div class="price-separator">-</div>
+                  <div class="price-input-group">
+                    <label>Max</label>
                     <input
-                      type="range"
-                      id="priceSliderMax"
+                      type="number"
+                      id="priceMax"
+                      placeholder="500"
                       min="0"
                       max="1000"
-                      value="<?= $prix_max ?: '500' ?>"
-                      step="10"
+                      value="500"
                     />
-                    <div class="price-slider-track"></div>
+                    <span>€</span>
                   </div>
-                  <div class="price-display">
-                    <span id="priceRangeDisplay"><?= ($prix_min ?: '0') ?>€ - <?= ($prix_max ?: '500') ?>€</span>
-                  </div>
-                  <input type="hidden" name="q" value="<?= htmlspecialchars($recherche) ?>">
-                  <input type="hidden" name="categorie" value="<?= $categorie ?>">
-                  <input type="hidden" name="tri" value="<?= $tri ?>">
-                  <button type="submit" style="display:none;">Appliquer</button>
-                </form>
+                </div>
+                <div class="price-slider">
+                  <input
+                    type="range"
+                    id="priceSliderMin"
+                    min="0"
+                    max="1000"
+                    value="0"
+                    step="10"
+                  />
+                  <input
+                    type="range"
+                    id="priceSliderMax"
+                    min="0"
+                    max="1000"
+                    value="500"
+                    step="10"
+                  />
+                  <div class="price-slider-track"></div>
+                </div>
+                <div class="price-display">
+                  <span id="priceRangeDisplay">0€ - 500€</span>
+                </div>
               </div>
             </div>
 
@@ -488,38 +513,24 @@
             <div class="products-toolbar">
               <div class="toolbar-left">
                 <p class="results-count">
-                  <span id="productsCount"><?= $totalProduits ?></span> résultats
-                  <?php if ($recherche): ?>
-                  <span id="searchQueryText">pour "<?= htmlspecialchars($recherche) ?>"</span>
-                  <?php endif; ?>
+                  <span id="productsCount">0</span> résultats
+                  <span id="searchQueryText"></span>
                 </p>
                 <div class="selected-filters" id="selectedFilters">
                   <!-- Filtres actifs -->
-                  <?php if ($categorie): ?>
-                  <span class="selected-filter">
-                    Catégorie: <?= htmlspecialchars(array_column($categories, 'nom', 'id_categorie')[$categorie] ?? '') ?>
-                    <a href="?<?= http_build_query(array_merge($_GET, ['categorie' => ''])) ?>">&times;</a>
-                  </span>
-                  <?php endif; ?>
                 </div>
               </div>
               <div class="toolbar-right">
                 <div class="sort-by">
-                  <form method="GET" id="sortForm">
-                    <label for="sortSelect">Trier par :</label>
-                    <select id="sortSelect" name="tri" class="sort-select" onchange="this.form.submit()">
-                      <option value="pertinence" <?= $tri == 'pertinence' ? 'selected' : '' ?>>Pertinence</option>
-                      <option value="nouveaute" <?= $tri == 'nouveaute' ? 'selected' : '' ?>>Nouveautés</option>
-                      <option value="prix-croissant" <?= $tri == 'prix-croissant' ? 'selected' : '' ?>>Prix croissant</option>
-                      <option value="prix-decroissant" <?= $tri == 'prix-decroissant' ? 'selected' : '' ?>>Prix décroissant</option>
-                      <option value="meilleurs-avis" <?= $tri == 'meilleurs-avis' ? 'selected' : '' ?>>Meilleurs avis</option>
-                      <option value="plus-vendus" <?= $tri == 'plus-vendus' ? 'selected' : '' ?>>Plus vendus</option>
-                    </select>
-                    <input type="hidden" name="q" value="<?= htmlspecialchars($recherche) ?>">
-                    <input type="hidden" name="categorie" value="<?= $categorie ?>">
-                    <input type="hidden" name="prix_min" value="<?= $prix_min ?>">
-                    <input type="hidden" name="prix_max" value="<?= $prix_max ?>">
-                  </form>
+                  <label for="sortSelect">Trier par :</label>
+                  <select id="sortSelect" class="sort-select">
+                    <option value="pertinence">Pertinence</option>
+                    <option value="nouveaute">Nouveautés</option>
+                    <option value="prix-croissant">Prix croissant</option>
+                    <option value="prix-decriossant">Prix décroissant</option>
+                    <option value="meilleurs-avis">Meilleurs avis</option>
+                    <option value="plus-vendus">Plus vendus</option>
+                  </select>
                 </div>
                 <div class="view-toggle">
                   <button
@@ -538,116 +549,88 @@
 
             <!-- Résultats de recherche -->
             <div class="products-results">
-              <?php if (empty($produits)): ?>
-              <!-- Aucun résultat -->
-              <div class="state-empty" id="emptyState">
-                <i class="fas fa-search fa-3x"></i>
-                <h3>Aucun résultat trouvé</h3>
-                <p>Essayez de modifier vos critères de recherche</p>
-                <a href="produits.php" class="btn btn-secondary">
-                  Réinitialiser la recherche
-                </a>
+              <!-- Message d'état -->
+              <div class="search-state" id="searchState">
+                <div class="state-loading" id="loadingState">
+                  <div class="loading-spinner"></div>
+                  <p>Recherche en cours...</p>
+                </div>
+                <div class="state-empty" id="emptyState" style="display: none">
+                  <i class="fas fa-search fa-3x"></i>
+                  <h3>Aucun résultat trouvé</h3>
+                  <p>Essayez de modifier vos critères de recherche</p>
+                  <button class="btn btn-secondary" id="resetSearchBtn">
+                    Réinitialiser la recherche
+                  </button>
+                </div>
               </div>
-              <?php else: ?>
+
               <!-- Grille des produits -->
               <div class="products-grid grid-view" id="productsGrid">
-                <?php foreach ($produits as $produit): ?>
-                <div class="product-card">
-                  <?php if ($produit['image']): ?>
-                  <img src="<?= htmlspecialchars($produit['image']) ?>" 
-                       alt="<?= htmlspecialchars($produit['nom']) ?>">
-                  <?php endif; ?>
-                  
-                  <div class="product-info">
-                    <span class="product-category"><?= htmlspecialchars($produit['categorie_nom']) ?></span>
-                    <h3><?= htmlspecialchars($produit['nom']) ?></h3>
-                    <p class="product-description"><?= htmlspecialchars($produit['description_courte'] ?? '') ?></p>
-                    <p class="product-price"><?= number_format($produit['prix_ttc'], 2, ',', ' ') ?> €</p>
-                    
-                    <?php if ($produit['note_moyenne'] > 0): ?>
-                    <div class="product-rating">
-                      <?php 
-                      $fullStars = floor($produit['note_moyenne']);
-                      $hasHalfStar = ($produit['note_moyenne'] - $fullStars) >= 0.5;
-                      ?>
-                      <?php for ($i = 1; $i <= 5; $i++): ?>
-                        <?php if ($i <= $fullStars): ?>
-                          <i class="fas fa-star"></i>
-                        <?php elseif ($i == $fullStars + 1 && $hasHalfStar): ?>
-                          <i class="fas fa-star-half-alt"></i>
-                        <?php else: ?>
-                          <i class="far fa-star"></i>
-                        <?php endif; ?>
-                      <?php endfor; ?>
-                      <span>(<?= $produit['nombre_avis'] ?>)</span>
-                    </div>
-                    <?php endif; ?>
-                    
-                    <div class="product-actions">
-                      <a href="produit.php?id=<?= $produit['id_produit'] ?>" class="btn-view">Voir le produit</a>
-                      <button class="btn-add-cart" data-id="<?= $produit['id_produit'] ?>">
-                        <i class="fas fa-cart-plus"></i>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                <?php endforeach; ?>
+                <!-- Les produits seront injectés par JavaScript -->
+              </div>
+
+              <!-- Liste des produits -->
+              <div
+                class="products-list list-view"
+                id="productsList"
+                style="display: none"
+              >
+                <!-- Les produits en vue liste seront injectés par JavaScript -->
               </div>
 
               <!-- Pagination -->
-              <?php if ($totalPages > 1): ?>
               <div class="pagination" id="pagination">
-                <?php if ($page > 1): ?>
-                <a href="?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>" 
-                   class="pagination-btn prev">
+                <button class="pagination-btn prev" disabled>
                   <i class="fas fa-chevron-left"></i> Précédent
-                </a>
-                <?php else: ?>
-                <span class="pagination-btn prev disabled">
-                  <i class="fas fa-chevron-left"></i> Précédent
-                </span>
-                <?php endif; ?>
-                
+                </button>
                 <div class="pagination-numbers">
-                  <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                    <?php if ($i == 1 || $i == $totalPages || ($i >= $page - 2 && $i <= $page + 2)): ?>
-                    <a href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>" 
-                       class="page-number <?= $i == $page ? 'active' : '' ?>">
-                      <?= $i ?>
-                    </a>
-                    <?php elseif ($i == $page - 3 || $i == $page + 3): ?>
-                    <span class="page-dots">...</span>
-                    <?php endif; ?>
-                  <?php endfor; ?>
+                  <button class="page-number active">1</button>
+                  <button class="page-number">2</button>
+                  <button class="page-number">3</button>
+                  <span class="page-dots">...</span>
+                  <button class="page-number">8</button>
                 </div>
-                
-                <?php if ($page < $totalPages): ?>
-                <a href="?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>" 
-                   class="pagination-btn next">
+                <button class="pagination-btn next">
                   Suivant <i class="fas fa-chevron-right"></i>
-                </a>
-                <?php else: ?>
-                <span class="pagination-btn next disabled">
-                  Suivant <i class="fas fa-chevron-right"></i>
-                </span>
-                <?php endif; ?>
+                </button>
               </div>
-              <?php endif; ?>
-              <?php endif; ?>
             </div>
 
             <!-- Suggestions de recherche -->
             <div class="search-suggestions-bottom">
               <h4>Recherches fréquentes :</h4>
               <div class="suggestion-tags">
-                <a href="?q=cadeau+homme" class="suggestion-tag">Cadeau pour homme</a>
-                <a href="?q=cadeau+femme" class="suggestion-tag">Cadeau pour femme</a>
-                <a href="?q=moins+de+30€" class="suggestion-tag">Moins de 30€</a>
-                <a href="?q=cadeau+original" class="suggestion-tag">Cadeau original</a>
-                <a href="?q=cadeau+naissance+fille" class="suggestion-tag">Naissance fille</a>
-                <a href="?q=cadeau+de+noel" class="suggestion-tag">Cadeau de Noël</a>
-                <a href="?q=cadeau+personnalisé" class="suggestion-tag">Cadeau personnalisé</a>
-                <a href="?q=cadeau+chic" class="suggestion-tag">Cadeau chic</a>
+                <a href="#" class="suggestion-tag" data-search="cadeau homme"
+                  >Cadeau pour homme</a
+                >
+                <a href="#" class="suggestion-tag" data-search="cadeau femme"
+                  >Cadeau pour femme</a
+                >
+                <a href="#" class="suggestion-tag" data-search="moins de 30€"
+                  >Moins de 30€</a
+                >
+                <a href="#" class="suggestion-tag" data-search="cadeau original"
+                  >Cadeau original</a
+                >
+                <a
+                  href="#"
+                  class="suggestion-tag"
+                  data-search="cadeau naissance fille"
+                  >Naissance fille</a
+                >
+                <a href="#" class="suggestion-tag" data-search="cadeau de noel"
+                  >Cadeau de Noël</a
+                >
+                <a
+                  href="#"
+                  class="suggestion-tag"
+                  data-search="cadeau personnalisé"
+                  >Cadeau personnalisé</a
+                >
+                <a href="#" class="suggestion-tag" data-search="cadeau chic"
+                  >Cadeau chic</a
+                >
               </div>
             </div>
           </div>
@@ -691,6 +674,163 @@
     <!-- Scripts -->
     <script src="js/main.js"></script>
     <script src="js/produits.js"></script>
+  </body>
+</html>
+
+
+<?php
+// produits.php
+
+require_once 'config/database.php';
+
+// Récupérer les paramètres de recherche
+$recherche = $_GET['q'] ?? '';
+$categorie = $_GET['categorie'] ?? '';
+$prix_min = $_GET['prix_min'] ?? '';
+$prix_max = $_GET['prix_max'] ?? '';
+$tri = $_GET['tri'] ?? 'pertinence';
+$page = max(1, intval($_GET['page'] ?? 1));
+
+// Construire les filtres
+$filtres = [
+    'recherche' => $recherche,
+    'categorie' => $categorie,
+    'prix_min' => $prix_min,
+    'prix_max' => $prix_max,
+    'tri' => $tri,
+    'page' => $page,
+    'limit' => 12
+];
+
+// Récupérer les produits
+$produits = getProduitsFiltres($filtres);
+
+// Récupérer les catégories pour les filtres
+$categories = getCategoriesAvecCompteur();
+
+// Compter le total des produits pour la pagination
+$db = Database::getInstance();
+$sqlCount = "SELECT COUNT(*) as total FROM produits p WHERE p.statut = 'actif'";
+// Ajouter les mêmes conditions que pour la recherche
+// ...
+$stmtCount = $db->prepare($sqlCount);
+$stmtCount->execute($paramsCount);
+$totalProduits = $stmtCount->fetch()['total'];
+$totalPages = ceil($totalProduits / $filtres['limit']);
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Recherche de produits - Cadeaux Élégance</title>
+    <!-- CSS et métadonnées -->
+</head>
+<body>
+    <!-- Barre de recherche -->
+    <form method="GET" class="search-form">
+        <input type="text" name="q" value="<?= htmlspecialchars($recherche) ?>" 
+               placeholder="Rechercher un cadeau...">
+        
+        <select name="categorie">
+            <option value="">Toutes catégories</option>
+            <?php foreach ($categories as $cat): ?>
+            <option value="<?= $cat['id_categorie'] ?>" 
+                    <?= $categorie == $cat['id_categorie'] ? 'selected' : '' ?>>
+                <?= htmlspecialchars($cat['nom']) ?> (<?= $cat['nb_produits'] ?>)
+            </option>
+            <?php endforeach; ?>
+        </select>
+        
+        <input type="number" name="prix_min" placeholder="Prix min" value="<?= $prix_min ?>">
+        <input type="number" name="prix_max" placeholder="Prix max" value="<?= $prix_max ?>">
+        
+        <select name="tri">
+            <option value="pertinence" <?= $tri == 'pertinence' ? 'selected' : '' ?>>Pertinence</option>
+            <option value="prix-croissant" <?= $tri == 'prix-croissant' ? 'selected' : '' ?>>Prix croissant</option>
+            <option value="prix-decriossant" <?= $tri == 'prix-decriossant' ? 'selected' : '' ?>>Prix décroissant</option>
+            <option value="nouveaute" <?= $tri == 'nouveaute' ? 'selected' : '' ?>>Nouveautés</option>
+        </select>
+        
+        <button type="submit">Rechercher</button>
+    </form>
+    
+    <!-- Affichage des résultats -->
+    <div class="results-info">
+        <?php if ($recherche): ?>
+            <h2>Résultats pour "<?= htmlspecialchars($recherche) ?>"</h2>
+        <?php endif; ?>
+        <p><?= $totalProduits ?> produit(s) trouvé(s)</p>
+    </div>
+    
+    <!-- Grille de produits -->
+    <div class="products-grid">
+        <?php foreach ($produits as $produit): ?>
+        <div class="product-card">
+            <?php if ($produit['image']): ?>
+            <img src="<?= htmlspecialchars($produit['image']) ?>" 
+                 alt="<?= htmlspecialchars($produit['nom']) ?>">
+            <?php endif; ?>
+            
+            <div class="product-info">
+                <span class="product-category"><?= htmlspecialchars($produit['categorie_nom']) ?></span>
+                <h3><?= htmlspecialchars($produit['nom']) ?></h3>
+                <p class="product-price"><?= number_format($produit['prix_ttc'], 2, ',', ' ') ?> €</p>
+                
+                <?php if ($produit['note_moyenne'] > 0): ?>
+                <div class="product-rating">
+                    <?php 
+                    $fullStars = floor($produit['note_moyenne']);
+                    $hasHalfStar = ($produit['note_moyenne'] - $fullStars) >= 0.5;
+                    ?>
+                    <?php for ($i = 1; $i <= 5; $i++): ?>
+                        <?php if ($i <= $fullStars): ?>
+                            <i class="fas fa-star"></i>
+                        <?php elseif ($i == $fullStars + 1 && $hasHalfStar): ?>
+                            <i class="fas fa-star-half-alt"></i>
+                        <?php else: ?>
+                            <i class="far fa-star"></i>
+                        <?php endif; ?>
+                    <?php endfor; ?>
+                    <span>(<?= $produit['nombre_avis'] ?>)</span>
+                </div>
+                <?php endif; ?>
+                
+                <a href="produit.php?id=<?= $produit['id_produit'] ?>" class="btn-view">Voir le produit</a>
+                <button class="btn-add-cart" data-id="<?= $produit['id_produit'] ?>">
+                    Ajouter au panier
+                </button>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    
+    <!-- Pagination -->
+    <?php if ($totalPages > 1): ?>
+    <div class="pagination">
+        <?php if ($page > 1): ?>
+        <a href="?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>" 
+           class="page-link">Précédent</a>
+        <?php endif; ?>
+        
+        <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+            <?php if ($i == 1 || $i == $totalPages || ($i >= $page - 2 && $i <= $page + 2)): ?>
+            <a href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>" 
+               class="page-link <?= $i == $page ? 'active' : '' ?>">
+                <?= $i ?>
+            </a>
+            <?php elseif ($i == $page - 3 || $i == $page + 3): ?>
+            <span class="page-dots">...</span>
+            <?php endif; ?>
+        <?php endfor; ?>
+        
+        <?php if ($page < $totalPages): ?>
+        <a href="?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>" 
+           class="page-link">Suivant</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+    
+    <!-- Scripts -->
     <script>
     // Gestion de l'ajout au panier
     document.querySelectorAll('.btn-add-cart').forEach(button => {
@@ -714,10 +854,7 @@
                 
                 if (result.success) {
                     // Mettre à jour le compteur du panier
-                    const cartCount = document.querySelector('.cart-count');
-                    if (cartCount) {
-                        cartCount.textContent = result.total_items;
-                    }
+                    document.querySelector('.cart-count').textContent = result.total_items;
                     
                     // Afficher une notification
                     alert('Produit ajouté au panier !');
@@ -730,35 +867,6 @@
             }
         });
     });
-    
-    // Gestion des filtres de catégorie
-    document.querySelectorAll('input[name="category"]').forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            const form = document.createElement('form');
-            form.method = 'GET';
-            
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = 'categorie';
-            input.value = this.checked ? this.value : '';
-            form.appendChild(input);
-            
-            // Garder les autres paramètres
-            const params = new URLSearchParams(window.location.search);
-            params.forEach((value, key) => {
-                if (key !== 'categorie' && key !== 'page') {
-                    const hidden = document.createElement('input');
-                    hidden.type = 'hidden';
-                    hidden.name = key;
-                    hidden.value = value;
-                    form.appendChild(hidden);
-                }
-            });
-            
-            document.body.appendChild(form);
-            form.submit();
-        });
-    });
     </script>
-  </body>
+</body>
 </html>

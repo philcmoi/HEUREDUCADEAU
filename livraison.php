@@ -1,1046 +1,571 @@
 <?php
+// ============================================
+// FICHIER DE TRAITEMENT DU FORMULAIRE LIVRAISON
+// ============================================
+
 session_start();
 
-// Inclure la configuration de la base de données
-require_once 'db_config.php';
+// Configuration de la base de données
+require_once 'config/database.php';
 
-// Configuration
-$DEBUG_MODE = true;
-$ENABLE_API = true;
+// Vérifier si c'est une soumission de formulaire
+$is_form_submission = ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['api_mode']));
+$is_api_request = isset($_SERVER['HTTP_X_API_MODE']) || 
+                  (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && 
+                   strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest');
 
-// Fonction pour obtenir l'ID client (guest ou enregistré)
-function getClientId() {
-    if (isset($_SESSION['id_client']) && $_SESSION['id_client'] > 0) {
-        return $_SESSION['id_client'];
+// Si accès direct (GET) sans données valides, rediriger
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['api']) && !isset($_GET['debug'])) {
+    // Vérifier s'il y a un panier valide
+    $has_valid_cart = false;
+    
+    try {
+        $pdo = getPDOConnection();
+        $session_id = session_id();
+        
+        $stmt = $pdo->prepare("
+            SELECT COUNT(pi.id_item) as nb_items 
+            FROM panier p 
+            LEFT JOIN panier_items pi ON p.id_panier = pi.id_panier 
+            WHERE p.session_id = ? AND p.statut = 'actif'
+            GROUP BY p.id_panier
+        ");
+        $stmt->execute([$session_id]);
+        $result = $stmt->fetch();
+        
+        if ($result && $result['nb_items'] > 0) {
+            $has_valid_cart = true;
+        }
+    } catch (Exception $e) {
+        // Fallback à la session
+        $has_valid_cart = isset($_SESSION['panier']) && !empty($_SESSION['panier']);
     }
     
-    // Si client guest, utiliser session_id ou créer un client temporaire
+    if (!$has_valid_cart) {
+        // Mode API : retourner JSON
+        if ($is_api_request) {
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success' => false,
+                'message' => 'Accès direct interdit. Veuillez d\'abord remplir votre panier.',
+                'redirect' => 'panier.html'
+            ]);
+            exit();
+        }
+        
+        // Mode normal : rediriger
+        $_SESSION['erreur_message'] = 'Accès direct interdit. Veuillez d\'abord remplir votre panier.';
+        header('Location: panier.html');
+        exit();
+    } else {
+        // Afficher le formulaire si panier valide
+        header('Location: livraison_form.php');
+        exit();
+    }
+}
+
+// ============================================
+// TRAITEMENT DE LA SOUMISSION DU FORMULAIRE
+// ============================================
+
+// Initialiser la réponse
+$response = [
+    'success' => false,
+    'message' => '',
+    'errors' => [],
+    'redirect' => null
+];
+
+try {
+    $pdo = getPDOConnection();
     $session_id = session_id();
     
-    // Chercher un client temporaire avec cette session
-    $db = getDB();
-    $stmt = $db->prepare("SELECT id_client FROM clients WHERE session_id = ? AND is_temporary = 1");
-    $stmt->execute([$session_id]);
-    $client = $stmt->fetch();
-    
-    if ($client) {
-        return $client['id_client'];
-    }
-    
-    return null;
-}
-
-// Fonction pour sauvegarder l'adresse en base de données
-function saveAddressToDB($addressData) {
-    $db = getDB();
-    $client_id = getClientId();
-    
-    if (!$client_id) {
-        // Créer un client temporaire
-        $stmt = $db->prepare("
-            INSERT INTO clients (email, mot_de_passe, nom, prenom, telephone, is_temporary, created_from_session, date_inscription)
-            VALUES (?, '', ?, ?, ?, 1, ?, NOW())
-        ");
-        $session_id = session_id();
-        $stmt->execute([
-            $addressData['email'],
-            $addressData['nom'],
-            $addressData['prenom'],
-            $addressData['telephone'],
-            $session_id
-        ]);
-        
-        $client_id = $db->lastInsertId();
-        $_SESSION['id_client_temp'] = $client_id;
-    }
-    
-    // Vérifier si une adresse existe déjà pour ce client
-    $stmt = $db->prepare("SELECT id_adresse FROM adresses WHERE id_client = ? AND type_adresse = 'livraison'");
-    $stmt->execute([$client_id]);
-    $existing_address = $stmt->fetch();
-    
-    if ($existing_address) {
-        // Mettre à jour l'adresse existante
-        $stmt = $db->prepare("
-            UPDATE adresses SET
-                nom = ?,
-                prenom = ?,
-                societe = ?,
-                adresse = ?,
-                complement = ?,
-                code_postal = ?,
-                ville = ?,
-                pays = ?,
-                telephone = ?,
-                principale = 1
-            WHERE id_adresse = ?
-        ");
-        $stmt->execute([
-            $addressData['nom'],
-            $addressData['prenom'],
-            $addressData['societe'] ?? '',
-            $addressData['adresse'],
-            $addressData['complement'] ?? '',
-            $addressData['code_postal'],
-            $addressData['ville'],
-            $addressData['pays'] ?? 'France',
-            $addressData['telephone'],
-            $existing_address['id_adresse']
-        ]);
-        
-        return $existing_address['id_adresse'];
+    // Récupérer les données selon le mode
+    if ($is_api_request) {
+        // Mode API (JSON)
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new Exception('Données JSON invalides');
+        }
     } else {
-        // Créer une nouvelle adresse
-        $stmt = $db->prepare("
-            INSERT INTO adresses (
-                id_client, type_adresse, nom, prenom, societe, 
-                adresse, complement, code_postal, ville, pays, 
-                telephone, principale, date_creation
-            ) VALUES (?, 'livraison', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
-        ");
-        $stmt->execute([
-            $client_id,
-            $addressData['nom'],
-            $addressData['prenom'],
-            $addressData['societe'] ?? '',
-            $addressData['adresse'],
-            $addressData['complement'] ?? '',
-            $addressData['code_postal'],
-            $addressData['ville'],
-            $addressData['pays'] ?? 'France',
-            $addressData['telephone']
-        ]);
-        
-        return $db->lastInsertId();
-    }
-}
-
-// Fonction pour récupérer l'adresse depuis la base de données
-function getAddressFromDB() {
-    $client_id = getClientId();
-    
-    if (!$client_id) {
-        return null;
+        // Mode formulaire traditionnel
+        $input = $_POST;
     }
     
-    $db = getDB();
-    $stmt = $db->prepare("
-        SELECT * FROM adresses 
-        WHERE id_client = ? AND type_adresse = 'livraison' 
-        ORDER BY principale DESC, date_creation DESC 
-        LIMIT 1
-    ");
-    $stmt->execute([$client_id]);
-    return $stmt->fetch();
-}
-
-// API endpoint
-if (isset($_GET['api']) && $_GET['api'] == '1' && $ENABLE_API) {
-    header('Content-Type: application/json');
+    // ============================================
+    // VALIDATION DES DONNÉES
+    // ============================================
     
-    $response = [
-        'success' => false,
-        'hasAddress' => false,
-        'adresse' => null,
-        'message' => ''
+    $errors = [];
+    $donnees_valides = [];
+    
+    // Champs obligatoires
+    $required_fields = [
+        'nom' => 'Nom',
+        'prenom' => 'Prénom',
+        'email' => 'Email',
+        'adresse' => 'Adresse',
+        'code_postal' => 'Code postal',
+        'ville' => 'Ville',
+        'pays' => 'Pays'
     ];
     
-    // D'abord essayer la session
-    if (isset($_SESSION['adresse_livraison'])) {
-        $response['success'] = true;
-        $response['hasAddress'] = true;
-        $response['adresse'] = $_SESSION['adresse_livraison'];
-    } else {
-        // Sinon essayer la base de données
-        $address = getAddressFromDB();
-        if ($address) {
-            $response['success'] = true;
-            $response['hasAddress'] = true;
-            $response['adresse'] = [
-                'nom' => $address['nom'],
-                'prenom' => $address['prenom'],
-                'email' => $_SESSION['email'] ?? '', // L'email est dans clients
-                'telephone' => $address['telephone'],
-                'societe' => $address['societe'],
-                'adresse' => $address['adresse'],
-                'complement' => $address['complement'],
-                'code_postal' => $address['code_postal'],
-                'ville' => $address['ville'],
-                'pays' => $address['pays']
-            ];
-        }
-    }
-    
-    echo json_encode($response);
-    exit();
-}
-
-// Traitement de la soumission du formulaire
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Vérifier si c'est une requête API
-    $is_api_request = false;
-    
-    if (isset($_SERVER['HTTP_X_API_MODE']) && $_SERVER['HTTP_X_API_MODE'] == '1') {
-        $is_api_request = true;
-    } elseif (isset($_POST['api_mode']) && $_POST['api_mode'] == '1') {
-        $is_api_request = true;
-    }
-    
-    // Vérifier si c'est JSON
-    $input = file_get_contents('php://input');
-    $json_data = json_decode($input, true);
-    if ($json_data) {
-        $_POST = array_merge($_POST, $json_data);
-        $is_api_request = true;
-    }
-    
-    // Validation et traitement des données
-    $errors = [];
-    $donnees_saisies = [];
-    
-    // Champs requis
-    $required_fields = ['nom', 'prenom', 'email', 'telephone', 'adresse', 'code_postal', 'ville', 'pays'];
-    
-    foreach ($required_fields as $field) {
-        if (empty(trim($_POST[$field] ?? ''))) {
-            $errors[] = "Le champ '" . $field . "' est requis";
+    foreach ($required_fields as $field => $label) {
+        if (empty(trim($input[$field] ?? ''))) {
+            $errors[] = "Le champ \"$label\" est obligatoire";
+            $response['missing'][] = $field;
         } else {
-            $donnees_saisies[$field] = htmlspecialchars(trim($_POST[$field]));
+            $donnees_valides[$field] = trim($input[$field]);
         }
     }
     
-    // Validation email
-    if (!empty($_POST['email']) && !filter_var($_POST['email'], FILTER_VALIDATE_EMAIL)) {
+    // Validation spécifique
+    if (!empty($input['email']) && !filter_var($input['email'], FILTER_VALIDATE_EMAIL)) {
         $errors[] = "L'adresse email n'est pas valide";
     }
     
-    // Validation téléphone (format français)
-    if (!empty($_POST['telephone'])) {
-        $phone_cleaned = preg_replace('/\s+/', '', $_POST['telephone']);
-        if (!preg_match('/^[0-9]{10}$/', $phone_cleaned)) {
-            $errors[] = "Le numéro de téléphone doit contenir 10 chiffres";
-        }
+    if (!empty($input['code_postal']) && !preg_match('/^\d{5}$/', $input['code_postal'])) {
+        $errors[] = "Le code postal doit contenir 5 chiffres";
     }
     
-    // Validation code postal (format français)
-    if (!empty($_POST['code_postal'])) {
-        $cp_cleaned = preg_replace('/\s+/', '', $_POST['code_postal']);
-        if (!preg_match('/^[0-9]{5}$/', $cp_cleaned)) {
-            $errors[] = "Le code postal doit contenir 5 chiffres";
-        }
+    if (!empty($input['telephone']) && !preg_match('/^[0-9]{10}$/', str_replace(' ', '', $input['telephone']))) {
+        $errors[] = "Le numéro de téléphone doit contenir 10 chiffres";
     }
     
-    // Réponse API
-    if ($is_api_request) {
-        header('Content-Type: application/json');
-        
-        if (!empty($errors)) {
-            $missing_fields = [];
-            foreach ($required_fields as $field) {
-                if (empty(trim($_POST[$field] ?? ''))) {
-                    $missing_fields[] = $field;
-                }
-            }
-            
-            echo json_encode([
-                'success' => false,
-                'message' => 'Validation échouée',
-                'errors' => $errors,
-                'missing' => $missing_fields
-            ]);
-            exit();
-        }
-        
-        // Préparer les données pour la base de données
-        $addressData = [
-            'nom' => $_POST['nom'],
-            'prenom' => $_POST['prenom'],
-            'email' => $_POST['email'],
-            'telephone' => $_POST['telephone'],
-            'societe' => $_POST['societe'] ?? '',
-            'adresse' => $_POST['adresse'],
-            'complement' => $_POST['complement'] ?? '',
-            'code_postal' => $_POST['code_postal'],
-            'ville' => $_POST['ville'],
-            'pays' => $_POST['pays'] ?? 'France'
+    // Vérifier si adresse de facturation différente
+    $meme_adresse = isset($input['meme_adresse_facturation']) && $input['meme_adresse_facturation'] == '1';
+    
+    if (!$meme_adresse) {
+        $facturation_fields = [
+            'facturation_nom' => 'Nom (facturation)',
+            'facturation_prenom' => 'Prénom (facturation)',
+            'facturation_adresse' => 'Adresse (facturation)',
+            'facturation_code_postal' => 'Code postal (facturation)',
+            'facturation_ville' => 'Ville (facturation)'
         ];
         
-        // Sauvegarder dans la base de données
-        try {
-            $address_id = saveAddressToDB($addressData);
-            
-            // Sauvegarder aussi dans la session pour compatibilité
-            $adresse_livraison = [
-                'nom' => $_POST['nom'],
-                'prenom' => $_POST['prenom'],
-                'email' => $_POST['email'],
-                'telephone' => $_POST['telephone'],
-                'societe' => $_POST['societe'] ?? '',
-                'adresse' => $_POST['adresse'],
-                'complement' => $_POST['complement'] ?? '',
-                'code_postal' => $_POST['code_postal'],
-                'ville' => $_POST['ville'],
-                'pays' => $_POST['pays'] ?? 'France',
-                'mode_livraison' => $_POST['mode_livraison'] ?? 'standard',
-                'emballage_cadeau' => isset($_POST['emballage_cadeau']) && $_POST['emballage_cadeau'] == '1',
-                'instructions' => $_POST['instructions'] ?? ''
-            ];
-            
-            $_SESSION['adresse_livraison'] = $adresse_livraison;
-            $_SESSION['adresse_livraison_id'] = $address_id;
-            $_SESSION['mode_livraison'] = $_POST['mode_livraison'] ?? 'standard';
-            $_SESSION['emballage_cadeau'] = isset($_POST['emballage_cadeau']) && $_POST['emballage_cadeau'] == '1';
-            
-            // Sauvegarder l'email dans la session
-            $_SESSION['email'] = $_POST['email'];
-            
-            // Calculer les frais de livraison
-            $frais_livraison = 0;
-            if (($_POST['mode_livraison'] ?? 'standard') === 'express') {
-                $frais_livraison = 9.90;
-            } elseif (($_POST['mode_livraison'] ?? 'standard') === 'relais') {
-                $frais_livraison = 4.90;
+        foreach ($facturation_fields as $field => $label) {
+            if (empty(trim($input[$field] ?? ''))) {
+                $errors[] = "Le champ \"$label\" est obligatoire lorsque l'adresse de facturation est différente";
             }
-            $_SESSION['frais_livraison'] = $frais_livraison;
-            
-            // Déterminer la redirection
-            $redirect = null;
-            $compat_redirect = null;
-            
-            // Vérifier les pages disponibles
-            if (file_exists('paiement.php')) {
-                $redirect = 'paiement.php';
-            } elseif (file_exists('paiement.html')) {
-                $redirect = 'paiement.html';
-            }
-            
-            // Compatibilité avec l'ancien système
-            if (file_exists('checkout.php')) {
-                $compat_redirect = 'checkout.php';
-            }
-            
-            echo json_encode([
-                'success' => true,
-                'message' => 'Adresse enregistrée avec succès',
-                'redirect' => $redirect,
-                'compat_redirect' => $compat_redirect
-            ]);
-            exit();
-            
-        } catch (Exception $e) {
-            error_log('Erreur base de données: ' . $e->getMessage());
-            echo json_encode([
-                'success' => false,
-                'message' => 'Erreur lors de l\'enregistrement en base de données'
-            ]);
-            exit();
         }
     }
     
-    // Mode formulaire traditionnel
+    // Si il y a des erreurs
     if (!empty($errors)) {
-        $_SESSION['erreurs_livraison'] = $errors;
-        $_SESSION['donnees_saisies'] = $_POST;
-        header('Location: livraison.php');
+        $response['message'] = 'Des erreurs ont été trouvées dans le formulaire';
+        $response['errors'] = $errors;
+        
+        // Sauvegarder les erreurs pour les afficher
+        if (!$is_api_request) {
+            $_SESSION['erreurs_livraison'] = $errors;
+            $_SESSION['donnees_saisies'] = $input;
+            $_SESSION['meme_adresse_facturation'] = $meme_adresse;
+            
+            if (!$meme_adresse) {
+                $adresse_facturation = [
+                    'nom' => $input['facturation_nom'] ?? '',
+                    'prenom' => $input['facturation_prenom'] ?? '',
+                    'societe' => $input['facturation_societe'] ?? '',
+                    'adresse' => $input['facturation_adresse'] ?? '',
+                    'complement' => $input['facturation_complement'] ?? '',
+                    'code_postal' => $input['facturation_code_postal'] ?? '',
+                    'ville' => $input['facturation_ville'] ?? '',
+                    'pays' => $input['facturation_pays'] ?? 'France'
+                ];
+                $_SESSION['adresse_facturation'] = $adresse_facturation;
+            }
+        }
+        
+        if ($is_api_request) {
+            header('Content-Type: application/json');
+            echo json_encode($response);
+        } else {
+            header('Location: livraison_form.php');
+        }
         exit();
     }
     
-    // Sauvegarder dans la base de données
-    try {
-        $addressData = [
-            'nom' => $_POST['nom'],
-            'prenom' => $_POST['prenom'],
-            'email' => $_POST['email'],
-            'telephone' => $_POST['telephone'],
-            'societe' => $_POST['societe'] ?? '',
-            'adresse' => $_POST['adresse'],
-            'complement' => $_POST['complement'] ?? '',
-            'code_postal' => $_POST['code_postal'],
-            'ville' => $_POST['ville'],
-            'pays' => $_POST['pays'] ?? 'France'
-        ];
-        
-        $address_id = saveAddressToDB($addressData);
-        
-        // Sauvegarder aussi dans la session pour compatibilité
-        $_SESSION['adresse_livraison'] = [
-            'nom' => $_POST['nom'],
-            'prenom' => $_POST['prenom'],
-            'email' => $_POST['email'],
-            'telephone' => $_POST['telephone'],
-            'societe' => $_POST['societe'] ?? '',
-            'adresse' => $_POST['adresse'],
-            'complement' => $_POST['complement'] ?? '',
-            'code_postal' => $_POST['code_postal'],
-            'ville' => $_POST['ville'],
-            'pays' => $_POST['pays'] ?? 'France',
-            'mode_livraison' => $_POST['mode_livraison'] ?? 'standard',
-            'emballage_cadeau' => isset($_POST['emballage_cadeau']) && $_POST['emballage_cadeau'] == '1',
-            'instructions' => $_POST['instructions'] ?? ''
-        ];
-        
-        $_SESSION['adresse_livraison_id'] = $address_id;
-        $_SESSION['mode_livraison'] = $_POST['mode_livraison'] ?? 'standard';
-        $_SESSION['emballage_cadeau'] = isset($_POST['emballage_cadeau']) && $_POST['emballage_cadeau'] == '1';
-        $_SESSION['email'] = $_POST['email'];
-        
-        // Calculer les frais de livraison
-        $frais_livraison = 0;
-        if (($_POST['mode_livraison'] ?? 'standard') === 'express') {
-            $frais_livraison = 9.90;
-        } elseif (($_POST['mode_livraison'] ?? 'standard') === 'relais') {
-            $frais_livraison = 4.90;
-        }
-        $_SESSION['frais_livraison'] = $frais_livraison;
-        
-        // Redirection vers la page de paiement
-        if (file_exists('paiement.php')) {
-            header('Location: paiement.php');
-        } elseif (file_exists('paiement.html')) {
-            header('Location: paiement.html');
-        } else {
-            // Fallback
-            header('Location: checkout.php');
-        }
-        exit();
-        
-    } catch (Exception $e) {
-        error_log('Erreur base de données: ' . $e->getMessage());
-        $_SESSION['erreurs_livraison'] = ['Erreur lors de l\'enregistrement en base de données'];
-        header('Location: livraison.php');
-        exit();
+    // ============================================
+    // VÉRIFICATION DU PANIER
+    // ============================================
+    
+    $stmt = $pdo->prepare("
+        SELECT p.id_panier, p.id_client 
+        FROM panier p 
+        WHERE p.session_id = ? AND p.statut = 'actif'
+        ORDER BY p.date_creation DESC LIMIT 1
+    ");
+    $stmt->execute([$session_id]);
+    $panier = $stmt->fetch();
+    
+    if (!$panier) {
+        throw new Exception('Aucun panier actif trouvé. Veuillez d\'abord ajouter des articles à votre panier.');
     }
-}
-
-// Récupérer les données de session pour pré-remplissage
-$donnees_saisies = $_SESSION['donnees_saisies'] ?? [];
-
-// Si pas dans la session, essayer la base de données
-if (empty($donnees_saisies)) {
-    if (isset($_SESSION['adresse_livraison'])) {
-        $donnees_saisies = $_SESSION['adresse_livraison'];
+    
+    $panier_id = $panier['id_panier'];
+    $client_id_existant = $panier['id_client'];
+    
+    // ============================================
+    // GESTION DU CLIENT
+    // ============================================
+    
+    $client_id = $client_id_existant;
+    
+    // Vérifier si le client existe déjà
+    $email = trim($input['email']);
+    $stmt = $pdo->prepare("SELECT id_client FROM clients WHERE email = ?");
+    $stmt->execute([$email]);
+    $client_existant = $stmt->fetch();
+    
+    if ($client_existant) {
+        // Client existe déjà
+        $client_id = $client_existant['id_client'];
+        
+        // Mettre à jour les informations du client
+        $stmt = $pdo->prepare("
+            UPDATE clients 
+            SET nom = ?, prenom = ?, telephone = ?, dernier_connexion = NOW()
+            WHERE id_client = ?
+        ");
+        $stmt->execute([
+            trim($input['nom']),
+            trim($input['prenom']),
+            !empty($input['telephone']) ? trim($input['telephone']) : null,
+            $client_id
+        ]);
     } else {
-        $address = getAddressFromDB();
-        if ($address) {
-            $donnees_saisies = [
-                'nom' => $address['nom'],
-                'prenom' => $address['prenom'],
-                'societe' => $address['societe'],
-                'adresse' => $address['adresse'],
-                'complement' => $address['complement'],
-                'code_postal' => $address['code_postal'],
-                'ville' => $address['ville'],
-                'pays' => $address['pays'],
-                'telephone' => $address['telephone']
-            ];
-            
-            // Récupérer l'email depuis la table clients si disponible
-            if (isset($_SESSION['email'])) {
-                $donnees_saisies['email'] = $_SESSION['email'];
-            }
+        // Créer un nouveau client (temporaire pour l'instant)
+        $stmt = $pdo->prepare("
+            INSERT INTO clients (
+                email, nom, prenom, telephone, date_inscription, 
+                statut, is_temporary, created_from_session
+            ) VALUES (?, ?, ?, ?, NOW(), 'actif', 1, ?)
+        ");
+        
+        $stmt->execute([
+            $email,
+            trim($input['nom']),
+            trim($input['prenom']),
+            !empty($input['telephone']) ? trim($input['telephone']) : null,
+            $session_id
+        ]);
+        
+        $client_id = $pdo->lastInsertId();
+    }
+    
+    // Mettre à jour le panier avec l'ID client
+    $stmt = $pdo->prepare("
+        UPDATE panier 
+        SET id_client = ?, email_client = ?, telephone_client = ?
+        WHERE id_panier = ?
+    ");
+    $stmt->execute([
+        $client_id,
+        $email,
+        !empty($input['telephone']) ? trim($input['telephone']) : null,
+        $panier_id
+    ]);
+    
+    // ============================================
+    // SAUVEGARDE DE L'ADRESSE DE LIVRAISON
+    // ============================================
+    
+    // Désactiver les anciennes adresses principales
+    $stmt = $pdo->prepare("
+        UPDATE adresses 
+        SET principale = 0 
+        WHERE id_client = ? AND type_adresse = 'livraison'
+    ");
+    $stmt->execute([$client_id]);
+    
+    // Insérer la nouvelle adresse de livraison
+    $stmt = $pdo->prepare("
+        INSERT INTO adresses (
+            id_client, type_adresse, nom, prenom, societe, adresse, complement,
+            code_postal, ville, pays, telephone, principale, date_creation
+        ) VALUES (?, 'livraison', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+    ");
+    
+    $stmt->execute([
+        $client_id,
+        trim($input['nom']),
+        trim($input['prenom']),
+        !empty($input['societe']) ? trim($input['societe']) : null,
+        trim($input['adresse']),
+        !empty($input['complement']) ? trim($input['complement']) : null,
+        trim($input['code_postal']),
+        trim($input['ville']),
+        trim($input['pays']),
+        !empty($input['telephone']) ? trim($input['telephone']) : null
+    ]);
+    
+    $adresse_livraison_id = $pdo->lastInsertId();
+    
+    // ============================================
+    // SAUVEGARDE DE L'ADRESSE DE FACTURATION
+    // ============================================
+    
+    $adresse_facturation_id = null;
+    
+    if ($meme_adresse) {
+        // Utiliser la même adresse
+        $adresse_facturation_id = $adresse_livraison_id;
+    } else {
+        // Désactiver les anciennes adresses de facturation principales
+        $stmt = $pdo->prepare("
+            UPDATE adresses 
+            SET principale = 0 
+            WHERE id_client = ? AND type_adresse = 'facturation'
+        ");
+        $stmt->execute([$client_id]);
+        
+        // Insérer la nouvelle adresse de facturation
+        $stmt = $pdo->prepare("
+            INSERT INTO adresses (
+                id_client, type_adresse, nom, prenom, societe, adresse, complement,
+                code_postal, ville, pays, telephone, principale, date_creation
+            ) VALUES (?, 'facturation', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+        ");
+        
+        $stmt->execute([
+            $client_id,
+            trim($input['facturation_nom']),
+            trim($input['facturation_prenom']),
+            !empty($input['facturation_societe']) ? trim($input['facturation_societe']) : null,
+            trim($input['facturation_adresse']),
+            !empty($input['facturation_complement']) ? trim($input['facturation_complement']) : null,
+            trim($input['facturation_code_postal']),
+            trim($input['facturation_ville']),
+            trim($input['facturation_pays']),
+            !empty($input['telephone']) ? trim($input['telephone']) : null
+        ]);
+        
+        $adresse_facturation_id = $pdo->lastInsertId();
+    }
+    
+    // ============================================
+    // SAUVEGARDE DES OPTIONS DE LIVRAISON
+    // ============================================
+    
+    $mode_livraison = $input['mode_livraison'] ?? 'standard';
+    $emballage_cadeau = isset($input['emballage_cadeau']) && $input['emballage_cadeau'] == '1' ? 1 : 0;
+    $instructions = !empty($input['instructions']) ? trim($input['instructions']) : null;
+    
+    // Sauvegarder dans la session pour la page de paiement
+    $_SESSION['livraison_data'] = [
+        'client_id' => $client_id,
+        'panier_id' => $panier_id,
+        'adresse_livraison_id' => $adresse_livraison_id,
+        'adresse_facturation_id' => $adresse_facturation_id,
+        'mode_livraison' => $mode_livraison,
+        'emballage_cadeau' => $emballage_cadeau,
+        'instructions' => $instructions,
+        'email' => $email,
+        'nom' => trim($input['nom']),
+        'prenom' => trim($input['prenom'])
+    ];
+    
+    // Marquer comme autorisé pour le checkout
+    $_SESSION['checkout_authorized'] = true;
+    $_SESSION['checkout_time'] = time();
+    
+    // ============================================
+    // PRÉPARER LA RÉPONSE
+    // ============================================
+    
+    $response['success'] = true;
+    $response['message'] = 'Adresse enregistrée avec succès';
+    $response['redirect'] = 'paiement.php';
+    $response['data'] = [
+        'client_id' => $client_id,
+        'panier_id' => $panier_id,
+        'adresse_livraison_id' => $adresse_livraison_id,
+        'adresse_facturation_id' => $adresse_facturation_id
+    ];
+    
+    // Logger la réussite
+    $stmt = $pdo->prepare("
+        INSERT INTO logs (type_log, niveau, message, utilisateur_id, ip_address)
+        VALUES ('info', 'info', ?, ?, ?)
+    ");
+    $stmt->execute([
+        'Formulaire livraison traité avec succès',
+        $client_id,
+        $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'
+    ]);
+    
+} catch (Exception $e) {
+    $response['message'] = 'Une erreur est survenue: ' . $e->getMessage();
+    $response['errors'] = [$e->getMessage()];
+    
+    // Logger l'erreur
+    if (isset($pdo)) {
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO logs (type_log, niveau, message, ip_address, metadata)
+                VALUES ('erreur', 'error', ?, ?, ?)
+            ");
+            $stmt->execute([
+                'Erreur lors du traitement du formulaire livraison',
+                $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                json_encode(['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()])
+            ]);
+        } catch (Exception $logError) {
+            // Ne rien faire si le log échoue
         }
     }
 }
 
-// Nettoyer les données de session utilisées
-if (isset($_SESSION['donnees_saisies'])) {
-    unset($_SESSION['donnees_saisies']);
+// ============================================
+// ENVOI DE LA RÉPONSE
+// ============================================
+
+if ($is_api_request) {
+    header('Content-Type: application/json');
+    echo json_encode($response);
+    
+    // Si succès et pas de redirection JSON, terminer ici
+    if ($response['success'] && !$response['redirect']) {
+        exit();
+    }
+} else {
+    // Mode formulaire traditionnel
+    if ($response['success']) {
+        // Rediriger vers la page de paiement
+        header('Location: ' . $response['redirect']);
+        exit();
+    } else {
+        // Rediriger vers le formulaire avec les erreurs
+        if (!isset($_SESSION['erreurs_livraison'])) {
+            $_SESSION['erreurs_livraison'] = $response['errors'];
+        }
+        if (isset($input)) {
+            $_SESSION['donnees_saisies'] = $input;
+        }
+        header('Location: livraison_form.php');
+        exit();
+    }
 }
+
+// Si on arrive ici, c'est une requête GET sans paramètres valides
+// Afficher une page d'information
 ?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Informations de livraison</title>
+    <title>Adresse de Livraison - HEURE DU CADEAU</title>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        
         body {
-            background-color: #f5f5f5;
-            color: #333;
-            line-height: 1.6;
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
             padding: 20px;
+            background: #f8f9fa;
         }
-        
         .container {
-            max-width: 800px;
-            margin: 0 auto;
             background: white;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
             padding: 30px;
-        }
-        
-        h1 {
-            color: #2c3e50;
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #3498db;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             text-align: center;
         }
-        
-        .error-message {
-            background-color: #fee;
-            border: 1px solid #f99;
-            color: #c00;
+        .success {
+            color: #155724;
+            background-color: #d4edda;
+            border-color: #c3e6cb;
             padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
-        
-        .error-message ul {
-            margin-left: 20px;
-            margin-top: 10px;
-        }
-        
-        .success-message {
-            background-color: #dfd;
-            border: 1px solid #9d9;
-            color: #090;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        .form-row {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .form-row .form-group {
-            flex: 1;
-            margin-bottom: 0;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #2c3e50;
-        }
-        
-        .required::after {
-            content: " *";
-            color: #e74c3c;
-        }
-        
-        input[type="text"],
-        input[type="email"],
-        input[type="tel"],
-        select,
-        textarea {
-            width: 100%;
-            padding: 12px 15px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-            transition: border 0.3s;
-        }
-        
-        input[type="text"]:focus,
-        input[type="email"]:focus,
-        input[type="tel"]:focus,
-        select:focus,
-        textarea:focus {
-            border-color: #3498db;
-            outline: none;
-            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
-        }
-        
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-        
-        input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-        }
-        
-        .shipping-options {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 25px;
-        }
-        
-        .shipping-option {
-            flex: 1;
-            border: 2px solid #ddd;
             border-radius: 8px;
-            padding: 20px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        
-        .shipping-option:hover {
-            border-color: #3498db;
-        }
-        
-        .shipping-option.selected {
-            border-color: #3498db;
-            background-color: #f0f8ff;
-        }
-        
-        .shipping-option input[type="radio"] {
-            margin-right: 10px;
-        }
-        
-        .price {
-            font-weight: bold;
-            color: #2c3e50;
-            margin-top: 10px;
-        }
-        
-        .button-group {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 30px;
-            gap: 15px;
-        }
-        
-        .btn {
-            padding: 14px 30px;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-decoration: none;
-            text-align: center;
-            display: inline-block;
-        }
-        
-        .btn-back {
-            background-color: #95a5a6;
-            color: white;
-        }
-        
-        .btn-back:hover {
-            background-color: #7f8c8d;
-        }
-        
-        .btn-submit {
-            background-color: #3498db;
-            color: white;
-            flex-grow: 1;
-        }
-        
-        .btn-submit:hover {
-            background-color: #2980b9;
-        }
-        
-        .form-note {
-            font-size: 14px;
-            color: #7f8c8d;
-            margin-top: 5px;
-            font-style: italic;
-        }
-        
-        @media (max-width: 768px) {
-            .form-row,
-            .shipping-options {
-                flex-direction: column;
-            }
-            
-            .container {
-                padding: 20px;
-            }
-            
-            .button-group {
-                flex-direction: column;
-            }
-        }
-        
-        .loading {
-            display: none;
-            text-align: center;
             margin: 20px 0;
         }
-        
-        .loading-spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #3498db;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
+        .error {
+            color: #721c24;
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
         }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .info {
+            color: #0c5460;
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .btn {
+            display: inline-block;
+            background-color: #5a67d8;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+            margin: 10px;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background-color: #4c51bf;
         }
     </style>
-    <script>
-        // Mode API pour compatibilité avec les systèmes existants
-        const API_MODE = <?php echo $ENABLE_API ? 'true' : 'false'; ?>;
-        
-        document.addEventListener('DOMContentLoaded', function() {
-            // Pré-sélectionner le mode de livraison
-            const modeLivraison = '<?php echo $_SESSION['mode_livraison'] ?? 'standard'; ?>';
-            if (modeLivraison) {
-                const radio = document.querySelector(`input[name="mode_livraison"][value="${modeLivraison}"]`);
-                if (radio) {
-                    radio.checked = true;
-                    radio.closest('.shipping-option').classList.add('selected');
-                }
-            }
-            
-            // Gestion de la sélection des options de livraison
-            document.querySelectorAll('.shipping-option').forEach(option => {
-                option.addEventListener('click', function() {
-                    document.querySelectorAll('.shipping-option').forEach(opt => {
-                        opt.classList.remove('selected');
-                    });
-                    this.classList.add('selected');
-                    const radio = this.querySelector('input[type="radio"]');
-                    if (radio) {
-                        radio.checked = true;
-                    }
-                });
-            });
-            
-            // Formatage automatique du téléphone
-            const phoneInput = document.querySelector('input[name="telephone"]');
-            if (phoneInput) {
-                phoneInput.addEventListener('input', function(e) {
-                    let value = e.target.value.replace(/\D/g, '');
-                    if (value.length > 10) value = value.substring(0, 10);
-                    
-                    if (value.length > 6) {
-                        value = value.replace(/(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/, '$1 $2 $3 $4 $5');
-                    } else if (value.length > 4) {
-                        value = value.replace(/(\d{2})(\d{2})(\d{2})/, '$1 $2 $3');
-                    } else if (value.length > 2) {
-                        value = value.replace(/(\d{2})(\d{2})/, '$1 $2');
-                    }
-                    
-                    e.target.value = value;
-                });
-            }
-            
-            // Formatage automatique du code postal
-            const cpInput = document.querySelector('input[name="code_postal"]');
-            if (cpInput) {
-                cpInput.addEventListener('input', function(e) {
-                    let value = e.target.value.replace(/\D/g, '');
-                    if (value.length > 5) value = value.substring(0, 5);
-                    e.target.value = value;
-                });
-            }
-            
-            // Récupération automatique de l'adresse via API si disponible
-            if (API_MODE) {
-                fetch('livraison.php?api=1')
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success && data.hasAddress && data.adresse) {
-                            // Pré-remplir les champs avec les données de l'API
-                            const addr = data.adresse;
-                            const fields = {
-                                'nom': addr.nom,
-                                'prenom': addr.prenom,
-                                'email': addr.email,
-                                'telephone': addr.telephone,
-                                'societe': addr.societe,
-                                'adresse': addr.adresse,
-                                'complement': addr.complement,
-                                'code_postal': addr.code_postal,
-                                'ville': addr.ville,
-                                'pays': addr.pays
-                            };
-                            
-                            Object.keys(fields).forEach(field => {
-                                const input = document.querySelector(`[name="${field}"]`);
-                                if (input && fields[field]) {
-                                    input.value = fields[field];
-                                }
-                            });
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Erreur lors de la récupération de l\'adresse:', error);
-                    });
-            }
-            
-            // Gestion de la soumission du formulaire
-            const form = document.getElementById('livraison-form');
-            if (form) {
-                form.addEventListener('submit', function(e) {
-                    e.preventDefault();
-                    
-                    // Validation côté client
-                    const requiredFields = ['nom', 'prenom', 'email', 'telephone', 'adresse', 'code_postal', 'ville'];
-                    let isValid = true;
-                    const errors = [];
-                    
-                    requiredFields.forEach(field => {
-                        const input = document.querySelector(`[name="${field}"]`);
-                        if (input && !input.value.trim()) {
-                            isValid = false;
-                            input.style.borderColor = '#e74c3c';
-                            errors.push(`Le champ ${field} est requis`);
-                        } else if (input) {
-                            input.style.borderColor = '#ddd';
-                        }
-                    });
-                    
-                    // Validation email
-                    const emailInput = document.querySelector('[name="email"]');
-                    if (emailInput && emailInput.value && !isValidEmail(emailInput.value)) {
-                        isValid = false;
-                        emailInput.style.borderColor = '#e74c3c';
-                        errors.push('L\'adresse email n\'est pas valide');
-                    }
-                    
-                    if (!isValid) {
-                        showErrors(errors);
-                        return;
-                    }
-                    
-                    // Afficher le loader
-                    const loadingDiv = document.getElementById('loading');
-                    if (loadingDiv) loadingDiv.style.display = 'block';
-                    
-                    // Préparer les données du formulaire
-                    const formData = new FormData(form);
-                    
-                    // Ajouter le mode API si activé
-                    if (API_MODE) {
-                        formData.append('api_mode', '1');
-                    }
-                    
-                    // Envoyer les données
-                    fetch('livraison.php', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(response => {
-                        if (response.headers.get('content-type')?.includes('application/json')) {
-                            return response.json();
-                        }
-                        // Redirection automatique pour les réponses non-JSON
-                        window.location.href = response.url;
-                        return null;
-                    })
-                    .then(data => {
-                        if (data) {
-                            if (data.success) {
-                                if (data.redirect) {
-                                    window.location.href = data.redirect;
-                                } else if (data.compat_redirect) {
-                                    window.location.href = data.compat_redirect;
-                                } else {
-                                    // Fallback vers paiement.php
-                                    window.location.href = 'paiement.php';
-                                }
-                            } else {
-                                showErrors(data.errors || [data.message]);
-                            }
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Erreur:', error);
-                        showErrors(['Une erreur est survenue lors de l\'envoi du formulaire']);
-                    })
-                    .finally(() => {
-                        if (loadingDiv) loadingDiv.style.display = 'none';
-                    });
-                });
-            }
-            
-            function isValidEmail(email) {
-                const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                return re.test(email);
-            }
-            
-            function showErrors(errors) {
-                const errorDiv = document.getElementById('error-messages');
-                if (errorDiv && errors.length > 0) {
-                    errorDiv.innerHTML = `
-                        <div class="error-message">
-                            <strong>Des erreurs sont présentes dans le formulaire :</strong>
-                            <ul>
-                                ${errors.map(error => `<li>${error}</li>`).join('')}
-                            </ul>
-                        </div>
-                    `;
-                    errorDiv.scrollIntoView({ behavior: 'smooth' });
-                }
-            }
-        });
-    </script>
 </head>
 <body>
     <div class="container">
-        <h1>Informations de livraison</h1>
+        <h1><i class="fas fa-truck"></i> Adresse de Livraison</h1>
         
-        <div id="error-messages">
-            <?php if (isset($_SESSION['erreurs_livraison'])): ?>
-                <div class="error-message">
-                    <strong>Des erreurs sont présentes dans le formulaire :</strong>
+        <?php if (isset($response['success']) && $response['success']): ?>
+            <div class="success">
+                <i class="fas fa-check-circle"></i>
+                <h3>Adresse enregistrée avec succès !</h3>
+                <p><?php echo htmlspecialchars($response['message']); ?></p>
+                <p>Redirection vers le paiement...</p>
+            </div>
+            <script>
+                setTimeout(function() {
+                    window.location.href = '<?php echo $response["redirect"] ?? "paiement.php"; ?>';
+                }, 2000);
+            </script>
+            <a href="<?php echo $response['redirect'] ?? 'paiement.php'; ?>" class="btn">
+                <i class="fas fa-arrow-right"></i> Continuer vers le paiement
+            </a>
+            
+        <?php elseif (isset($response['message'])): ?>
+            <div class="error">
+                <i class="fas fa-exclamation-triangle"></i>
+                <h3>Erreur</h3>
+                <p><?php echo htmlspecialchars($response['message']); ?></p>
+                <?php if (isset($response['errors']) && is_array($response['errors'])): ?>
                     <ul>
-                        <?php foreach ($_SESSION['erreurs_livraison'] as $erreur): ?>
-                            <li><?php echo htmlspecialchars($erreur); ?></li>
+                        <?php foreach ($response['errors'] as $error): ?>
+                            <li><?php echo htmlspecialchars($error); ?></li>
                         <?php endforeach; ?>
                     </ul>
-                </div>
-                <?php unset($_SESSION['erreurs_livraison']); ?>
-            <?php endif; ?>
-        </div>
-        
-        <form id="livraison-form" method="POST">
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="nom" class="required">Nom</label>
-                    <input type="text" id="nom" name="nom" 
-                           value="<?php echo htmlspecialchars($donnees_saisies['nom'] ?? ''); ?>" 
-                           required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="prenom" class="required">Prénom</label>
-                    <input type="text" id="prenom" name="prenom" 
-                           value="<?php echo htmlspecialchars($donnees_saisies['prenom'] ?? ''); ?>" 
-                           required>
-                </div>
+                <?php endif; ?>
             </div>
+            <a href="livraison_form.php" class="btn">
+                <i class="fas fa-arrow-left"></i> Retour au formulaire
+            </a>
             
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="email" class="required">Email</label>
-                    <input type="email" id="email" name="email" 
-                           value="<?php echo htmlspecialchars($donnees_saisies['email'] ?? ''); ?>" 
-                           required>
-                    <div class="form-note">Vous recevrez la confirmation de commande à cette adresse</div>
-                </div>
-                
-                <div class="form-group">
-                    <label for="telephone" class="required">Téléphone</label>
-                    <input type="tel" id="telephone" name="telephone" 
-                           value="<?php echo htmlspecialchars($donnees_saisies['telephone'] ?? ''); ?>" 
-                           placeholder="01 23 45 67 89" 
-                           required>
-                    <div class="form-note">Format: 10 chiffres</div>
-                </div>
+        <?php else: ?>
+            <div class="info">
+                <i class="fas fa-info-circle"></i>
+                <h3>Accès à la page de livraison</h3>
+                <p>Cette page traite les informations de livraison.</p>
+                <p>Veuillez remplir le formulaire d'adresse de livraison.</p>
             </div>
-            
-            <div class="form-group">
-                <label for="societe">Société (optionnel)</label>
-                <input type="text" id="societe" name="societe" 
-                       value="<?php echo htmlspecialchars($donnees_saisies['societe'] ?? ''); ?>">
-            </div>
-            
-            <div class="form-group">
-                <label for="adresse" class="required">Adresse</label>
-                <input type="text" id="adresse" name="adresse" 
-                       value="<?php echo htmlspecialchars($donnees_saisies['adresse'] ?? ''); ?>" 
-                       placeholder="123 rue de l'exemple" 
-                       required>
-            </div>
-            
-            <div class="form-group">
-                <label for="complement">Complément d'adresse (optionnel)</label>
-                <input type="text" id="complement" name="complement" 
-                       value="<?php echo htmlspecialchars($donnees_saisies['complement'] ?? ''); ?>" 
-                       placeholder="Appartement, étage, etc.">
-            </div>
-            
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="code_postal" class="required">Code postal</label>
-                    <input type="text" id="code_postal" name="code_postal" 
-                           value="<?php echo htmlspecialchars($donnees_saisies['code_postal'] ?? ''); ?>" 
-                           required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="ville" class="required">Ville</label>
-                    <input type="text" id="ville" name="ville" 
-                           value="<?php echo htmlspecialchars($donnees_saisies['ville'] ?? ''); ?>" 
-                           required>
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label for="pays" class="required">Pays</label>
-                <select id="pays" name="pays" required>
-                    <option value="France" <?php echo (($donnees_saisies['pays'] ?? 'France') === 'France') ? 'selected' : ''; ?>>France</option>
-                    <option value="Belgique" <?php echo (($donnees_saisies['pays'] ?? '') === 'Belgique') ? 'selected' : ''; ?>>Belgique</option>
-                    <option value="Suisse" <?php echo (($donnees_saisies['pays'] ?? '') === 'Suisse') ? 'selected' : ''; ?>>Suisse</option>
-                    <option value="Luxembourg" <?php echo (($donnees_saisies['pays'] ?? '') === 'Luxembourg') ? 'selected' : ''; ?>>Luxembourg</option>
-                    <option value="Autre" <?php echo (($donnees_saisies['pays'] ?? '') === 'Autre') ? 'selected' : ''; ?>>Autre pays</option>
-                </select>
-            </div>
-            
-            <h2 style="margin-top: 30px; margin-bottom: 20px; color: #2c3e50;">Mode de livraison</h2>
-            
-            <div class="shipping-options">
-                <div class="shipping-option">
-                    <label>
-                        <input type="radio" name="mode_livraison" value="standard" checked>
-                        <strong>Livraison Standard</strong><br>
-                        <span>Livré en 3-5 jours ouvrables</span>
-                        <div class="price">Gratuit</div>
-                    </label>
-                </div>
-                
-                <div class="shipping-option">
-                    <label>
-                        <input type="radio" name="mode_livraison" value="express">
-                        <strong>Livraison Express</strong><br>
-                        <span>Livré en 24h (jours ouvrés)</span>
-                        <div class="price">9,90 €</div>
-                    </label>
-                </div>
-                
-                <div class="shipping-option">
-                    <label>
-                        <input type="radio" name="mode_livraison" value="relais">
-                        <strong>Point Relais</strong><br>
-                        <span>Retrait en 48h</span>
-                        <div class="price">4,90 €</div>
-                    </label>
-                </div>
-            </div>
-            
-            <div class="checkbox-group">
-                <input type="checkbox" id="emballage_cadeau" name="emballage_cadeau" value="1" 
-                       <?php echo (isset($_SESSION['emballage_cadeau']) && $_SESSION['emballage_cadeau']) ? 'checked' : ''; ?>>
-                <label for="emballage_cadeau">Emballage cadeau (+2,00 €)</label>
-            </div>
-            
-            <div class="form-group">
-                <label for="instructions">Instructions de livraison (optionnel)</label>
-                <textarea id="instructions" name="instructions" rows="3" 
-                          placeholder="Porte bleue, sonnette à gauche, absence prévue..."><?php echo htmlspecialchars($_SESSION['adresse_livraison']['instructions'] ?? ''); ?></textarea>
-            </div>
-            
-            <div id="loading" class="loading">
-                <div class="loading-spinner"></div>
-                <p>Traitement en cours...</p>
-            </div>
-            
-            <div class="button-group">
-                <a href="panier.php" class="btn btn-back">← Retour au panier</a>
-                <button type="submit" class="btn btn-submit">Continuer vers le paiement →</button>
-            </div>
-        </form>
+            <a href="livraison_form.php" class="btn">
+                <i class="fas fa-edit"></i> Remplir le formulaire de livraison
+            </a>
+            <a href="panier.html" class="btn">
+                <i class="fas fa-shopping-cart"></i> Retour au panier
+            </a>
+        <?php endif; ?>
     </div>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
 </body>
 </html>
