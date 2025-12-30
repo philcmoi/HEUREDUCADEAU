@@ -5,8 +5,30 @@
 
 session_start();
 
-// Configuration de la base de données
-require_once 'config/database.php';
+// Activer l'affichage des erreurs pour le débogage
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+// Fonction de connexion PDO (remplace config/database.php)
+function getPDOConnection() {
+    try {
+        $pdo = new PDO(
+            "mysql:host=localhost;dbname=heureducadeau;charset=utf8mb4",
+            "Philippe",  // Utilisateur
+            "l@99339R"   // Mot de passe
+        );
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        return $pdo;
+    } catch (PDOException $e) {
+        error_log("Erreur de connexion DB: " . $e->getMessage());
+        // Pour le débogage, afficher l'erreur
+        if (isset($_GET['debug'])) {
+            die("Erreur DB: " . $e->getMessage());
+        }
+        return null;
+    }
+}
 
 // Vérifier si c'est une soumission de formulaire
 $is_form_submission = ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['api_mode']));
@@ -14,30 +36,45 @@ $is_api_request = isset($_SERVER['HTTP_X_API_MODE']) ||
                   (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && 
                    strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest');
 
+// Initialiser la réponse AVANT tout output
+$response = [
+    'success' => false,
+    'message' => '',
+    'errors' => [],
+    'redirect' => null
+];
+
 // Si accès direct (GET) sans données valides, rediriger
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['api']) && !isset($_GET['debug'])) {
     // Vérifier s'il y a un panier valide
     $has_valid_cart = false;
+    $pdo = getPDOConnection();
     
-    try {
-        $pdo = getPDOConnection();
-        $session_id = session_id();
-        
-        $stmt = $pdo->prepare("
-            SELECT COUNT(pi.id_item) as nb_items 
-            FROM panier p 
-            LEFT JOIN panier_items pi ON p.id_panier = pi.id_panier 
-            WHERE p.session_id = ? AND p.statut = 'actif'
-            GROUP BY p.id_panier
-        ");
-        $stmt->execute([$session_id]);
-        $result = $stmt->fetch();
-        
-        if ($result && $result['nb_items'] > 0) {
-            $has_valid_cart = true;
+    if ($pdo) {
+        try {
+            $session_id = session_id();
+            
+            $stmt = $pdo->prepare("
+                SELECT COUNT(pi.id_item) as nb_items 
+                FROM panier p 
+                LEFT JOIN panier_items pi ON p.id_panier = pi.id_panier 
+                WHERE p.session_id = ? AND p.statut = 'actif'
+                GROUP BY p.id_panier
+            ");
+            $stmt->execute([$session_id]);
+            $result = $stmt->fetch();
+            
+            if ($result && $result['nb_items'] > 0) {
+                $has_valid_cart = true;
+            }
+        } catch (Exception $e) {
+            // Fallback à la session
+            error_log("Erreur vérification panier: " . $e->getMessage());
         }
-    } catch (Exception $e) {
-        // Fallback à la session
+    }
+    
+    // Fallback aux sessions
+    if (!$has_valid_cart) {
         $has_valid_cart = isset($_SESSION['panier']) && !empty($_SESSION['panier']);
     }
     
@@ -68,28 +105,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['api']) && !isset($_GET
 // TRAITEMENT DE LA SOUMISSION DU FORMULAIRE
 // ============================================
 
-// Initialiser la réponse
-$response = [
-    'success' => false,
-    'message' => '',
-    'errors' => [],
-    'redirect' => null
-];
-
 try {
     $pdo = getPDOConnection();
+    if (!$pdo) {
+        throw new Exception('Impossible de se connecter à la base de données');
+    }
+    
     $session_id = session_id();
     
     // Récupérer les données selon le mode
-    if ($is_api_request) {
+    if ($is_api_request && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // Mode API (JSON)
         $input = json_decode(file_get_contents('php://input'), true);
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new Exception('Données JSON invalides');
         }
-    } else {
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Mode formulaire traditionnel
         $input = $_POST;
+    } else {
+        throw new Exception('Méthode non autorisée');
     }
     
     // ============================================
@@ -98,6 +133,7 @@ try {
     
     $errors = [];
     $donnees_valides = [];
+    $missing_fields = [];
     
     // Champs obligatoires
     $required_fields = [
@@ -113,7 +149,7 @@ try {
     foreach ($required_fields as $field => $label) {
         if (empty(trim($input[$field] ?? ''))) {
             $errors[] = "Le champ \"$label\" est obligatoire";
-            $response['missing'][] = $field;
+            $missing_fields[] = $field;
         } else {
             $donnees_valides[$field] = trim($input[$field]);
         }
@@ -122,10 +158,12 @@ try {
     // Validation spécifique
     if (!empty($input['email']) && !filter_var($input['email'], FILTER_VALIDATE_EMAIL)) {
         $errors[] = "L'adresse email n'est pas valide";
+        if (!in_array('email', $missing_fields)) $missing_fields[] = 'email';
     }
     
     if (!empty($input['code_postal']) && !preg_match('/^\d{5}$/', $input['code_postal'])) {
         $errors[] = "Le code postal doit contenir 5 chiffres";
+        if (!in_array('code_postal', $missing_fields)) $missing_fields[] = 'code_postal';
     }
     
     if (!empty($input['telephone']) && !preg_match('/^[0-9]{10}$/', str_replace(' ', '', $input['telephone']))) {
@@ -147,6 +185,7 @@ try {
         foreach ($facturation_fields as $field => $label) {
             if (empty(trim($input[$field] ?? ''))) {
                 $errors[] = "Le champ \"$label\" est obligatoire lorsque l'adresse de facturation est différente";
+                $missing_fields[] = $field;
             }
         }
     }
@@ -155,6 +194,7 @@ try {
     if (!empty($errors)) {
         $response['message'] = 'Des erreurs ont été trouvées dans le formulaire';
         $response['errors'] = $errors;
+        $response['missing'] = $missing_fields;
         
         // Sauvegarder les erreurs pour les afficher
         if (!$is_api_request) {
@@ -373,7 +413,7 @@ try {
         WHERE pi.id_panier = ?
     ");
     $stmt->execute([$panier_id]);
-    $panier_items_db = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $panier_items_db = $stmt->fetchAll();
     
     // Formater les items pour la session
     $panier_items = [];
@@ -401,7 +441,7 @@ try {
         WHERE pi.id_panier = ?
     ");
     $stmt->execute([$panier_id]);
-    $panier_totals = $stmt->fetch(PDO::FETCH_ASSOC);
+    $panier_totals = $stmt->fetch();
     
     $sous_total = floatval($panier_totals['sous_total'] ?? 0);
     $items_count = intval($panier_totals['items_count'] ?? 0);
@@ -434,7 +474,7 @@ try {
         WHERE a.id_adresse = ?
     ");
     $stmt->execute([$adresse_livraison_id]);
-    $adresse_livraison_complete = $stmt->fetch(PDO::FETCH_ASSOC);
+    $adresse_livraison_complete = $stmt->fetch();
     
     // Ajouter l'email si pas déjà présent
     if ($adresse_livraison_complete && !isset($adresse_livraison_complete['email'])) {
@@ -445,7 +485,7 @@ try {
     // SAUVEGARDE DANS LA SESSION
     // ============================================
     
-    // Structure principale pour livraison_data (conservée)
+    // Structure principale pour livraison_data
     $_SESSION['livraison_data'] = [
         'client_id' => $client_id,
         'panier_id' => $panier_id,
@@ -619,11 +659,7 @@ try {
 if ($is_api_request) {
     header('Content-Type: application/json');
     echo json_encode($response);
-    
-    // Si succès et pas de redirection JSON, terminer ici
-    if ($response['success'] && !$response['redirect']) {
-        exit();
-    }
+    exit();
 } else {
     // Mode formulaire traditionnel
     if ($response['success']) {
@@ -642,125 +678,4 @@ if ($is_api_request) {
         exit();
     }
 }
-
-// Si on arrive ici, c'est une requête GET sans paramètres valides
-// Afficher une page d'information
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Adresse de Livraison - HEURE DU CADEAU</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            background: #f8f9fa;
-        }
-        .container {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        .success {
-            color: #155724;
-            background-color: #d4edda;
-            border-color: #c3e6cb;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-        }
-        .error {
-            color: #721c24;
-            background-color: #f8d7da;
-            border-color: #f5c6cb;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-        }
-        .info {
-            color: #0c5460;
-            background-color: #d1ecf1;
-            border-color: #bee5eb;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-        }
-        .btn {
-            display: inline-block;
-            background-color: #5a67d8;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: bold;
-            margin: 10px;
-            cursor: pointer;
-        }
-        .btn:hover {
-            background-color: #4c51bf;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1><i class="fas fa-truck"></i> Adresse de Livraison</h1>
-        
-        <?php if (isset($response['success']) && $response['success']): ?>
-            <div class="success">
-                <i class="fas fa-check-circle"></i>
-                <h3>Adresse enregistrée avec succès !</h3>
-                <p><?php echo htmlspecialchars($response['message']); ?></p>
-                <p>Redirection vers le paiement...</p>
-            </div>
-            <script>
-                setTimeout(function() {
-                    window.location.href = '<?php echo $response["redirect"] ?? "paiement.php"; ?>';
-                }, 2000);
-            </script>
-            <a href="<?php echo $response['redirect'] ?? 'paiement.php'; ?>" class="btn">
-                <i class="fas fa-arrow-right"></i> Continuer vers le paiement
-            </a>
-            
-        <?php elseif (isset($response['message'])): ?>
-            <div class="error">
-                <i class="fas fa-exclamation-triangle"></i>
-                <h3>Erreur</h3>
-                <p><?php echo htmlspecialchars($response['message']); ?></p>
-                <?php if (isset($response['errors']) && is_array($response['errors'])): ?>
-                    <ul>
-                        <?php foreach ($response['errors'] as $error): ?>
-                            <li><?php echo htmlspecialchars($error); ?></li>
-                        <?php endforeach; ?>
-                    </ul>
-                <?php endif; ?>
-            </div>
-            <a href="livraison_form.php" class="btn">
-                <i class="fas fa-arrow-left"></i> Retour au formulaire
-            </a>
-            
-        <?php else: ?>
-            <div class="info">
-                <i class="fas fa-info-circle"></i>
-                <h3>Accès à la page de livraison</h3>
-                <p>Cette page traite les informations de livraison.</p>
-                <p>Veuillez remplir le formulaire d'adresse de livraison.</p>
-            </div>
-            <a href="livraison_form.php" class="btn">
-                <i class="fas fa-edit"></i> Remplir le formulaire de livraison
-            </a>
-            <a href="panier.php" class="btn">
-                <i class="fas fa-shopping-cart"></i> Retour au panier
-            </a>
-        <?php endif; ?>
-    </div>
-    
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-</body>
-</html>
