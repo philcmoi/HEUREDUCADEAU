@@ -520,6 +520,7 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
         </div>
         <?php endif; ?>
 
+        <!-- CORRECTION : Formulaire pointe vers livraison.php -->
         <form action="livraison.php" method="POST" id="livraison-form">
             <input type="hidden" name="api_mode" value="1" />
             <input type="hidden" name="panier_id" value="<?php echo htmlspecialchars($panier_id ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
