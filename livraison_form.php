@@ -250,6 +250,12 @@ if (isset($_SESSION['adresse_facturation'])) unset($_SESSION['adresse_facturatio
 // Définir la valeur par défaut pour la case à cocher
 $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ? 
                        $_SESSION['meme_adresse_facturation'] : true;
+
+// ============================================
+// CRÉATION DU FLAG POUR PAIEMENT.PHP
+// ============================================
+// Définir un flag pour indiquer que nous venons de livraison_form.php
+$_SESSION['from_livraison_form'] = true;
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -522,6 +528,8 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
 
         <!-- CORRECTION : Formulaire pointe vers livraison.php -->
         <form action="livraison.php" method="POST" id="livraison-form">
+            <!-- AJOUT : Flag pour indiquer qu'on vient du formulaire -->
+            <input type="hidden" name="from_livraison_form" value="1" />
             <input type="hidden" name="api_mode" value="1" />
             <input type="hidden" name="panier_id" value="<?php echo htmlspecialchars($panier_id ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
             <input type="hidden" name="client_id" value="<?php echo htmlspecialchars($client_id ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
@@ -1069,6 +1077,23 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
                     const result = await response.json();
                     
                     if (result.success) {
+                        // AJOUT : Mettre à jour la session avant redirection
+                        try {
+                            // Appeler l'API pour vérifier le panier et autoriser le checkout
+                            const checkoutResponse = await fetch('/api/panier.php?action=init_checkout', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ action: 'init_checkout' })
+                            });
+                            
+                            const checkoutResult = await checkoutResponse.json();
+                            console.log('Checkout result:', checkoutResult);
+                        } catch (checkoutError) {
+                            console.warn('Checkout verification failed:', checkoutError);
+                        }
+                        
                         // Rediriger vers la page de paiement
                         window.location.href = result.redirect || 'paiement.php';
                     } else {

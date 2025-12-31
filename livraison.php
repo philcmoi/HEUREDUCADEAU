@@ -1,3 +1,5 @@
+[file name]: livraison.php
+[file content begin]
 <?php
 // ============================================
 // FICHIER DE TRAITEMENT DU FORMULAIRE LIVRAISON
@@ -537,6 +539,14 @@ try {
     $_SESSION['checkout_time'] = time();
     
     // ============================================
+    // AJOUT : FLAGS POUR PAIEMENT.PHP
+    // ============================================
+    
+    // Définir le flag que paiement.php recherche
+    $_SESSION['etape_livraison_valide'] = true;
+    $_SESSION['from_livraison_post'] = true;
+    
+    // ============================================
     // SAUVEGARDE DANS COMMANDE_TEMPORAIRE
     // ============================================
     
@@ -679,3 +689,4 @@ if ($is_api_request) {
     }
 }
 ?>
+[file content end]
