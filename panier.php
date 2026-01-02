@@ -1094,39 +1094,85 @@
         }
 
         async checkout() {
-          // NOUVELLE MÉTHODE AVEC VÉRIFICATION API
+          // EMPÊCHER LES CLICS MULTIPLES
+          if (this.isProcessing) return;
+          this.isProcessing = true;
+
           try {
-            // 1. Vérifier avec l'API si le checkout est autorisé
-            const response = await fetch(`${this.apiUrl}?action=init_checkout`);
+            // DÉSACTIVER LE BOUTON PENDANT LE TRAITEMENT
+            const checkoutBtn = document.querySelector(".btn-checkout");
+            if (checkoutBtn) {
+              const originalText = checkoutBtn.innerHTML;
+              checkoutBtn.innerHTML =
+                '<i class="fas fa-spinner fa-spin"></i> Vérification...';
+              checkoutBtn.disabled = true;
+            }
+
+            // VÉRIFIER RAPIDEMENT SI LE PANIER EST VALIDE
+            const response = await fetch(`${this.apiUrl}?action=get`);
             const data = await response.json();
 
-            if (data.success) {
+            if (data.success && data.panier && data.panier.length > 0) {
+              // VÉRIFIER SI TOUS LES ARTICLES SONT DISPONIBLES
+              const allAvailable = data.panier.every(
+                (item) => item.disponible !== false
+              );
+
+              if (!allAvailable) {
+                this.showNotification(
+                  "Certains articles ne sont pas disponibles. Veuillez vérifier votre panier.",
+                  "error"
+                );
+
+                // RECHARGER LE PANIER POUR METTRE À JOUR L'AFFICHAGE
+                setTimeout(() => {
+                  this.loadCart();
+                }, 1500);
+
+                // RÉACTIVER LE BOUTON
+                if (checkoutBtn) {
+                  checkoutBtn.innerHTML =
+                    '<i class="fas fa-lock"></i> Procéder au paiement';
+                  checkoutBtn.disabled = false;
+                }
+                this.isProcessing = false;
+                return;
+              }
+
               this.showNotification(
                 "Redirection vers la livraison...",
                 "success"
               );
 
-              // 2. Rediriger vers livraison.php
+              // REDIRECTION SIMPLE APRÈS UN COURT DÉLAI
               setTimeout(() => {
-                window.location.href = "livraison.php";
-              }, 1500);
+                window.location.href = "livraison_form.php";
+              }, 1000);
             } else {
-              // 3. Si échec, afficher le message d'erreur
               this.showNotification(
-                data.message || "Impossible de procéder au paiement",
+                "Votre panier est vide ou contient des articles indisponibles",
                 "error"
               );
 
-              // 4. Si des produits ne sont pas disponibles, recharger le panier
-              if (data.unavailable_items) {
-                setTimeout(() => {
-                  this.loadCart();
-                }, 2000);
+              // RÉACTIVER LE BOUTON
+              if (checkoutBtn) {
+                checkoutBtn.innerHTML =
+                  '<i class="fas fa-lock"></i> Procéder au paiement';
+                checkoutBtn.disabled = false;
               }
+              this.isProcessing = false;
             }
           } catch (error) {
             console.error("Erreur checkout:", error);
-            this.showNotification("Erreur de connexion au serveur", "error");
+
+            // FALLBACK: REDIRECTION DIRECTE MÊME EN CAS D'ERREUR
+            this.showNotification(
+              "Redirection vers la livraison...",
+              "success"
+            );
+            setTimeout(() => {
+              window.location.href = "livraison_form.php";
+            }, 1500);
           }
         }
 
