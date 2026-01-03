@@ -74,38 +74,45 @@ $adresse_facturation = $_SESSION['adresse_facturation'] ?? [];
 $options_livraison = $_SESSION['options_livraison'] ?? [];
 $frais_livraison = $_SESSION['frais_livraison'] ?? 0;
 
-// Calculer le total du panier
+// Récupérer les articles du panier avec détails
+$articles_panier = [];
 $total_panier = 0;
-if (isset($_SESSION['panier_items'])) {
-    foreach ($_SESSION['panier_items'] as $item) {
-        $total_panier += ($item['prix'] * $item['quantite']);
-    }
-} else {
-    // Fallback: récupérer depuis la base de données
-    try {
-        if (!isset($pdo)) {
-            $pdo = new PDO(
-                "mysql:host=localhost;dbname=heureducadeau;charset=utf8mb4",
-                "Philippe",
-                "l@99339R"
-            );
-            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        }
+
+try {
+    $pdo = new PDO(
+        "mysql:host=localhost;dbname=heureducadeau;charset=utf8mb4",
+        "Philippe",
+        "l@99339R"
+    );
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    
+    $panier_id = $_SESSION['panier_id'] ?? null;
+    
+    if ($panier_id) {
+        // Récupérer les articles du panier avec les détails des produits
+        $stmt = $pdo->prepare("
+            SELECT pi.*, p.nom, p.prix, p.image, p.description_courte 
+            FROM panier_items pi 
+            JOIN produits p ON pi.id_produit = p.id_produit 
+            WHERE pi.id_panier = ?
+        ");
+        $stmt->execute([$panier_id]);
+        $articles_panier = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
-        $panier_id = $_SESSION['panier_id'] ?? null;
-        if ($panier_id) {
-            $stmt = $pdo->prepare("
-                SELECT SUM(pi.quantite * p.prix) as total 
-                FROM panier_items pi 
-                JOIN produits p ON pi.id_produit = p.id_produit 
-                WHERE pi.id_panier = ?
-            ");
-            $stmt->execute([$panier_id]);
-            $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            $total_panier = $result['total'] ?? 0;
+        // Calculer le total
+        foreach ($articles_panier as $item) {
+            $total_panier += ($item['prix'] * $item['quantite']);
         }
-    } catch (Exception $e) {
-        error_log("Erreur calcul total: " . $e->getMessage());
+    }
+} catch (Exception $e) {
+    error_log("Erreur récupération panier: " . $e->getMessage());
+    
+    // Fallback sur la session si la BDD échoue
+    if (isset($_SESSION['panier_items'])) {
+        $articles_panier = $_SESSION['panier_items'];
+        foreach ($_SESSION['panier_items'] as $item) {
+            $total_panier += ($item['prix'] * $item['quantite']);
+        }
     }
 }
 
@@ -117,21 +124,29 @@ $total_commande = $total_panier + $frais_livraison;
 
 $errors = [];
 $success = false;
+$payment_method = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
-    // Valider les données de carte
-    $required_payment = ['card_number', 'card_expiry', 'card_cvc', 'card_name'];
-    
-    foreach ($required_payment as $field) {
-        if (empty($_POST[$field])) {
-            $errors[] = "Le champ $field est requis.";
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Déterminer la méthode de paiement
+    if (isset($_POST['process_card'])) {
+        $payment_method = 'carte';
+        
+        // Valider les données de carte
+        $required_payment = ['card_number', 'card_expiry', 'card_cvc', 'card_name'];
+        
+        foreach ($required_payment as $field) {
+            if (empty($_POST[$field])) {
+                $errors[] = "Le champ $field est requis pour le paiement par carte.";
+            }
         }
+    } elseif (isset($_POST['process_paypal'])) {
+        $payment_method = 'paypal';
+        // Pour PayPal, on va simplement créer la commande en attente
+    } else {
+        $errors[] = "Veuillez sélectionner une méthode de paiement.";
     }
     
     if (empty($errors)) {
-        // Simuler un traitement de paiement réussi
-        // En production, intégrer avec Stripe, PayPal, etc.
-        
         // Sauvegarder la commande finale
         try {
             if (!isset($pdo)) {
@@ -149,6 +164,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
             $panier_id = $_SESSION['panier_id'] ?? null;
             $session_id = session_id();
             
+            // Déterminer le statut selon la méthode de paiement
+            if ($payment_method === 'carte') {
+                // Simuler un traitement de carte bancaire réussi
+                // EN PRODUCTION: Intégrer avec une vraie API de paiement
+                $statut = 'paye';
+                $methode_paiement = 'carte_bancaire';
+            } else {
+                // Pour PayPal, on crée la commande en attente
+                $statut = 'en_attente_paiement';
+                $methode_paiement = 'paypal';
+            }
+            
             // Données de livraison complètes
             $donnees_commande = [
                 'adresse_livraison' => $adresse_livraison,
@@ -156,7 +183,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
                 'options_livraison' => $options_livraison,
                 'frais_livraison' => $frais_livraison,
                 'total_panier' => $total_panier,
-                'total_commande' => $total_commande
+                'total_commande' => $total_commande,
+                'articles' => $articles_panier,
+                'methode_paiement' => $methode_paiement
             ];
             
             // Insérer la commande
@@ -164,8 +193,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
                 INSERT INTO commandes 
                 (numero_commande, client_id, panier_id, session_id, 
                  donnees_commande, statut, montant_total, frais_livraison, 
-                 date_creation) 
-                VALUES (?, ?, ?, ?, ?, 'en_attente', ?, ?, NOW())
+                 methode_paiement, date_creation) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
             ");
             
             $stmt->execute([
@@ -173,9 +202,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
                 $client_id,
                 $panier_id,
                 $session_id,
-                json_encode($donnees_commande),
+                json_encode($donnees_commande, JSON_UNESCAPED_UNICODE),
+                $statut,
                 $total_commande,
-                $frais_livraison
+                $frais_livraison,
+                $methode_paiement
             ]);
             
             $commande_id = $pdo->lastInsertId();
@@ -190,11 +221,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
             $_SESSION['numero_commande'] = $numero_commande;
             $_SESSION['commande_id'] = $commande_id;
             $_SESSION['commande_validee'] = true;
+            $_SESSION['methode_paiement'] = $methode_paiement;
             
             unset($_SESSION['panier_items']);
             unset($_SESSION['checkout_authorized']);
             
-            $success = true;
+            // Rediriger selon la méthode de paiement
+            if ($payment_method === 'paypal') {
+                // Rediriger vers PayPal
+                // EN PRODUCTION: Utiliser l'API PayPal pour créer un paiement
+                header('Location: traitement_paypal.php?commande=' . $commande_id);
+                exit();
+            } else {
+                $success = true;
+            }
             
         } catch (Exception $e) {
             $errors[] = "Erreur lors de l'enregistrement de la commande: " . $e->getMessage();
@@ -215,7 +255,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
+            max-width: 1000px;
             margin: 50px auto;
             padding: 20px;
             background: #f8f9fa;
@@ -249,6 +289,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
             border-radius: 8px;
             margin-bottom: 30px;
             border: 1px solid #e2e8f0;
+        }
+
+        .items-list {
+            margin-bottom: 20px;
+        }
+
+        .item-row {
+            display: flex;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .item-row:last-child {
+            border-bottom: none;
+        }
+
+        .item-image {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 6px;
+            margin-right: 15px;
+        }
+
+        .item-details {
+            flex-grow: 1;
+        }
+
+        .item-name {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .item-price {
+            color: #5a67d8;
+            font-weight: bold;
+        }
+
+        .item-quantity {
+            color: #666;
         }
 
         .summary-row {
@@ -287,6 +369,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
             padding-bottom: 10px;
         }
 
+        .payment-methods {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .payment-method {
+            flex: 1;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .payment-method input[type="radio"] {
+            display: none;
+        }
+
+        .payment-method-content {
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .payment-method input[type="radio"]:checked + .payment-method-content {
+            border-color: #5a67d8;
+            background-color: #f0f5ff;
+        }
+
+        .payment-method:hover .payment-method-content {
+            border-color: #c3dafe;
+        }
+
+        .payment-icon {
+            font-size: 40px;
+            margin-bottom: 10px;
+        }
+
+        .paypal-icon {
+            color: #003087;
+        }
+
+        .card-icon {
+            color: #5a67d8;
+        }
+
+        .payment-form {
+            display: none;
+        }
+
+        .payment-form.active {
+            display: block;
+        }
+
         .form-group {
             margin-bottom: 20px;
         }
@@ -323,8 +459,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
         }
 
         button {
-            background-color: #5a67d8;
-            color: white;
             padding: 15px 30px;
             border: none;
             border-radius: 8px;
@@ -334,10 +468,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
             width: 100%;
             transition: all 0.3s;
             margin-top: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
         }
 
-        button:hover {
+        .btn-card {
+            background-color: #5a67d8;
+            color: white;
+        }
+
+        .btn-card:hover {
             background-color: #4c51bf;
+            transform: translateY(-2px);
+        }
+
+        .btn-paypal {
+            background-color: #FFC439;
+            color: #003087;
+            border: 1px solid #003087;
+        }
+
+        .btn-paypal:hover {
+            background-color: #F2BA30;
             transform: translateY(-2px);
         }
 
@@ -369,9 +523,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
         }
 
         @media (max-width: 768px) {
-            .address-box, .form-row {
+            .address-box, .form-row, .payment-methods {
                 flex-direction: column;
-                gap: 0;
+                gap: 15px;
+            }
+            
+            .payment-methods {
+                gap: 10px;
             }
             
             body {
@@ -397,7 +555,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
         <?php else: ?>
             <!-- Récapitulatif de la commande -->
             <div class="order-summary">
-                <h2>Récapitulatif de votre commande</h2>
+                <h2>Détail de votre commande</h2>
+                
+                <div class="items-list">
+                    <?php foreach ($articles_panier as $item): ?>
+                        <div class="item-row">
+                            <?php if (!empty($item['image'])): ?>
+                                <img src="images/<?php echo htmlspecialchars($item['image']); ?>" 
+                                     alt="<?php echo htmlspecialchars($item['nom']); ?>" 
+                                     class="item-image">
+                            <?php else: ?>
+                                <div class="item-image" style="background:#eee; display:flex; align-items:center; justify-content:center;">
+                                    <i class="fas fa-gift"></i>
+                                </div>
+                            <?php endif; ?>
+                            
+                            <div class="item-details">
+                                <div class="item-name"><?php echo htmlspecialchars($item['nom']); ?></div>
+                                <div class="item-quantity">Quantité: <?php echo $item['quantite']; ?></div>
+                                <?php if (!empty($item['description_courte'])): ?>
+                                    <div style="color:#666; font-size:14px; margin-top:5px;">
+                                        <?php echo htmlspecialchars($item['description_courte']); ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="item-price">
+                                <?php echo number_format($item['prix'] * $item['quantite'], 2, ',', ' '); ?> €
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
                 
                 <div class="summary-row">
                     <span>Sous-total panier:</span>
@@ -495,38 +682,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
             </div>
             <?php endif; ?>
 
-            <!-- Formulaire de paiement -->
-            <h2>Informations de paiement</h2>
+            <!-- Choix de la méthode de paiement -->
+            <h2>Choisissez votre moyen de paiement</h2>
             <form action="paiement.php" method="POST" id="payment-form">
-                <input type="hidden" name="process_payment" value="1">
-                
-                <div class="form-group">
-                    <label for="card_name">Nom sur la carte</label>
-                    <input type="text" id="card_name" name="card_name" placeholder="JEAN DUPONT" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="card_number">Numéro de carte</label>
-                    <input type="text" id="card_number" name="card_number" 
-                           placeholder="1234 5678 9012 3456" pattern="[0-9\s]{13,19}" required>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="card_expiry">Date d'expiration (MM/AA)</label>
-                        <input type="text" id="card_expiry" name="card_expiry" 
-                               placeholder="12/25" pattern="(0[1-9]|1[0-2])\/[0-9]{2}" required>
+                <div class="payment-methods">
+                    <div class="payment-method">
+                        <input type="radio" id="paypal" name="payment_method" value="paypal">
+                        <label for="paypal" class="payment-method-content">
+                            <div class="payment-icon paypal-icon">
+                                <i class="fab fa-cc-paypal"></i>
+                            </div>
+                            <strong>Payer avec PayPal</strong>
+                            <div style="font-size: 14px; color: #666; margin-top: 5px;">
+                                Paiement sécurisé via votre compte PayPal
+                            </div>
+                        </label>
                     </div>
-                    <div class="form-group">
-                        <label for="card_cvc">Code CVC</label>
-                        <input type="text" id="card_cvc" name="card_cvc" 
-                               placeholder="123" pattern="[0-9]{3,4}" required>
+                    
+                    <div class="payment-method">
+                        <input type="radio" id="carte" name="payment_method" value="carte">
+                        <label for="carte" class="payment-method-content">
+                            <div class="payment-icon card-icon">
+                                <i class="fas fa-credit-card"></i>
+                            </div>
+                            <strong>Carte bancaire</strong>
+                            <div style="font-size: 14px; color: #666; margin-top: 5px;">
+                                Visa, Mastercard, etc.
+                            </div>
+                        </label>
                     </div>
                 </div>
 
-                <button type="submit" id="submit-payment">
-                    <i class="fas fa-lock"></i> Payer <?php echo number_format($total_commande, 2, ',', ' '); ?> €
-                </button>
+                <!-- Formulaire pour carte bancaire -->
+                <div id="card-form" class="payment-form">
+                    <h3>Informations de carte bancaire</h3>
+                    <div class="form-group">
+                        <label for="card_name">Nom sur la carte</label>
+                        <input type="text" id="card_name" name="card_name" placeholder="JEAN DUPONT">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="card_number">Numéro de carte</label>
+                        <input type="text" id="card_number" name="card_number" 
+                               placeholder="1234 5678 9012 3456" pattern="[0-9\s]{13,19}">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="card_expiry">Date d'expiration (MM/AA)</label>
+                            <input type="text" id="card_expiry" name="card_expiry" 
+                                   placeholder="12/25" pattern="(0[1-9]|1[0-2])\/[0-9]{2}">
+                        </div>
+                        <div class="form-group">
+                            <label for="card_cvc">Code CVC</label>
+                            <input type="text" id="card_cvc" name="card_cvc" 
+                                   placeholder="123" pattern="[0-9]{3,4}">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Boutons de paiement -->
+                <div id="paypal-button" class="payment-form">
+                    <button type="submit" name="process_paypal" class="btn-paypal">
+                        <i class="fab fa-paypal"></i> Payer avec PayPal
+                    </button>
+                </div>
+
+                <div id="card-button" class="payment-form">
+                    <button type="submit" name="process_card" class="btn-card">
+                        <i class="fas fa-lock"></i> Payer <?php echo number_format($total_commande, 2, ',', ' '); ?> € par carte
+                    </button>
+                </div>
 
                 <div style="text-align: center; margin-top: 20px; color: #718096; font-size: 14px;">
                     <i class="fas fa-shield-alt"></i> Paiement sécurisé SSL 256-bit
@@ -545,50 +771,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_payment'])) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <script>
-        // Validation du formulaire de paiement
         document.addEventListener('DOMContentLoaded', function() {
+            const paymentMethods = document.querySelectorAll('input[name="payment_method"]');
+            const cardForm = document.getElementById('card-form');
+            const paypalButton = document.getElementById('paypal-button');
+            const cardButton = document.getElementById('card-button');
+            
+            // Masquer les formulaires et boutons au départ
+            cardForm.style.display = 'none';
+            paypalButton.style.display = 'none';
+            cardButton.style.display = 'none';
+            
+            // Gérer le changement de méthode de paiement
+            paymentMethods.forEach(method => {
+                method.addEventListener('change', function() {
+                    if (this.value === 'paypal') {
+                        cardForm.style.display = 'none';
+                        paypalButton.style.display = 'block';
+                        cardButton.style.display = 'none';
+                    } else if (this.value === 'carte') {
+                        cardForm.style.display = 'block';
+                        paypalButton.style.display = 'none';
+                        cardButton.style.display = 'block';
+                    } else {
+                        cardForm.style.display = 'none';
+                        paypalButton.style.display = 'none';
+                        cardButton.style.display = 'none';
+                    }
+                });
+            });
+            
+            // Validation du formulaire carte bancaire
             const form = document.getElementById('payment-form');
             if (form) {
                 form.addEventListener('submit', function(e) {
-                    let isValid = true;
+                    const selectedMethod = document.querySelector('input[name="payment_method"]:checked');
                     
-                    // Validation du numéro de carte
-                    const cardNumber = document.getElementById('card_number');
-                    if (cardNumber) {
-                        const cleaned = cardNumber.value.replace(/\s/g, '');
-                        if (!/^[0-9]{13,19}$/.test(cleaned)) {
-                            cardNumber.style.borderColor = '#e53e3e';
-                            isValid = false;
-                        } else {
-                            cardNumber.style.borderColor = '#ddd';
-                        }
-                    }
-                    
-                    // Validation de la date d'expiration
-                    const expiry = document.getElementById('card_expiry');
-                    if (expiry) {
-                        if (!/^(0[1-9]|1[0-2])\/[0-9]{2}$/.test(expiry.value)) {
-                            expiry.style.borderColor = '#e53e3e';
-                            isValid = false;
-                        } else {
-                            expiry.style.borderColor = '#ddd';
-                        }
-                    }
-                    
-                    // Validation du CVC
-                    const cvc = document.getElementById('card_cvc');
-                    if (cvc) {
-                        if (!/^[0-9]{3,4}$/.test(cvc.value)) {
-                            cvc.style.borderColor = '#e53e3e';
-                            isValid = false;
-                        } else {
-                            cvc.style.borderColor = '#ddd';
-                        }
-                    }
-                    
-                    if (!isValid) {
+                    if (!selectedMethod) {
                         e.preventDefault();
-                        alert('Veuillez vérifier les informations de paiement.');
+                        alert('Veuillez sélectionner une méthode de paiement.');
+                        return;
+                    }
+                    
+                    if (selectedMethod.value === 'carte') {
+                        let isValid = true;
+                        
+                        // Validation du numéro de carte
+                        const cardNumber = document.getElementById('card_number');
+                        if (cardNumber) {
+                            const cleaned = cardNumber.value.replace(/\s/g, '');
+                            if (!/^[0-9]{13,19}$/.test(cleaned)) {
+                                cardNumber.style.borderColor = '#e53e3e';
+                                isValid = false;
+                            } else {
+                                cardNumber.style.borderColor = '#ddd';
+                            }
+                        }
+                        
+                        // Validation de la date d'expiration
+                        const expiry = document.getElementById('card_expiry');
+                        if (expiry) {
+                            if (!/^(0[1-9]|1[0-2])\/[0-9]{2}$/.test(expiry.value)) {
+                                expiry.style.borderColor = '#e53e3e';
+                                isValid = false;
+                            } else {
+                                expiry.style.borderColor = '#ddd';
+                            }
+                        }
+                        
+                        // Validation du CVC
+                        const cvc = document.getElementById('card_cvc');
+                        if (cvc) {
+                            if (!/^[0-9]{3,4}$/.test(cvc.value)) {
+                                cvc.style.borderColor = '#e53e3e';
+                                isValid = false;
+                            } else {
+                                cvc.style.borderColor = '#ddd';
+                            }
+                        }
+                        
+                        if (!isValid) {
+                            e.preventDefault();
+                            alert('Veuillez vérifier les informations de carte bancaire.');
+                        }
                     }
                 });
             }
