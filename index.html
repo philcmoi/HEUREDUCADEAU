@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
@@ -1047,7 +1047,7 @@
 
       // Configuration
       const API_PRODUITS_URL = "api/produits.php?action=featured&limit=4";
-      const API_PANIER_URL = "api/panier.php";
+      const API_PANIER_URL = "cart-api.php";
 
       console.log("=== INITIALISATION DU PANIER ===");
       console.log("URL API Panier:", API_PANIER_URL);
@@ -1088,7 +1088,7 @@
         // Méthode pour ajouter au panier - VERSION FIABLE
         async ajouterAuPanier(id_produit, quantite = 1, button = null) {
           console.log(
-            `[PanierManager] Ajout panier: ID=${id_produit}, Qty=${quantite}`
+            `[PanierManager] Ajout panier: ID=${id_produit}, Qty=${quantite}`,
           );
 
           if (!id_produit || id_produit <= 0) {
@@ -1135,7 +1135,7 @@
               this.showCartModal(productInfo);
 
               this.showNotification(
-                `"${data.produit_nom || productInfo.nom}" ajouté au panier !`
+                `"${data.produit_nom || productInfo.nom}" ajouté au panier !`,
               );
 
               return true;
@@ -1143,7 +1143,7 @@
               // Échec API
               this.showNotification(
                 data.message || "Erreur lors de l'ajout",
-                "error"
+                "error",
               );
               return false;
             }
@@ -1153,7 +1153,7 @@
             // Fallback: utiliser localStorage comme solution temporaire
             this.showNotification(
               "Erreur de connexion. Utilisation du panier local...",
-              "error"
+              "error",
             );
 
             // Utiliser localStorage comme fallback
@@ -1177,7 +1177,7 @@
 
             // Chercher si le produit existe déjà
             const index = panier.findIndex(
-              (item) => item.id_produit == id_produit
+              (item) => item.id_produit == id_produit,
             );
 
             if (index !== -1) {
@@ -1220,7 +1220,7 @@
           try {
             // Essayer l'API produits
             const response = await fetch(
-              `api/produits.php?action=get&id=${id_produit}&_=${Date.now()}`
+              `api/produits.php?action=get&id=${id_produit}&_=${Date.now()}`,
             );
             if (response.ok) {
               const data = await response.json();
@@ -1231,7 +1231,7 @@
 
             // Fallback: chercher dans le DOM
             const productCard = document.querySelector(
-              `.product-card[data-id="${id_produit}"]`
+              `.product-card[data-id="${id_produit}"]`,
             );
             if (productCard) {
               const nom =
@@ -1321,7 +1321,7 @@
 
             // Essayer l'API d'abord
             const response = await fetch(
-              `${this.apiUrl}?action=compter&_=${Date.now()}`
+              `${this.apiUrl}?action=compter&_=${Date.now()}`,
             );
 
             if (response.ok) {
@@ -1336,11 +1336,11 @@
 
             // Fallback: vérifier localStorage
             const localPanier = JSON.parse(
-              localStorage.getItem("panier") || "[]"
+              localStorage.getItem("panier") || "[]",
             );
             const localCount = localPanier.reduce(
               (total, item) => total + (item.quantite || 0),
-              0
+              0,
             );
 
             this.updateCartCountDisplay(localCount);
@@ -1462,7 +1462,7 @@
             : "0,00";
 
           const ratingStars = generateRatingStars(
-            parseFloat(product.note_moyenne || 0)
+            parseFloat(product.note_moyenne || 0),
           );
           const productImage = product.image || "img/default-product.jpg";
           const stockQuantity = product.quantite_stock || 0;
@@ -1600,7 +1600,7 @@
               await window.panierManager.ajouterAuPanier(
                 id_produit,
                 1,
-                addToCartBtn
+                addToCartBtn,
               );
             }
           }
@@ -1620,7 +1620,7 @@
       window.ajouterAuPanier = function (
         id_produit,
         quantite = 1,
-        button = null
+        button = null,
       ) {
         if (!window.panierManager) {
           window.panierManager = new PanierManager();
@@ -1628,7 +1628,7 @@
         return window.panierManager.ajouterAuPanier(
           id_produit,
           quantite,
-          button
+          button,
         );
       };
 
@@ -1641,7 +1641,7 @@
           const text = await response.text();
 
           alert(
-            `Statut: ${response.status}\nRéponse: ${text.substring(0, 200)}...`
+            `Statut: ${response.status}\nRéponse: ${text.substring(0, 200)}...`,
           );
         } catch (error) {
           alert("Erreur: " + error.message);

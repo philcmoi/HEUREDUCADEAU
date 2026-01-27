@@ -705,7 +705,7 @@ try {
         // Gestionnaire de panier pour la page index.php
         class PanierManager {
             constructor() {
-                this.apiUrl = 'api/panier.php';
+                this.apiUrl = 'cart-api.php';
                 this.cartCountElement = document.getElementById('cartCount');
                 this.initCartCount();
                 this.initEvents();

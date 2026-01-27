@@ -1,0 +1,178 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Test API Panier Direct</title>
+  </head>
+  <body>
+    <h1>Test Direct API Panier</h1>
+
+    <div>
+      <h3>Session Info</h3>
+      <div id="sessionInfo"></div>
+    </div>
+
+    <div>
+      <h3>Actions</h3>
+      <button onclick="testAPI()">1. Test API</button>
+      <button onclick="addProduct()">2. Ajouter Produit</button>
+      <button onclick="getCart()">3. Voir Panier</button>
+      <button onclick="countCart()">4. Compter</button>
+    </div>
+
+    <div>
+      <h3>Résultats</h3>
+      <pre id="results"></pre>
+    </div>
+
+    <script>
+      // URL de l'API - ESSAYEZ LES DEUX
+      const API_URLS = ["panier.php", "api/panier.php"];
+
+      let currentApiUrl = API_URLS[0];
+      let sessionId = "";
+
+      // Récupérer session ID depuis cookie
+      function getSessionId() {
+        const match = document.cookie.match(/PHPSESSID=([^;]+)/);
+        return match ? match[1] : "";
+      }
+
+      // Fonction générique pour appeler API
+      async function callAPI(action, data = {}) {
+        sessionId = getSessionId();
+        console.log("Session ID:", sessionId);
+
+        // Essayer toutes les URLs
+        for (const apiUrl of API_URLS) {
+          try {
+            const url = new URL(apiUrl, window.location.origin);
+            url.searchParams.set("action", action);
+            if (sessionId) {
+              url.searchParams.set("session_id", sessionId);
+            }
+
+            console.log("Tentative URL:", url.toString());
+
+            const options = {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            };
+
+            if (Object.keys(data).length > 0) {
+              options.body = JSON.stringify(data);
+            }
+
+            const response = await fetch(url, options);
+
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log(`SUCCÈS avec ${apiUrl}:`, result);
+
+            // Si succès, utiliser cette URL
+            currentApiUrl = apiUrl;
+            return result;
+          } catch (error) {
+            console.log(`ÉCHEC avec ${apiUrl}:`, error.message);
+            continue;
+          }
+        }
+
+        throw new Error("Toutes les URLs ont échoué");
+      }
+
+      // 1. Tester l'API
+      async function testAPI() {
+        try {
+          const result = await callAPI("test");
+          displayResult("Test API", result);
+
+          document.getElementById("sessionInfo").innerHTML = `
+                    <strong>URL API:</strong> ${currentApiUrl}<br>
+                    <strong>Session ID:</strong> ${result.session?.id || sessionId}<br>
+                    <strong>Panier:</strong> ${result.session?.panier_items || 0} item(s)
+                `;
+        } catch (error) {
+          displayResult("Test API - ERREUR", { error: error.message });
+        }
+      }
+
+      // 2. Ajouter un produit
+      async function addProduct() {
+        const productId = Math.floor(Math.random() * 10) + 1;
+        try {
+          const result = await callAPI("ajouter", {
+            id_produit: productId,
+            quantite: 1,
+          });
+          displayResult("Ajout Produit", result);
+        } catch (error) {
+          displayResult("Ajout Produit - ERREUR", { error: error.message });
+        }
+      }
+
+      // 3. Voir le panier
+      async function getCart() {
+        try {
+          const result = await callAPI("get");
+          displayResult("Panier Complet", result);
+        } catch (error) {
+          displayResult("Panier - ERREUR", { error: error.message });
+        }
+      }
+
+      // 4. Compter
+      async function countCart() {
+        try {
+          const result = await callAPI("compter");
+          displayResult("Compteur Panier", result);
+        } catch (error) {
+          displayResult("Compteur - ERREUR", { error: error.message });
+        }
+      }
+
+      // Afficher les résultats
+      function displayResult(title, data) {
+        const results = document.getElementById("results");
+        results.innerHTML = `<h4>${title}</h4>` + JSON.stringify(data, null, 2);
+      }
+
+      // Au chargement
+      document.addEventListener("DOMContentLoaded", () => {
+        console.log("Cookie:", document.cookie);
+        console.log("Session ID depuis cookie:", getSessionId());
+
+        // Afficher info session
+        document.getElementById("sessionInfo").innerHTML = `
+                <strong>Cookie PHPSESSID:</strong> ${getSessionId() || "NON TROUVÉ"}<br>
+                <strong>URLs testées:</strong> ${API_URLS.join(", ")}
+            `;
+      });
+
+      // Exposer pour debug
+      window.debugAll = async function () {
+        console.log("=== DEBUG COMPLET ===");
+
+        // Tester toutes les actions
+        await testAPI();
+        await addProduct();
+        await getCart();
+        await countCart();
+
+        // Test direct fetch
+        console.log("Test fetch direct:");
+        try {
+          const response = await fetch("panier.php?action=test");
+          const data = await response.json();
+          console.log("Fetch direct réussi:", data);
+        } catch (e) {
+          console.log("Fetch direct échoué:", e);
+        }
+      };
+    </script>
+  </body>
+</html>
