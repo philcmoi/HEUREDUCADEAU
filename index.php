@@ -484,7 +484,7 @@ try {
             <nav>
                 <a href="index.html" style="color: white; text-decoration: none; margin-left: 20px;">Accueil</a>
                 <a href="index.php" style="color: white; text-decoration: none; margin-left: 20px;">Produits</a>
-                <a href="panier.php" style="color: white; text-decoration: none; margin-left: 20px; position: relative;">
+                <a href="panier.html" style="color: white; text-decoration: none; margin-left: 20px; position: relative;">
                     <i class="fas fa-shopping-cart"></i> Panier
                     <span id="cartCount" class="cart-count" style="display: none;">0</span>
                 </a>
@@ -705,7 +705,7 @@ try {
         // Gestionnaire de panier pour la page index.php
         class PanierManager {
             constructor() {
-                this.apiUrl = 'api/panier.php';
+                this.apiUrl = 'cart-api.php';
                 this.cartCountElement = document.getElementById('cartCount');
                 this.initCartCount();
                 this.initEvents();

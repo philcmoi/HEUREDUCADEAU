@@ -1,29 +1,48 @@
 <?php
-session_start();
-require_once '../config.php';
-
 header('Content-Type: application/json');
+require_once '../config/database.php';
 
-if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
-    echo json_encode(['success' => false, 'message' => 'ID invalide']);
-    exit;
-}
+$response = ['success' => false, 'message' => ''];
 
 try {
-    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME, DB_USER, DB_PASS);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo = getPDOConnection();
     
-    $sql = "SELECT * FROM adresses WHERE id_adresse = ? AND id_client = ?";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute([$_GET['id'], $_SESSION['client_id'] ?? 0]);
-    $adresse = $stmt->fetch(PDO::FETCH_ASSOC);
+    $panier_id = $_GET['panier_id'] ?? null;
+    $session_id = $_GET['session_id'] ?? session_id();
     
-    if ($adresse) {
-        echo json_encode(['success' => true, 'adresse' => $adresse]);
+    if ($panier_id) {
+        // Récupérer l'adresse via le panier
+        $stmt = $pdo->prepare("
+            SELECT a.* FROM panier p
+            LEFT JOIN clients c ON p.id_client = c.id_client
+            LEFT JOIN adresses a ON c.id_client = a.id_client AND a.type_adresse = 'livraison' AND a.principale = 1
+            WHERE p.id_panier = ?
+            ORDER BY a.date_creation DESC LIMIT 1
+        ");
+        $stmt->execute([$panier_id]);
+        $adresse = $stmt->fetch();
+        
+        if ($adresse) {
+            $response = [
+                'success' => true,
+                'hasAddress' => true,
+                'adresse' => $adresse
+            ];
+        } else {
+            $response = [
+                'success' => true,
+                'hasAddress' => false,
+                'message' => 'Aucune adresse trouvée'
+            ];
+        }
     } else {
-        echo json_encode(['success' => false, 'message' => 'Adresse non trouvée']);
+        $response['message'] = 'Panier ID manquant';
     }
-} catch(PDOException $e) {
-    echo json_encode(['success' => false, 'message' => 'Erreur base de données']);
+    
+} catch (Exception $e) {
+    $response['message'] = 'Erreur serveur';
+    error_log("Erreur get_adresse: " . $e->getMessage());
 }
+
+echo json_encode($response);
 ?>

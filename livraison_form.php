@@ -122,13 +122,13 @@ if (!$access_granted) {
         echo json_encode([
             'success' => false,
             'message' => 'Accès non autorisé. Veuillez d\'abord remplir votre panier.',
-            'redirect' => 'panier.php'
+            'redirect' => 'panier.html'
         ]);
         exit();
     }
     
     // Redirection normale
-    header('Location: panier.php');
+    header('Location: panier.html');
     exit();
 }
 
@@ -250,12 +250,6 @@ if (isset($_SESSION['adresse_facturation'])) unset($_SESSION['adresse_facturatio
 // Définir la valeur par défaut pour la case à cocher
 $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ? 
                        $_SESSION['meme_adresse_facturation'] : true;
-
-// ============================================
-// CRÉATION DU FLAG POUR PAIEMENT.PHP
-// ============================================
-// Définir un flag pour indiquer que nous venons de livraison_form.php
-$_SESSION['from_livraison_form'] = true;
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -526,10 +520,7 @@ $_SESSION['from_livraison_form'] = true;
         </div>
         <?php endif; ?>
 
-        <!-- CORRECTION : Formulaire pointe vers livraison.php -->
         <form action="livraison.php" method="POST" id="livraison-form">
-            <!-- AJOUT : Flag pour indiquer qu'on vient du formulaire -->
-            <input type="hidden" name="from_livraison_form" value="1" />
             <input type="hidden" name="api_mode" value="1" />
             <input type="hidden" name="panier_id" value="<?php echo htmlspecialchars($panier_id ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
             <input type="hidden" name="client_id" value="<?php echo htmlspecialchars($client_id ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
@@ -750,6 +741,7 @@ $_SESSION['from_livraison_form'] = true;
                     placeholder="Ex: Sonner au portail rouge, livrer au gardien, etc."><?php echo htmlspecialchars($donnees_saisies['instructions'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
             </div>
 
+            <!-- BOUTON CORRIGÉ : Remplacement du lien par un bouton submit -->
             <button type="submit" id="submit-btn">
                 <i class="fas fa-arrow-right"></i> Continuer vers le paiement
             </button>
@@ -763,415 +755,447 @@ $_SESSION['from_livraison_form'] = true;
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
 
     <script>
-        // Variables globales
-        let isLoading = false;
+    // Variables globales
+    let isLoading = false;
+    
+    // Fonction pour afficher une adresse existante
+    function displayExistingAddress(address) {
+        const messageDiv = document.getElementById('info-message');
+        if (!messageDiv) return;
         
-        // Fonction pour afficher une adresse existante
-        function displayExistingAddress(address) {
-            const messageDiv = document.getElementById('info-message');
-            if (!messageDiv) return;
-            
-            messageDiv.className = 'message success';
-            messageDiv.innerHTML = `
-                <strong><i class="fas fa-check-circle"></i> Adresse déjà enregistrée :</strong><br>
-                ${address.prenom || ''} ${address.nom || ''}<br>
-                ${address.adresse || ''}<br>
-                ${address.complement ? address.complement + '<br>' : ''}
-                ${address.code_postal || ''} ${address.ville || ''}<br>
-                ${address.pays || 'France'}<br>
-                <small>Vous pouvez modifier ces informations ci-dessous si nécessaire.</small>
-            `;
+        messageDiv.className = 'message success';
+        messageDiv.innerHTML = `
+            <strong><i class="fas fa-check-circle"></i> Adresse déjà enregistrée :</strong><br>
+            ${address.prenom || ''} ${address.nom || ''}<br>
+            ${address.adresse || ''}<br>
+            ${address.complement ? address.complement + '<br>' : ''}
+            ${address.code_postal || ''} ${address.ville || ''}<br>
+            ${address.pays || 'France'}<br>
+            <small>Vous pouvez modifier ces informations ci-dessous si nécessaire.</small>
+        `;
 
-            // Pré-remplir le formulaire
-            const fields = ['prenom', 'nom', 'adresse', 'complement', 'code_postal', 'ville', 'pays', 'telephone', 'email', 'societe', 'instructions'];
-            fields.forEach(field => {
-                const input = document.getElementById(field);
-                if (input && address[field]) {
-                    input.value = address[field];
-                }
-            });
-        }
+        // Pré-remplir le formulaire
+        const fields = ['prenom', 'nom', 'adresse', 'complement', 'code_postal', 'ville', 'pays', 'telephone', 'email', 'societe', 'instructions'];
+        fields.forEach(field => {
+            const input = document.getElementById(field);
+            if (input && address[field]) {
+                input.value = address[field];
+            }
+        });
+    }
 
-        // Gestion de la case à cocher "même adresse pour facturation"
-        function setupFacturationToggle() {
-            const sameAddressCheckbox = document.getElementById('meme_adresse_facturation');
-            const facturationDiv = document.getElementById('adresse-facturation-different');
-            
-            if (!sameAddressCheckbox || !facturationDiv) return;
-            
-            sameAddressCheckbox.addEventListener('change', function(e) {
-                if (this.checked) {
-                    // Caché: même adresse
-                    facturationDiv.style.display = 'none';
-                    
-                    // Enlever l'attribut required des champs
-                    const facturationFields = facturationDiv.querySelectorAll('input, textarea, select');
-                    facturationFields.forEach(field => {
-                        field.removeAttribute('required');
-                    });
-                } else {
-                    // Affiché: adresse différente
-                    facturationDiv.style.display = 'block';
-                    
-                    // Ajouter l'attribut required aux champs obligatoires
-                    const requiredFields = ['facturation_prenom', 'facturation_nom', 'facturation_adresse', 
-                                           'facturation_code_postal', 'facturation_ville'];
-                    requiredFields.forEach(fieldId => {
-                        const field = document.getElementById(fieldId);
-                        if (field) field.setAttribute('required', 'required');
-                    });
-                }
-            });
-            
-            // Copier automatiquement l'adresse de livraison
-            sameAddressCheckbox.addEventListener('click', function() {
-                if (!this.checked) return;
+    // Gestion de la case à cocher "même adresse pour facturation"
+    function setupFacturationToggle() {
+        const sameAddressCheckbox = document.getElementById('meme_adresse_facturation');
+        const facturationDiv = document.getElementById('adresse-facturation-different');
+        
+        if (!sameAddressCheckbox || !facturationDiv) return;
+        
+        sameAddressCheckbox.addEventListener('change', function(e) {
+            if (this.checked) {
+                // Caché: même adresse
+                facturationDiv.style.display = 'none';
                 
-                // Copier les valeurs de livraison vers facturation
-                const mapping = {
-                    'prenom': 'facturation_prenom',
-                    'nom': 'facturation_nom',
-                    'societe': 'facturation_societe',
-                    'adresse': 'facturation_adresse',
-                    'complement': 'facturation_complement',
-                    'code_postal': 'facturation_code_postal',
-                    'ville': 'facturation_ville',
-                    'pays': 'facturation_pays'
-                };
-                
-                for (const [sourceId, targetId] of Object.entries(mapping)) {
-                    const source = document.getElementById(sourceId);
-                    const target = document.getElementById(targetId);
-                    if (source && target) {
-                        target.value = source.value;
-                    }
-                }
-            });
-        }
-
-        // Gestion des options de livraison
-        function setupLivraisonOptions() {
-            document.querySelectorAll('.radio-option').forEach(option => {
-                option.addEventListener('click', function() {
-                    // Désélectionner toutes les options
-                    document.querySelectorAll('.radio-option').forEach(opt => {
-                        opt.classList.remove('selected');
-                    });
-
-                    // Sélectionner celle cliquée
-                    this.classList.add('selected');
-
-                    // Cochez le radio correspondant
-                    const radio = this.querySelector('input[type="radio"]');
-                    if (radio) {
-                        radio.checked = true;
-                    }
+                // Enlever l'attribut required des champs
+                const facturationFields = facturationDiv.querySelectorAll('input, textarea, select');
+                facturationFields.forEach(field => {
+                    field.removeAttribute('required');
                 });
-            });
-        }
-
-        // Fonction de validation des champs
-        function validateField(fieldId, errorId) {
-            const field = document.getElementById(fieldId);
-            const error = document.getElementById(errorId);
-            
-            if (!field) return true;
-            
-            if (!field.value.trim()) {
-                field.classList.add('error-field');
-                if (error) {
-                    error.textContent = 'Ce champ est requis';
-                    error.classList.add('show');
-                }
-                return false;
             } else {
-                field.classList.remove('error-field');
-                if (error) {
-                    error.classList.remove('show');
-                }
+                // Affiché: adresse différente
+                facturationDiv.style.display = 'block';
                 
-                // Validation spécifique pour email
-                if (fieldId === 'email') {
-                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                    if (!emailRegex.test(field.value)) {
-                        field.classList.add('error-field');
-                        if (error) {
-                            error.textContent = 'Veuillez entrer une adresse email valide';
-                            error.classList.add('show');
-                        }
-                        return false;
-                    }
-                }
-                
-                // Validation spécifique pour téléphone (format français)
-                if (fieldId === 'telephone' && field.value.trim()) {
-                    const phoneRegex = /^[0-9]{10}$/;
-                    const cleanedPhone = field.value.replace(/\s/g, '');
-                    if (!phoneRegex.test(cleanedPhone)) {
-                        field.classList.add('error-field');
-                        if (error) {
-                            error.textContent = 'Veuillez entrer un numéro de téléphone valide (10 chiffres)';
-                            error.classList.add('show');
-                        }
-                        return false;
-                    }
-                }
-                
-                // Validation spécifique pour code postal (format français)
-                if (fieldId === 'code_postal') {
-                    const cpRegex = /^[0-9]{5}$/;
-                    if (!cpRegex.test(field.value)) {
-                        field.classList.add('error-field');
-                        if (error) {
-                            error.textContent = 'Veuillez entrer un code postal valide (5 chiffres)';
-                            error.classList.add('show');
-                        }
-                        return false;
-                    }
-                }
-                
-                return true;
+                // Ajouter l'attribut required aux champs obligatoires
+                const requiredFields = ['facturation_prenom', 'facturation_nom', 'facturation_adresse', 
+                                       'facturation_code_postal', 'facturation_ville'];
+                requiredFields.forEach(fieldId => {
+                    const field = document.getElementById(fieldId);
+                    if (field) field.setAttribute('required', 'required');
+                });
             }
-        }
+        });
+        
+        // Copier automatiquement l'adresse de livraison
+        sameAddressCheckbox.addEventListener('click', function() {
+            if (!this.checked) return;
+            
+            // Copier les valeurs de livraison vers facturation
+            const mapping = {
+                'prenom': 'facturation_prenom',
+                'nom': 'facturation_nom',
+                'societe': 'facturation_societe',
+                'adresse': 'facturation_adresse',
+                'complement': 'facturation_complement',
+                'code_postal': 'facturation_code_postal',
+                'ville': 'facturation_ville',
+                'pays': 'facturation_pays'
+            };
+            
+            for (const [sourceId, targetId] of Object.entries(mapping)) {
+                const source = document.getElementById(sourceId);
+                const target = document.getElementById(targetId);
+                if (source && target) {
+                    target.value = source.value;
+                }
+            }
+        });
+    }
 
-        // Validation des champs de facturation
-        function validateFacturationField(fieldId) {
-            const field = document.getElementById(fieldId);
-            if (!field) return true;
-            
-            if (field.hasAttribute('required') && !field.value.trim()) {
-                field.classList.add('error-field');
-                return false;
+    // Gestion des options de livraison
+    function setupLivraisonOptions() {
+        document.querySelectorAll('.radio-option').forEach(option => {
+            option.addEventListener('click', function() {
+                // Désélectionner toutes les options
+                document.querySelectorAll('.radio-option').forEach(opt => {
+                    opt.classList.remove('selected');
+                });
+
+                // Sélectionner celle cliquée
+                this.classList.add('selected');
+
+                // Cochez le radio correspondant
+                const radio = this.querySelector('input[type="radio"]');
+                if (radio) {
+                    radio.checked = true;
+                }
+            });
+        });
+    }
+
+    // Fonction de validation des champs
+    function validateField(fieldId, errorId) {
+        const field = document.getElementById(fieldId);
+        const error = document.getElementById(errorId);
+        
+        if (!field) return true;
+        
+        if (!field.value.trim()) {
+            field.classList.add('error-field');
+            if (error) {
+                error.textContent = 'Ce champ est requis';
+                error.classList.add('show');
+            }
+            return false;
+        } else {
+            field.classList.remove('error-field');
+            if (error) {
+                error.classList.remove('show');
             }
             
-            field.classList.remove('error-field');
+            // Validation spécifique pour email
+            if (fieldId === 'email') {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(field.value)) {
+                    field.classList.add('error-field');
+                    if (error) {
+                        error.textContent = 'Veuillez entrer une adresse email valide';
+                        error.classList.add('show');
+                    }
+                    return false;
+                }
+            }
+            
+            // Validation spécifique pour téléphone (format français)
+            if (fieldId === 'telephone' && field.value.trim()) {
+                const phoneRegex = /^[0-9]{10}$/;
+                const cleanedPhone = field.value.replace(/\s/g, '');
+                if (!phoneRegex.test(cleanedPhone)) {
+                    field.classList.add('error-field');
+                    if (error) {
+                        error.textContent = 'Veuillez entrer un numéro de téléphone valide (10 chiffres)';
+                        error.classList.add('show');
+                    }
+                    return false;
+                }
+            }
+            
+            // Validation spécifique pour code postal (format français)
+            if (fieldId === 'code_postal') {
+                const cpRegex = /^[0-9]{5}$/;
+                if (!cpRegex.test(field.value)) {
+                    field.classList.add('error-field');
+                    if (error) {
+                        error.textContent = 'Veuillez entrer un code postal valide (5 chiffres)';
+                        error.classList.add('show');
+                    }
+                    return false;
+                }
+            }
+            
             return true;
         }
+    }
 
-        // Fonction de validation globale
-        function validateForm() {
-            const fields = [
-                { id: 'nom', error: 'error-nom' },
-                { id: 'prenom', error: 'error-prenom' },
-                { id: 'adresse', error: 'error-adresse' },
-                { id: 'code_postal', error: 'error-code_postal' },
-                { id: 'ville', error: 'error-ville' },
-                { id: 'email', error: 'error-email' }
-            ];
+    // Validation des champs de facturation
+    function validateFacturationField(fieldId) {
+        const field = document.getElementById(fieldId);
+        if (!field) return true;
+        
+        if (field.hasAttribute('required') && !field.value.trim()) {
+            field.classList.add('error-field');
+            return false;
+        }
+        
+        field.classList.remove('error-field');
+        return true;
+    }
+
+    // Fonction de validation globale
+    function validateForm() {
+        const fields = [
+            { id: 'nom', error: 'error-nom' },
+            { id: 'prenom', error: 'error-prenom' },
+            { id: 'adresse', error: 'error-adresse' },
+            { id: 'code_postal', error: 'error-code_postal' },
+            { id: 'ville', error: 'error-ville' },
+            { id: 'email', error: 'error-email' }
+        ];
+        
+        let isValid = true;
+        
+        // Validation des champs de livraison
+        fields.forEach(field => {
+            if (!validateField(field.id, field.error)) {
+                isValid = false;
+            }
+        });
+        
+        // Validation des champs de facturation si nécessaire
+        if (!document.getElementById('meme_adresse_facturation').checked) {
+            const facturationFields = ['facturation_prenom', 'facturation_nom', 'facturation_adresse', 
+                                     'facturation_code_postal', 'facturation_ville'];
             
-            let isValid = true;
-            
-            // Validation des champs de livraison
-            fields.forEach(field => {
-                if (!validateField(field.id, field.error)) {
+            facturationFields.forEach(fieldId => {
+                if (!validateFacturationField(fieldId)) {
                     isValid = false;
                 }
             });
-            
-            // Validation des champs de facturation si nécessaire
-            if (!document.getElementById('meme_adresse_facturation').checked) {
-                const facturationFields = ['facturation_prenom', 'facturation_nom', 'facturation_adresse', 
-                                         'facturation_code_postal', 'facturation_ville'];
-                
-                facturationFields.forEach(fieldId => {
-                    if (!validateFacturationField(fieldId)) {
-                        isValid = false;
-                    }
-                });
-            }
-            
-            return isValid;
         }
+        
+        return isValid;
+    }
 
-        // Validation en temps réel
-        function setupRealTimeValidation() {
-            const fieldsToValidate = ['nom', 'prenom', 'adresse', 'code_postal', 'ville', 'email'];
-            fieldsToValidate.forEach(fieldId => {
-                const field = document.getElementById(fieldId);
-                if (field) {
-                    field.addEventListener('blur', () => {
-                        const errorId = 'error-' + fieldId;
-                        validateField(fieldId, errorId);
-                    });
-                    
-                    field.addEventListener('input', () => {
-                        const errorId = 'error-' + fieldId;
-                        const error = document.getElementById(errorId);
-                        field.classList.remove('error-field');
-                        if (error) error.classList.remove('show');
-                    });
-                }
-            });
-            
-            // Validation en temps réel pour les champs de facturation
-            const facturationFields = ['facturation_prenom', 'facturation_nom', 'facturation_adresse', 
-                                     'facturation_code_postal', 'facturation_ville'];
-            facturationFields.forEach(fieldId => {
-                const field = document.getElementById(fieldId);
-                if (field) {
-                    field.addEventListener('blur', () => {
-                        validateFacturationField(fieldId);
-                    });
-                    
-                    field.addEventListener('input', () => {
-                        field.classList.remove('error-field');
-                    });
-                }
-            });
-        }
-
-        // Soumission du formulaire
-        function setupFormSubmission() {
-            const form = document.getElementById('livraison-form');
-            if (!form) return;
-            
-            form.addEventListener('submit', async function(e) {
-                e.preventDefault();
-                
-                if (isLoading) return;
-                
-                // Validation
-                if (!validateForm()) {
-                    // Trouver le premier champ en erreur
-                    const firstErrorField = document.querySelector('.error-field');
-                    if (firstErrorField) {
-                        firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                    return;
-                }
-                
-                isLoading = true;
-                const submitBtn = document.getElementById('submit-btn');
-                const originalText = submitBtn.innerHTML;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement...';
-                submitBtn.disabled = true;
-                
-                // Préparer les données
-                const formData = new FormData(this);
-                const data = {};
-                formData.forEach((value, key) => {
-                    // Gérer les checkbox
-                    if (key === 'emballage_cadeau' || key === 'meme_adresse_facturation') {
-                        data[key] = value === '1' ? '1' : '0';
-                    } else {
-                        data[key] = value;
-                    }
+    // Validation en temps réel
+    function setupRealTimeValidation() {
+        const fieldsToValidate = ['nom', 'prenom', 'adresse', 'code_postal', 'ville', 'email'];
+        fieldsToValidate.forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.addEventListener('blur', () => {
+                    const errorId = 'error-' + fieldId;
+                    validateField(fieldId, errorId);
                 });
                 
-                // Ajouter les IDs de session
-                data.session_id = '<?php echo session_id(); ?>';
-                data.panier_id = '<?php echo $panier_id ?? ""; ?>';
-                data.client_id = '<?php echo $client_id ?? ""; ?>';
-                
-                try {
-                    // Essayer l'API moderne d'abord
-                    const response = await fetch('/livraison.php', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-API-Mode': '1'
-                        },
-                        body: JSON.stringify(data)
-                    });
-                    
-                    const result = await response.json();
-                    
-                    if (result.success) {
-                        // AJOUT : Mettre à jour la session avant redirection
-                        try {
-                            // Appeler l'API pour vérifier le panier et autoriser le checkout
-                            const checkoutResponse = await fetch('/api/panier.php?action=init_checkout', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({ action: 'init_checkout' })
-                            });
-                            
-                            const checkoutResult = await checkoutResponse.json();
-                            console.log('Checkout result:', checkoutResult);
-                        } catch (checkoutError) {
-                            console.warn('Checkout verification failed:', checkoutError);
-                        }
-                        
-                        // Rediriger vers la page de paiement
-                        window.location.href = result.redirect || 'paiement.php';
-                    } else {
-                        // Afficher les erreurs de validation
-                        if (result.missing && result.missing.length > 0) {
-                            result.missing.forEach(field => {
-                                const errorId = 'error-' + field;
-                                const errorElement = document.getElementById(errorId);
-                                const fieldElement = document.getElementById(field);
-                                if (errorElement && fieldElement) {
-                                    fieldElement.classList.add('error-field');
-                                    errorElement.textContent = 'Ce champ est requis';
-                                    errorElement.classList.add('show');
-                                }
-                            });
-                            
-                            // Faire défiler jusqu'au premier champ manquant
-                            const firstMissingField = document.getElementById(result.missing[0]);
-                            if (firstMissingField) {
-                                firstMissingField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            }
-                        }
-                        
-                        // Afficher un message d'erreur général
-                        const messageDiv = document.getElementById('info-message');
-                        if (messageDiv) {
-                            messageDiv.className = 'message error';
-                            let errorHtml = `<strong><i class="fas fa-exclamation-triangle"></i> Erreur :</strong><br>`;
-                            errorHtml += `${result.message || 'Une erreur est survenue'}`;
-                            
-                            if (result.errors && result.errors.length > 0) {
-                                errorHtml += '<ul>';
-                                result.errors.forEach(error => {
-                                    errorHtml += `<li>${error}</li>`;
-                                });
-                                errorHtml += '</ul>';
-                            }
-                            
-                            messageDiv.innerHTML = errorHtml;
-                        }
-                        
-                        isLoading = false;
-                        submitBtn.innerHTML = originalText;
-                        submitBtn.disabled = false;
-                    }
-                } catch (error) {
-                    console.error('Erreur API:', error);
-                    // Fallback: soumission traditionnelle du formulaire
-                    this.submit();
-                }
-            });
-        }
-
-        // Chargement initial
-        document.addEventListener('DOMContentLoaded', function() {
-            // Configuration des composants
-            setupFacturationToggle();
-            setupLivraisonOptions();
-            setupRealTimeValidation();
-            setupFormSubmission();
-            
-            // Essayer de charger une adresse existante
-            try {
-                const addressData = <?php
-                    if (isset($_SESSION['adresse_livraison']) && !empty($_SESSION['adresse_livraison'])) {
-                        echo json_encode($_SESSION['adresse_livraison']);
-                    } else {
-                        echo 'null';
-                    }
-                ?>;
-                
-                if (addressData) {
-                    displayExistingAddress(addressData);
-                }
-            } catch (e) {
-                console.log("Aucune adresse en session");
+                field.addEventListener('input', () => {
+                    const errorId = 'error-' + fieldId;
+                    const error = document.getElementById(errorId);
+                    field.classList.remove('error-field');
+                    if (error) error.classList.remove('show');
+                });
             }
         });
-    </script>
+        
+        // Validation en temps réel pour les champs de facturation
+        const facturationFields = ['facturation_prenom', 'facturation_nom', 'facturation_adresse', 
+                                 'facturation_code_postal', 'facturation_ville'];
+        facturationFields.forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.addEventListener('blur', () => {
+                    validateFacturationField(fieldId);
+                });
+                
+                field.addEventListener('input', () => {
+                    field.classList.remove('error-field');
+                });
+            }
+        });
+    }
+
+    // Soumission du formulaire - VERSION COMPLÈTE CORRIGÉE
+    function setupFormSubmission() {
+        const form = document.getElementById('livraison-form');
+        if (!form) return;
+        
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (isLoading) return;
+            
+            // Validation
+            if (!validateForm()) {
+                // Trouver le premier champ en erreur
+                const firstErrorField = document.querySelector('.error-field');
+                if (firstErrorField) {
+                    firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                return;
+            }
+            
+            isLoading = true;
+            const submitBtn = document.getElementById('submit-btn');
+            const originalContent = submitBtn.innerHTML;
+            
+            // Afficher un indicateur de chargement
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement en cours...';
+            submitBtn.disabled = true;
+            
+            // PRÉPARATION DES DONNÉES - VERSION CORRIGÉE
+            const formData = new FormData(this);
+            const data = {};
+            
+            // IMPORTANT: Ajouter le flag api_mode pour que livraison.php reconnaisse la requête API
+            data.api_mode = '1';
+            
+            // Récupérer toutes les valeurs du formulaire
+            formData.forEach((value, key) => {
+                // Pour les checkbox, utiliser la valeur correcte
+                const checkbox = this.querySelector(`[name="${key}"]`);
+                if (checkbox && checkbox.type === 'checkbox') {
+                    data[key] = checkbox.checked ? '1' : '0';
+                } else {
+                    data[key] = value;
+                }
+            });
+            
+            // Ajouter les IDs de session
+            data.session_id = '<?php echo session_id(); ?>';
+            data.panier_id = '<?php echo $panier_id ?? ""; ?>';
+            data.client_id = '<?php echo $client_id ?? ""; ?>';
+            
+            // DEBUG: Afficher les données envoyées
+            console.log('Données à envoyer à livraison.php:', data);
+            
+            try {
+                // Essayer l'API moderne
+                console.log('Envoi des données à livraison.php...');
+                const response = await fetch('livraison.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Mode': '1',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                console.log('Réponse HTTP reçue, statut:', response.status);
+                
+                // Vérifier si la réponse est valide
+                if (!response.ok) {
+                    throw new Error(`Erreur HTTP: ${response.status} ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                console.log('Réponse JSON reçue:', result);
+                
+                if (result.success) {
+                    // Rediriger vers la page de paiement
+                    const redirectUrl = result.redirect || 'paiement.php';
+                    console.log('Redirection vers:', redirectUrl);
+                    
+                    // Ajouter un délai court pour permettre le traitement complet
+                    setTimeout(() => {
+                        window.location.href = redirectUrl;
+                    }, 500);
+                } else {
+                    // Afficher les erreurs de validation
+                    if (result.missing && result.missing.length > 0) {
+                        result.missing.forEach(field => {
+                            const errorId = 'error-' + field;
+                            const errorElement = document.getElementById(errorId);
+                            const fieldElement = document.getElementById(field);
+                            if (errorElement && fieldElement) {
+                                fieldElement.classList.add('error-field');
+                                errorElement.textContent = 'Ce champ est requis';
+                                errorElement.classList.add('show');
+                            }
+                        });
+                        
+                        // Faire défiler jusqu'au premier champ manquant
+                        const firstMissingField = document.getElementById(result.missing[0]);
+                        if (firstMissingField) {
+                            firstMissingField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }
+                    
+                    // Afficher un message d'erreur général
+                    const messageDiv = document.getElementById('info-message');
+                    if (messageDiv) {
+                        messageDiv.className = 'message error';
+                        let errorHtml = `<strong><i class="fas fa-exclamation-triangle"></i> Erreur :</strong><br>`;
+                        errorHtml += `${result.message || 'Une erreur est survenue'}`;
+                        
+                        if (result.errors && result.errors.length > 0) {
+                            errorHtml += '<ul>';
+                            result.errors.forEach(error => {
+                                errorHtml += `<li>${error}</li>`;
+                            });
+                            errorHtml += '</ul>';
+                        }
+                        
+                        messageDiv.innerHTML = errorHtml;
+                        messageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    
+                    // Réactiver le bouton
+                    isLoading = false;
+                    submitBtn.innerHTML = originalContent;
+                    submitBtn.disabled = false;
+                }
+            } catch (error) {
+                console.error('Erreur complète:', error);
+                
+                // Afficher l'erreur
+                const messageDiv = document.getElementById('info-message');
+                if (messageDiv) {
+                    messageDiv.className = 'message error';
+                    messageDiv.innerHTML = `
+                        <strong><i class="fas fa-exclamation-triangle"></i> Erreur :</strong><br>
+                        ${error.message || 'Impossible de traiter la demande. Veuillez réessayer.'}
+                        <br><small>Vérifiez votre connexion internet et réessayez.</small>
+                    `;
+                    messageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                
+                // Réactiver le bouton
+                isLoading = false;
+                submitBtn.innerHTML = originalContent;
+                submitBtn.disabled = false;
+            }
+        });
+    }
+
+    // Chargement initial
+    document.addEventListener('DOMContentLoaded', function() {
+        // Configuration des composants
+        setupFacturationToggle();
+        setupLivraisonOptions();
+        setupRealTimeValidation();
+        setupFormSubmission();
+        
+        // Essayer de charger une adresse existante
+        try {
+            const addressData = <?php
+                if (isset($_SESSION['adresse_livraison']) && !empty($_SESSION['adresse_livraison'])) {
+                    echo json_encode($_SESSION['adresse_livraison']);
+                } else {
+                    echo 'null';
+                }
+            ?>;
+            
+            if (addressData) {
+                displayExistingAddress(addressData);
+            }
+        } catch (e) {
+            console.log("Aucune adresse en session");
+        }
+        
+        // DEBUG: Afficher les IDs de session
+        console.log('Session ID:', '<?php echo session_id(); ?>');
+        console.log('Panier ID:', '<?php echo $panier_id ?? "non défini"; ?>');
+        console.log('Client ID:', '<?php echo $client_id ?? "non défini"; ?>');
+    });
+</script>
 </body>
 </html>

@@ -1,1283 +1,838 @@
-<!DOCTYPE html>
-<html lang="fr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mon Panier - HEURE DU CADEAU</title>
-    <link rel="stylesheet" href="css/style.css" />
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-    />
-    <style>
-      /* TOUT LE CSS RESTE IDENTIQUE - SEUL LE JAVASCRIPT EST MODIFIÉ */
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          Oxygen, Ubuntu, sans-serif;
-        background-color: #f8f9fa;
-        color: #333;
-        line-height: 1.6;
-      }
-
-      .container {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 0 20px;
-      }
-
-      /* Header Styles */
-      header {
-        background: linear-gradient(135deg, #2c3e50, #34495e);
-        color: white;
-        padding: 20px 0;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        position: sticky;
-        top: 0;
-        z-index: 1000;
-      }
-
-      .header-content {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-
-      .logo {
-        color: white;
-        text-decoration: none;
-        font-size: 1.8rem;
-        font-weight: bold;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        transition: transform 0.3s ease;
-      }
-
-      .logo:hover {
-        transform: scale(1.05);
-      }
-
-      .logo i {
-        color: #e74c3c;
-      }
-
-      nav {
-        display: flex;
-        gap: 25px;
-        align-items: center;
-      }
-
-      nav a {
-        color: white;
-        text-decoration: none;
-        font-weight: 500;
-        transition: all 0.3s ease;
-        padding: 8px 12px;
-        border-radius: 6px;
-      }
-
-      nav a:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-        transform: translateY(-2px);
-      }
-
-      .cart-link {
-        position: relative;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .cart-count {
-        position: absolute;
-        top: -8px;
-        right: -8px;
-        background-color: #e74c3c;
-        color: white;
-        border-radius: 50%;
-        width: 22px;
-        height: 22px;
-        font-size: 0.8rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        animation: pulse 2s infinite;
-      }
-
-      @keyframes pulse {
-        0% {
-          transform: scale(1);
-        }
-        50% {
-          transform: scale(1.1);
-        }
-        100% {
-          transform: scale(1);
-        }
-      }
-
-      /* Cart Page Styles */
-      .cart-page {
-        padding: 40px 0;
-        min-height: 70vh;
-      }
-
-      .cart-container {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 0 20px;
-      }
-
-      .cart-header {
-        text-align: center;
-        margin-bottom: 40px;
-        animation: fadeInDown 0.8s ease;
-      }
-
-      @keyframes fadeInDown {
-        from {
-          opacity: 0;
-          transform: translateY(-20px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      .cart-header h1 {
-        font-size: 2.5rem;
-        color: #2c3e50;
-        margin-bottom: 10px;
-        background: linear-gradient(135deg, #2c3e50, #3498db);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-      }
-
-      .cart-header p {
-        color: #7f8c8d;
-        font-size: 1.1rem;
-      }
-
-      .cart-content {
-        display: grid;
-        grid-template-columns: 1fr 350px;
-        gap: 30px;
-        animation: fadeInUp 0.8s ease 0.2s both;
-      }
-
-      @keyframes fadeInUp {
-        from {
-          opacity: 0;
-          transform: translateY(20px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      @media (max-width: 992px) {
-        .cart-content {
-          grid-template-columns: 1fr;
-        }
-
-        .cart-header h1 {
-          font-size: 2rem;
-        }
-      }
-
-      .cart-items {
-        background: white;
-        border-radius: 16px;
-        padding: 30px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-      }
-
-      .cart-items:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12);
-      }
-
-      .cart-summary {
-        background: white;
-        border-radius: 16px;
-        padding: 30px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-        height: fit-content;
-        position: sticky;
-        top: 100px;
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-      }
-
-      .cart-summary:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12);
-      }
-
-      .cart-item {
-        display: grid;
-        grid-template-columns: 100px 1fr 150px 150px 50px;
-        gap: 20px;
-        padding: 25px 0;
-        border-bottom: 2px solid #f8f9fa;
-        align-items: center;
-        transition: all 0.3s ease;
-      }
-
-      .cart-item:last-child {
-        border-bottom: none;
-      }
-
-      .cart-item:hover {
-        background-color: rgba(52, 152, 219, 0.02);
-        border-radius: 8px;
-        padding: 25px 10px;
-      }
-
-      @media (max-width: 768px) {
-        .cart-item {
-          grid-template-columns: 80px 1fr;
-          grid-template-rows: auto auto auto;
-          gap: 15px;
-          padding: 20px 15px;
-          border: 2px solid #f8f9fa;
-          border-radius: 12px;
-          margin-bottom: 15px;
-        }
-
-        .cart-item:hover {
-          padding: 20px 15px;
-        }
-
-        .cart-item-quantity,
-        .cart-item-price,
-        .cart-item-total,
-        .cart-item-remove {
-          grid-column: 2;
-        }
-
-        .cart-items {
-          padding: 20px;
-        }
-
-        .cart-summary {
-          padding: 25px;
-        }
-      }
-
-      .cart-item-image {
-        width: 100px;
-        height: 100px;
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-        transition: transform 0.3s ease;
-      }
-
-      .cart-item-image:hover {
-        transform: scale(1.05);
-      }
-
-      .cart-item-image img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        transition: transform 0.5s ease;
-      }
-
-      .cart-item-image:hover img {
-        transform: scale(1.1);
-      }
-
-      .cart-item-info h3 {
-        margin: 0 0 8px 0;
-        font-size: 1.2rem;
-        color: #2c3e50;
-        font-weight: 600;
-      }
-
-      .cart-item-reference {
-        color: #7f8c8d;
-        font-size: 0.9rem;
-        background-color: #f8f9fa;
-        padding: 4px 10px;
-        border-radius: 20px;
-        display: inline-block;
-        margin-top: 5px;
-      }
-
-      .cart-item-quantity {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .quantity-btn {
-        width: 35px;
-        height: 35px;
-        border: 2px solid #ddd;
-        background: white;
-        border-radius: 8px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.1rem;
-        font-weight: bold;
-        color: #2c3e50;
-        transition: all 0.3s ease;
-      }
-
-      .quantity-btn:hover {
-        background: #3498db;
-        color: white;
-        border-color: #3498db;
-        transform: scale(1.1);
-      }
-
-      .quantity-btn:active {
-        transform: scale(0.95);
-      }
-
-      .quantity-input {
-        width: 60px;
-        height: 40px;
-        text-align: center;
-        padding: 5px;
-        border: 2px solid #ddd;
-        border-radius: 8px;
-        font-size: 1rem;
-        font-weight: 600;
-        transition: border-color 0.3s ease;
-      }
-
-      .quantity-input:focus {
-        outline: none;
-        border-color: #3498db;
-        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
-      }
-
-      .cart-item-price {
-        font-weight: 700;
-        font-size: 1.2rem;
-        color: #2c3e50;
-      }
-
-      .cart-item-total {
-        font-weight: 800;
-        color: #e74c3c;
-        font-size: 1.3rem;
-        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
-      }
-
-      .cart-item-remove button {
-        background: linear-gradient(135deg, #e74c3c, #c0392b);
-        color: white;
-        border: none;
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 10px rgba(231, 76, 60, 0.3);
-      }
-
-      .cart-item-remove button:hover {
-        transform: rotate(90deg) scale(1.1);
-        box-shadow: 0 6px 15px rgba(231, 76, 60, 0.4);
-        background: linear-gradient(135deg, #c0392b, #a93226);
-      }
-
-      .cart-item-remove button:active {
-        transform: rotate(90deg) scale(0.95);
-      }
-
-      .cart-empty {
-        text-align: center;
-        padding: 80px 20px;
-        animation: fadeIn 1s ease;
-      }
-
-      @keyframes fadeIn {
-        from {
-          opacity: 0;
-        }
-        to {
-          opacity: 1;
-        }
-      }
-
-      .cart-empty i {
-        font-size: 6rem;
-        color: #3498db;
-        margin-bottom: 25px;
-        opacity: 0.7;
-        animation: bounce 2s infinite;
-      }
-
-      @keyframes bounce {
-        0%,
-        100% {
-          transform: translateY(0);
-        }
-        50% {
-          transform: translateY(-20px);
-        }
-      }
-
-      .cart-empty h2 {
-        font-size: 2.2rem;
-        color: #2c3e50;
-        margin-bottom: 15px;
-      }
-
-      .cart-empty p {
-        color: #7f8c8d;
-        font-size: 1.1rem;
-        max-width: 500px;
-        margin: 0 auto 30px;
-      }
-
-      .summary-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 15px 0;
-        border-bottom: 2px solid #f8f9fa;
-        font-size: 1.1rem;
-      }
-
-      .summary-row:last-of-type {
-        border-bottom: none;
-      }
-
-      .summary-total {
-        font-weight: 800;
-        font-size: 1.5rem;
-        color: #e74c3c;
-        padding-top: 20px;
-        margin-top: 10px;
-        border-top: 3px solid #f8f9fa;
-      }
-
-      .btn-checkout {
-        width: 100%;
-        padding: 18px;
-        background: linear-gradient(135deg, #27ae60, #219653);
-        color: white;
-        border: none;
-        border-radius: 12px;
-        font-size: 1.2rem;
-        font-weight: 700;
-        cursor: pointer;
-        margin-top: 25px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
-        transition: all 0.3s ease;
-        box-shadow: 0 6px 20px rgba(39, 174, 96, 0.3);
-      }
-
-      .btn-checkout:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 10px 25px rgba(39, 174, 96, 0.4);
-        background: linear-gradient(135deg, #219653, #1e8449);
-      }
-
-      .btn-checkout:active {
-        transform: translateY(-1px);
-      }
-
-      .btn-checkout.disabled {
-        background: #95a5a6;
-        cursor: not-allowed;
-        box-shadow: none;
-      }
-
-      .btn-checkout.disabled:hover {
-        transform: none;
-        box-shadow: none;
-      }
-
-      .btn-continue {
-        width: 100%;
-        padding: 15px;
-        background: linear-gradient(135deg, #3498db, #2980b9);
-        color: white;
-        border: none;
-        border-radius: 12px;
-        font-weight: 700;
-        cursor: pointer;
-        margin-top: 15px;
-        text-align: center;
-        text-decoration: none;
-        display: block;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
-      }
-
-      .btn-continue:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 20px rgba(52, 152, 219, 0.4);
-        background: linear-gradient(135deg, #2980b9, #2573a7);
-      }
-
-      .cart-loading {
-        text-align: center;
-        padding: 60px 20px;
-        animation: pulse 2s infinite;
-      }
-
-      .cart-loading i {
-        font-size: 3rem;
-        color: #3498db;
-        margin-bottom: 20px;
-      }
-
-      .cart-loading p {
-        color: #7f8c8d;
-        font-size: 1.1rem;
-      }
-
-      .notification {
-        position: fixed;
-        top: 30px;
-        right: 30px;
-        background: linear-gradient(135deg, #27ae60, #219653);
-        color: white;
-        padding: 18px 25px;
-        border-radius: 12px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-        z-index: 9999;
-        display: flex;
-        align-items: center;
-        gap: 15px;
-        animation: slideInRight 0.5s ease, fadeOut 0.5s ease 2.5s forwards;
-        min-width: 300px;
-        max-width: 400px;
-      }
-
-      @keyframes slideInRight {
-        from {
-          transform: translateX(100%);
-          opacity: 0;
-        }
-        to {
-          transform: translateX(0);
-          opacity: 1;
-        }
-      }
-
-      @keyframes fadeOut {
-        to {
-          opacity: 0;
-          transform: translateX(100%);
-        }
-      }
-
-      .notification.error {
-        background: linear-gradient(135deg, #e74c3c, #c0392b);
-      }
-
-      .notification.warning {
-        background: linear-gradient(135deg, #f39c12, #e67e22);
-      }
-
-      .notification i {
-        font-size: 1.5rem;
-      }
-
-      /* Shipping Message Styles */
-      .shipping-message {
-        background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-        padding: 15px;
-        border-radius: 10px;
-        margin-top: 20px;
-        text-align: center;
-        border-left: 5px solid #3498db;
-        animation: fadeIn 0.8s ease;
-      }
-
-      .shipping-message.free {
-        background: linear-gradient(135deg, #d4edda, #c3e6cb);
-        border-left-color: #27ae60;
-      }
-
-      .shipping-message i {
-        margin-right: 10px;
-        font-size: 1.2rem;
-      }
-
-      /* Footer Styles */
-      footer {
-        background: linear-gradient(135deg, #2c3e50, #1a252f);
-        color: white;
-        padding: 50px 0 30px;
-        margin-top: 60px;
-      }
-
-      .footer-content {
-        text-align: center;
-        padding: 20px 0;
-      }
-
-      .footer-content p {
-        margin-bottom: 10px;
-        color: #bdc3c7;
-        font-size: 0.9rem;
-      }
-
-      /* Responsive Design Improvements */
-      @media (max-width: 480px) {
-        .cart-header h1 {
-          font-size: 1.8rem;
-        }
-
-        .cart-header p {
-          font-size: 1rem;
-        }
-
-        .cart-item-info h3 {
-          font-size: 1.1rem;
-        }
-
-        .btn-checkout,
-        .btn-continue {
-          padding: 15px;
-          font-size: 1.1rem;
-        }
-
-        .notification {
-          min-width: 280px;
-          max-width: 280px;
-          right: 20px;
-          left: 20px;
-          margin: 0 auto;
-        }
-
-        .logo {
-          font-size: 1.4rem;
-        }
-
-        nav {
-          gap: 15px;
-        }
-
-        nav a {
-          padding: 6px 10px;
-          font-size: 0.9rem;
-        }
-      }
-
-      /* Scrollbar Styling */
-      ::-webkit-scrollbar {
-        width: 10px;
-      }
-
-      ::-webkit-scrollbar-track {
-        background: #f1f1f1;
-        border-radius: 5px;
-      }
-
-      ::-webkit-scrollbar-thumb {
-        background: linear-gradient(135deg, #3498db, #2c3e50);
-        border-radius: 5px;
-      }
-
-      ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(135deg, #2980b9, #1a252f);
-      }
-
-      /* Focus styles for accessibility */
-      *:focus {
-        outline: 3px solid rgba(52, 152, 219, 0.5);
-        outline-offset: 2px;
-      }
-
-      /* Print styles */
-      @media print {
-        .btn-checkout,
-        .btn-continue,
-        .cart-item-remove,
-        .quantity-btn {
-          display: none !important;
-        }
-
-        .cart-summary {
-          position: static;
-          box-shadow: none;
-          border: 2px solid #ddd;
-        }
-
-        .cart-items {
-          box-shadow: none;
-          border: 2px solid #ddd;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <!-- Header -->
-    <header>
-      <div class="container">
-        <div class="header-content">
-          <a href="index.html" class="logo">
-            <i class="fas fa-gift"></i> HEURE DU CADEAU
-          </a>
-          <nav>
-            <a href="index.html">Accueil</a>
-            <a href="index.php">Produits</a>
-            <a href="panier.html" class="cart-link">
-              <i class="fas fa-shopping-cart"></i> Panier
-              <span id="cartCount" class="cart-count" style="display: none"
-                >0</span
-              >
-            </a>
-          </nav>
-        </div>
-      </div>
-    </header>
-
-    <!-- Page Panier -->
-    <main class="cart-page">
-      <div class="cart-container">
-        <div class="cart-header">
-          <h1>Mon Panier</h1>
-          <p id="cartMessage">Votre panier d'achat</p>
-        </div>
-
-        <div id="cartContent">
-          <div class="cart-loading">
-            <i class="fas fa-spinner fa-spin"></i>
-            <p>Chargement de votre panier...</p>
-          </div>
-        </div>
-      </div>
-    </main>
-
-    <!-- Footer -->
-    <footer>
-      <div class="container">
-        <div class="footer-content">
-          <p>&copy; 2025 HEURE DU CADEAU - Tous droits réservés</p>
-          <p>Votre boutique de cadeaux élégants en ligne</p>
-        </div>
-      </div>
-    </footer>
-
-    <script>
-      class CartManager {
-        constructor() {
-          this.apiUrl = "api/panier.php";
-          this.cartCountElement = document.getElementById("cartCount");
-          this.cartMessageElement = document.getElementById("cartMessage");
-          this.isProcessing = false;
-          this.init();
-        }
-
-        async init() {
-          await this.loadCart();
-          this.initEvents();
-          this.updateCartCounter();
-        }
-
-        async loadCart() {
-          try {
-            const response = await fetch(`${this.apiUrl}?action=get`);
-
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
+<?php
+// panier.php - VERSION COMPLÈTE CORRIGÉE
+
+// 1. DÉMARRER LA TEMPORISATION POUR CAPTURER LES ERREURS
+ob_start();
+
+// 2. CONFIGURATION DES ERREURS
+error_reporting(E_ALL);
+ini_set('display_errors', 0); // Ne pas afficher les erreurs dans la réponse
+ini_set('log_errors', 1);
+
+// 3. HEADERS API - ABSOLUMENT EN PREMIER
+header("Content-Type: application/json; charset=UTF-8");
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, X-Requested-With");
+
+// 4. VIDER TOUT CONTENU ACCIDENTEL
+ob_end_clean();
+
+// 5. GÉRER LES REQUÊTES OPTIONS (CORS)
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+
+// Définir une constante pour autoriser l'accès à db_config.php
+define('API_CALL', true);
+
+// Vérifier si db_config.php existe
+$dbConfigPath = __DIR__ . '/db_config.php';
+if (!file_exists($dbConfigPath)) {
+    // Fallback sans base de données
+    $dbConfigPath = __DIR__ . '/../db_config.php';
+}
+
+// Configuration des sessions
+$sessionPath = dirname(__DIR__) . '/sessions';
+if (!is_dir($sessionPath) && is_writable(dirname(__DIR__))) {
+    mkdir($sessionPath, 0755, true);
+}
+
+ini_set('session.save_path', $sessionPath);
+ini_set('session.gc_maxlifetime', 86400);
+ini_set('session.cookie_lifetime', 86400);
+ini_set('session.cookie_httponly', 1);
+ini_set('session.use_only_cookies', 1);
+ini_set('session.cookie_samesite', 'Lax');
+
+// Démarrer la session
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Initialiser le panier dans la session
+if (!isset($_SESSION['panier'])) {
+    $_SESSION['panier'] = [];
+}
+
+// ============================================
+// FONCTIONS UTILITAIRES BDD (Tout votre code existant préservé)
+// ============================================
+
+/**
+ * Compter les articles dans le panier session
+ */
+function compterArticlesPanier() {
+    $total = 0;
+    if (isset($_SESSION['panier']) && is_array($_SESSION['panier'])) {
+        foreach ($_SESSION['panier'] as $item) {
+            if (is_array($item) && isset($item['quantite'])) {
+                $total += intval($item['quantite']);
             }
+        }
+    }
+    return $total;
+}
 
-            const data = await response.json();
+/**
+ * Obtenir les détails d'un produit depuis la BDD
+ */
+function getProductDetails($id_produit) {
+    // Tenter d'inclure db_config.php
+    @include_once __DIR__ . '/db_config.php';
+    
+    // Si la connexion BDD échoue, retourner des données par défaut
+    if (!function_exists('getDB') || !($db = @getDB())) {
+        return [
+            'id_produit' => $id_produit,
+            'nom' => 'Produit #' . $id_produit,
+            'prix_ttc' => 19.99,
+            'quantite_stock' => 100,
+            'statut' => 'actif',
+            'reference' => 'REF' . $id_produit,
+            'description_courte' => 'Produit de qualité',
+            'id_categorie' => 1,
+            'categorie_nom' => 'Cadeau',
+            'image' => 'img/default-product.jpg'
+        ];
+    }
+    
+    try {
+        $stmt = $db->prepare("
+            SELECT p.id_produit, p.nom, p.prix_ttc, p.quantite_stock, p.statut, p.reference,
+                   p.description_courte, p.id_categorie,
+                   c.nom as categorie_nom,
+                   COALESCE(
+                       (SELECT ip.url_image FROM images_produits ip 
+                        WHERE ip.id_produit = p.id_produit AND ip.principale = 1 LIMIT 1),
+                       'img/default-product.jpg'
+                   ) as image
+            FROM produits p
+            LEFT JOIN categories c ON p.id_categorie = c.id_categorie
+            WHERE p.id_produit = ? AND p.statut = 'actif'
+        ");
+        $stmt->execute([$id_produit]);
+        $produit = $stmt->fetch();
+        
+        return $produit ?: [
+            'id_produit' => $id_produit,
+            'nom' => 'Produit #' . $id_produit,
+            'prix_ttc' => 19.99,
+            'quantite_stock' => 100,
+            'statut' => 'actif',
+            'reference' => 'REF' . $id_produit,
+            'description_courte' => 'Produit de qualité',
+            'id_categorie' => 1,
+            'categorie_nom' => 'Cadeau',
+            'image' => 'img/default-product.jpg'
+        ];
+    } catch (PDOException $e) {
+        error_log("Erreur getProductDetails: " . $e->getMessage());
+        return [
+            'id_produit' => $id_produit,
+            'nom' => 'Produit #' . $id_produit,
+            'prix_ttc' => 19.99,
+            'quantite_stock' => 100,
+            'statut' => 'actif',
+            'reference' => 'REF' . $id_produit,
+            'description_courte' => 'Produit de qualité',
+            'id_categorie' => 1,
+            'categorie_nom' => 'Cadeau',
+            'image' => 'img/default-product.jpg'
+        ];
+    }
+}
 
-            if (data.success) {
-              this.displayCart(data);
-              this.updateCartCount(data.total_items || 0);
-              this.updateCartMessage(data.total_items || 0);
+/**
+ * Crée ou récupère un panier en BDD
+ */
+function getOrCreatePanierBDD() {
+    // Tenter la connexion BDD
+    @include_once __DIR__ . '/db_config.php';
+    if (!function_exists('getDB') || !($db = @getDB())) {
+        return null;
+    }
+    
+    $session_id = session_id();
+    $client_id = $_SESSION['id_client'] ?? null;
+    
+    try {
+        // Chercher un panier existant
+        $sql = "SELECT id_panier FROM panier WHERE statut = 'actif' AND (";
+        $params = [];
+        
+        if ($client_id) {
+            $sql .= "id_client = ?";
+            $params[] = $client_id;
+        } else {
+            $sql .= "session_id = ?";
+            $params[] = $session_id;
+        }
+        
+        $sql .= ") ORDER BY date_creation DESC LIMIT 1";
+        
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        $panier = $stmt->fetch();
+        
+        if ($panier) {
+            return $panier['id_panier'];
+        }
+        
+        // Créer un nouveau panier
+        $stmt = $db->prepare("
+            INSERT INTO panier (session_id, id_client, date_creation, statut)
+            VALUES (?, ?, NOW(), 'actif')
+        ");
+        $stmt->execute([$session_id, $client_id]);
+        
+        return $db->lastInsertId();
+    } catch (PDOException $e) {
+        error_log("Erreur getOrCreatePanierBDD: " . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * Synchronise le panier session avec la BDD
+ */
+function syncPanierToBDD($id_panier) {
+    if (!$id_panier || !isset($_SESSION['panier'])) return false;
+    
+    @include_once __DIR__ . '/db_config.php';
+    if (!function_exists('getDB') || !($db = @getDB())) {
+        return false;
+    }
+    
+    try {
+        $db->beginTransaction();
+        
+        // Supprimer les anciens items
+        $stmt = $db->prepare("DELETE FROM panier_items WHERE id_panier = ?");
+        $stmt->execute([$id_panier]);
+        
+        // Ajouter les nouveaux items
+        foreach ($_SESSION['panier'] as $item) {
+            if (isset($item['id_produit']) && isset($item['quantite']) && $item['quantite'] > 0) {
+                $produit = getProductDetails($item['id_produit']);
+                if ($produit) {
+                    $stmt = $db->prepare("
+                        INSERT INTO panier_items (id_panier, id_produit, quantite, prix_unitaire, date_ajout)
+                        VALUES (?, ?, ?, ?, NOW())
+                    ");
+                    $stmt->execute([
+                        $id_panier,
+                        $item['id_produit'],
+                        $item['quantite'],
+                        $produit['prix_ttc']
+                    ]);
+                }
+            }
+        }
+        
+        $db->commit();
+        return true;
+    } catch (PDOException $e) {
+        @$db->rollBack();
+        error_log("Erreur syncPanierToBDD: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Récupère le panier depuis la BDD
+ */
+function getPanierFromBDD($id_panier) {
+    if (!$id_panier) return [];
+    
+    @include_once __DIR__ . '/db_config.php';
+    if (!function_exists('getDB') || !($db = @getDB())) {
+        return [];
+    }
+    
+    try {
+        $stmt = $db->prepare("
+            SELECT pi.*, p.nom, p.reference, p.statut, p.quantite_stock,
+                   COALESCE(
+                       (SELECT url_image FROM images_produits 
+                        WHERE id_produit = pi.id_produit AND principale = 1 LIMIT 1),
+                       'img/default-product.jpg'
+                   ) as image
+            FROM panier_items pi
+            JOIN produits p ON pi.id_produit = p.id_produit
+            WHERE pi.id_panier = ?
+            ORDER BY pi.date_ajout DESC
+        ");
+        $stmt->execute([$id_panier]);
+        
+        $items = $stmt->fetchAll();
+        $panier_details = [];
+        
+        foreach ($items as $item) {
+            $prix_total = $item['prix_unitaire'] * $item['quantite'];
+            
+            $panier_details[] = [
+                'id_produit' => $item['id_produit'],
+                'quantite' => $item['quantite'],
+                'nom' => $item['nom'],
+                'prix_unitaire' => $item['prix_unitaire'],
+                'prix_total' => $prix_total,
+                'reference' => $item['reference'],
+                'image' => $item['image'],
+                'quantite_stock' => $item['quantite_stock'],
+                'statut' => $item['statut'],
+                'disponible' => ($item['statut'] === 'actif' && $item['quantite_stock'] >= $item['quantite'])
+            ];
+        }
+        
+        return $panier_details;
+    } catch (PDOException $e) {
+        error_log("Erreur getPanierFromBDD: " . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Mettre à jour un item dans la BDD
+ */
+function updateItemInBDD($id_panier, $id_produit, $quantite) {
+    if (!$id_panier) return false;
+    
+    @include_once __DIR__ . '/db_config.php';
+    if (!function_exists('getDB') || !($db = @getDB())) {
+        return false;
+    }
+    
+    try {
+        if ($quantite <= 0) {
+            // Supprimer l'item
+            $stmt = $db->prepare("DELETE FROM panier_items WHERE id_panier = ? AND id_produit = ?");
+            return $stmt->execute([$id_panier, $id_produit]);
+        } else {
+            // Vérifier si l'item existe
+            $stmt = $db->prepare("SELECT id_item FROM panier_items WHERE id_panier = ? AND id_produit = ?");
+            $stmt->execute([$id_panier, $id_produit]);
+            $exists = $stmt->fetch();
+            
+            if ($exists) {
+                // Mettre à jour
+                $stmt = $db->prepare("UPDATE panier_items SET quantite = ?, date_modification = NOW() WHERE id_panier = ? AND id_produit = ?");
+                return $stmt->execute([$quantite, $id_panier, $id_produit]);
             } else {
-              this.displayEmptyCart();
+                // Ajouter
+                $produit = getProductDetails($id_produit);
+                if ($produit) {
+                    $stmt = $db->prepare("
+                        INSERT INTO panier_items (id_panier, id_produit, quantite, prix_unitaire, date_ajout)
+                        VALUES (?, ?, ?, ?, NOW())
+                    ");
+                    return $stmt->execute([$id_panier, $id_produit, $quantite, $produit['prix_ttc']]);
+                }
             }
-          } catch (error) {
-            console.error("Erreur chargement panier:", error);
-            this.displayEmptyCart();
-            this.showNotification(
-              "Impossible de charger le panier. Veuillez réessayer.",
-              "error"
-            );
-          }
         }
+    } catch (PDOException $e) {
+        error_log("Erreur updateItemInBDD: " . $e->getMessage());
+        return false;
+    }
+    
+    return false;
+}
 
-        displayCart(data) {
-          let html = "";
+/**
+ * Calcule le total du panier
+ */
+function calculerTotauxPanier($panier_items) {
+    $sous_total = 0;
+    $total_items = 0;
+    
+    foreach ($panier_items as $item) {
+        if (isset($item['prix_total'])) {
+            $sous_total += $item['prix_total'];
+        } else if (isset($item['prix_unitaire']) && isset($item['quantite'])) {
+            $sous_total += $item['prix_unitaire'] * $item['quantite'];
+        }
+        $total_items += $item['quantite'] ?? 0;
+    }
+    
+    // Calcul des frais de livraison
+    $seuil_livraison_gratuite = 50.00;
+    $frais_livraison_base = 4.90;
+    $frais_livraison = ($sous_total >= $seuil_livraison_gratuite) ? 0 : $frais_livraison_base;
+    
+    // Total général
+    $total = $sous_total + $frais_livraison;
+    
+    return [
+        'sous_total' => round($sous_total, 2),
+        'total_items' => $total_items,
+        'frais_livraison' => $frais_livraison,
+        'total' => round($total, 2),
+        'seuil_livraison_gratuite' => $seuil_livraison_gratuite,
+        'economie_livraison' => ($sous_total >= $seuil_livraison_gratuite) ? $frais_livraison_base : 0
+    ];
+}
 
-          if (data.panier && data.panier.length > 0) {
-            html += '<div class="cart-content">';
-            html += '<div class="cart-items">';
+// ============================================
+// TRAITEMENT DE LA REQUÊTE
+// ============================================
 
-            data.panier.forEach((item, index) => {
-              const prixUnitaire = parseFloat(item.prix_unitaire).toFixed(2);
-              const prixTotal = parseFloat(item.prix_total).toFixed(2);
-              const image = item.image || "img/default-product.jpg";
-              const isAvailable = item.disponible !== false;
-              const rowClass = !isAvailable ? "unavailable" : "";
+$method = $_SERVER['REQUEST_METHOD'];
+$action = $_GET['action'] ?? '';
+$inputData = [];
 
-              html += `
-                <div class="cart-item ${rowClass}" data-id="${item.id_produit}">
-                  <div class="cart-item-image">
-                    <img src="${image}" alt="${
-                item.nom
-              }" onerror="this.src='img/default-product.jpg'">
-                  </div>
-                  <div class="cart-item-info">
-                    <h3>${item.nom}</h3>
-                    <div class="cart-item-reference">Réf: ${
-                      item.reference
-                    }</div>
-                    ${
-                      !isAvailable
-                        ? '<div style="color: #e74c3c; font-size: 0.9rem; margin-top: 5px;"><i class="fas fa-exclamation-triangle"></i> Produit indisponible</div>'
-                        : ""
+// Récupérer les données POST
+if ($method === 'POST') {
+    // Essayer de lire le JSON d'abord
+    $input = @file_get_contents('php://input');
+    if (!empty($input)) {
+        $inputData = @json_decode($input, true) ?: [];
+    }
+    
+    // Sinon utiliser $_POST
+    if (empty($inputData) && !empty($_POST)) {
+        $inputData = $_POST;
+    }
+    
+    if (empty($action) && isset($inputData['action'])) {
+        $action = $inputData['action'];
+    }
+}
+
+// Si pas d'action spécifiée, retourner une erreur
+if (empty($action)) {
+    echo json_encode([
+        'success' => false, 
+        'message' => 'Action non spécifiée',
+        'available_actions' => ['test', 'compter', 'ajouter', 'get', 'update_quantite', 'supprimer', 'vider', 'init_checkout'],
+        'session_id' => session_id()
+    ]);
+    exit;
+}
+
+// Initialiser le panier BDD
+$id_panier_bdd = getOrCreatePanierBDD();
+
+// TRAITEMENT DES ACTIONS
+switch ($action) {
+    
+    case 'test':
+        echo json_encode([
+            'success' => true,
+            'message' => 'API panier fonctionnelle',
+            'session' => [
+                'id' => session_id(),
+                'panier_items' => count($_SESSION['panier']),
+                'panier_total' => compterArticlesPanier()
+            ],
+            'server' => [
+                'method' => $method,
+                'action' => $action,
+                'timestamp' => date('Y-m-d H:i:s')
+            ]
+        ]);
+        break;
+        
+    case 'compter':
+        $total = compterArticlesPanier();
+        echo json_encode([
+            'success' => true,
+            'total' => $total,
+            'session_id' => session_id()
+        ]);
+        break;
+        
+    case 'ajouter':
+        $id_produit = intval($inputData['id_produit'] ?? 0);
+        $quantite = intval($inputData['quantite'] ?? 1);
+        
+        if ($id_produit <= 0) {
+            echo json_encode(['success' => false, 'message' => 'ID produit invalide']);
+            exit;
+        }
+        
+        if ($quantite <= 0) $quantite = 1;
+        
+        try {
+            $produit = getProductDetails($id_produit);
+            
+            if (!$produit) {
+                echo json_encode(['success' => false, 'message' => 'Produit non trouvé']);
+                exit;
+            }
+            
+            // Vérifier le stock
+            $stock_disponible = $produit['quantite_stock'] ?? 100;
+            $quantite_demandee = $quantite;
+            
+            // Vérifier si le produit est déjà dans le panier
+            $quantite_existante = 0;
+            foreach ($_SESSION['panier'] as $item) {
+                if (isset($item['id_produit']) && $item['id_produit'] == $id_produit) {
+                    $quantite_existante = $item['quantite'] ?? 0;
+                    break;
+                }
+            }
+            
+            $quantite_totale = $quantite_existante + $quantite_demandee;
+            
+            if ($stock_disponible < $quantite_totale) {
+                echo json_encode([
+                    'success' => false, 
+                    'message' => 'Stock insuffisant', 
+                    'stock_disponible' => $stock_disponible,
+                    'quantite_existante' => $quantite_existante,
+                    'quantite_demandee' => $quantite_demandee
+                ]);
+                exit;
+            }
+            
+            // Mise à jour session
+            if (!isset($_SESSION['panier']) || !is_array($_SESSION['panier'])) {
+                $_SESSION['panier'] = [];
+            }
+            
+            $produitIndex = -1;
+            foreach ($_SESSION['panier'] as $index => $item) {
+                if (isset($item['id_produit']) && $item['id_produit'] == $id_produit) {
+                    $produitIndex = $index;
+                    break;
+                }
+            }
+            
+            if ($produitIndex >= 0) {
+                $_SESSION['panier'][$produitIndex]['quantite'] = $quantite_totale;
+                $_SESSION['panier'][$produitIndex]['date_maj'] = date('Y-m-d H:i:s');
+                $_SESSION['panier'][$produitIndex]['nom'] = $produit['nom'];
+                $_SESSION['panier'][$produitIndex]['prix'] = floatval($produit['prix_ttc']);
+                $_SESSION['panier'][$produitIndex]['reference'] = $produit['reference'];
+                $_SESSION['panier'][$produitIndex]['image'] = $produit['image'];
+            } else {
+                $_SESSION['panier'][] = [
+                    'id_produit' => $id_produit,
+                    'quantite' => $quantite,
+                    'nom' => $produit['nom'],
+                    'prix' => floatval($produit['prix_ttc']),
+                    'reference' => $produit['reference'],
+                    'image' => $produit['image'],
+                    'date_ajout' => date('Y-m-d H:i:s'),
+                    'date_maj' => date('Y-m-d H:i:s')
+                ];
+            }
+            
+            // Mise à jour BDD
+            if ($id_panier_bdd) {
+                updateItemInBDD($id_panier_bdd, $id_produit, 
+                    $produitIndex >= 0 ? $quantite_totale : $quantite);
+            }
+            
+            $total = compterArticlesPanier();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Produit ajouté au panier',
+                'produit' => [
+                    'id' => $produit['id_produit'],
+                    'nom' => $produit['nom'],
+                    'prix' => floatval($produit['prix_ttc']),
+                    'image' => $produit['image'],
+                    'reference' => $produit['reference']
+                ],
+                'quantite' => $quantite_totale,
+                'total_articles' => $total,
+                'panier_count' => count($_SESSION['panier']),
+                'panier_bdd_id' => $id_panier_bdd
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false, 
+                'message' => 'Erreur lors de l\'ajout au panier', 
+                'error' => $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'get':
+        try {
+            $panier_details = [];
+            $source = 'session';
+            
+            // Récupérer depuis BDD si disponible
+            if ($id_panier_bdd) {
+                $panier_details = getPanierFromBDD($id_panier_bdd);
+                if (!empty($panier_details)) {
+                    $source = 'bdd';
+                }
+            }
+            
+            // Si BDD vide ou non disponible, utiliser la session
+            if (empty($panier_details) && isset($_SESSION['panier']) && !empty($_SESSION['panier'])) {
+                $source = 'session';
+                foreach ($_SESSION['panier'] as $item) {
+                    if (!is_array($item) || !isset($item['id_produit'])) continue;
+                    
+                    $produit = getProductDetails($item['id_produit']);
+                    
+                    if ($produit) {
+                        $prix_unitaire = floatval($produit['prix_ttc'] ?? 0);
+                        $quantite = intval($item['quantite'] ?? 1);
+                        $prix_total = $prix_unitaire * $quantite;
+                        
+                        $item_detail = [
+                            'id_produit' => $item['id_produit'],
+                            'quantite' => $quantite,
+                            'nom' => $produit['nom'],
+                            'prix_unitaire' => $prix_unitaire,
+                            'prix_total' => $prix_total,
+                            'reference' => $produit['reference'],
+                            'image' => $produit['image'],
+                            'quantite_stock' => $produit['quantite_stock'],
+                            'disponible' => true
+                        ];
+                        
+                        $panier_details[] = $item_detail;
                     }
-                  </div>
-                  <div class="cart-item-quantity">
-                    <button class="quantity-btn minus" onclick="cartManager.updateQuantity(${
-                      item.id_produit
-                    }, ${item.quantite - 1})" 
-                            ${
-                              !isAvailable
-                                ? 'disabled style="opacity: 0.5; cursor: not-allowed;"'
-                                : ""
-                            }>
-                      <i class="fas fa-minus"></i>
-                    </button>
-                    <input type="number" class="quantity-input" value="${
-                      item.quantite
-                    }" min="1" 
-                           onchange="cartManager.updateQuantity(${
-                             item.id_produit
-                           }, this.value)"
-                           ${
-                             !isAvailable
-                               ? 'disabled style="opacity: 0.5; cursor: not-allowed;"'
-                               : ""
-                           }>
-                    <button class="quantity-btn plus" onclick="cartManager.updateQuantity(${
-                      item.id_produit
-                    }, ${item.quantite + 1})"
-                            ${
-                              !isAvailable
-                                ? 'disabled style="opacity: 0.5; cursor: not-allowed;"'
-                                : ""
-                            }>
-                      <i class="fas fa-plus"></i>
-                    </button>
-                  </div>
-                  <div class="cart-item-price">${prixUnitaire.replace(
-                    ".",
-                    ","
-                  )} €</div>
-                  <div class="cart-item-total">${prixTotal.replace(
-                    ".",
-                    ","
-                  )} €</div>
-                  <div class="cart-item-remove">
-                    <button onclick="cartManager.removeItem(${
-                      item.id_produit
-                    })" title="Supprimer du panier">
-                      <i class="fas fa-trash"></i>
-                    </button>
-                  </div>
-                </div>
-              `;
-            });
-
-            html += "</div>"; // .cart-items
-
-            // Récapitulatif
-            const sousTotal = parseFloat(data.sous_total || 0);
-            const fraisLivraison = parseFloat(data.frais_livraison || 0);
-            const total = parseFloat(data.total || 0);
-            const seuilLivraisonGratuite = parseFloat(
-              data.seuil_livraison_gratuite || 50
-            );
-
-            html += `
-              <div class="cart-summary">
-                <h2 style="color: #2c3e50; margin-bottom: 25px; font-size: 1.8rem;">Récapitulatif</h2>
-                <div class="summary-row">
-                  <span>Sous-total (${data.total_items} article${
-              data.total_items > 1 ? "s" : ""
-            })</span>
-                  <span>${sousTotal.toFixed(2).replace(".", ",")} €</span>
-                </div>
-                <div class="summary-row">
-                  <span>Frais de livraison</span>
-                  <span>${fraisLivraison.toFixed(2).replace(".", ",")} €</span>
-                </div>
-                <div class="summary-row summary-total">
-                  <span>Total TTC</span>
-                  <span>${total.toFixed(2).replace(".", ",")} €</span>
-                </div>
-                
-                ${
-                  sousTotal < seuilLivraisonGratuite
-                    ? `<div class="shipping-message">
-                    <i class="fas fa-truck"></i> Plus que <strong>${(
-                      seuilLivraisonGratuite - sousTotal
-                    )
-                      .toFixed(2)
-                      .replace(
-                        ".",
-                        ","
-                      )} €</strong> pour la livraison gratuite !
-                  </div>`
-                    : `<div class="shipping-message free">
-                    <i class="fas fa-check-circle"></i> <strong>Livraison gratuite</strong> - Vous économisez ${fraisLivraison
-                      .toFixed(2)
-                      .replace(".", ",")} € !
-                  </div>`
+                }
+            }
+            
+            // Calculer les totaux
+            $totaux = calculerTotauxPanier($panier_details);
+            
+            echo json_encode([
+                'success' => true,
+                'panier' => $panier_details,
+                'sous_total' => $totaux['sous_total'],
+                'total_items' => $totaux['total_items'],
+                'frais_livraison' => $totaux['frais_livraison'],
+                'total' => $totaux['total'],
+                'seuil_livraison_gratuite' => $totaux['seuil_livraison_gratuite'],
+                'economie_livraison' => $totaux['economie_livraison'],
+                'panier_vide' => empty($panier_details),
+                'source' => $source,
+                'panier_bdd_id' => $id_panier_bdd,
+                'session_id' => session_id()
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false, 
+                'message' => 'Erreur récupération panier', 
+                'error' => $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'update_quantite':
+        $id_produit = intval($inputData['id_produit'] ?? 0);
+        $quantite = intval($inputData['quantite'] ?? 1);
+        
+        if ($id_produit <= 0) {
+            echo json_encode(['success' => false, 'message' => 'ID produit invalide']);
+            exit;
+        }
+        
+        if ($quantite < 0) $quantite = 0;
+        
+        try {
+            if ($quantite == 0) {
+                // Suppression
+                if (isset($_SESSION['panier']) && is_array($_SESSION['panier'])) {
+                    $_SESSION['panier'] = array_values(array_filter($_SESSION['panier'], function($item) use ($id_produit) {
+                        return !isset($item['id_produit']) || $item['id_produit'] != $id_produit;
+                    }));
                 }
                 
-                <button class="btn-checkout" onclick="cartManager.checkout()" ${
-                  !data.panier.every((item) => item.disponible !== false)
-                    ? 'disabled class="disabled"'
-                    : ""
-                }>
-                  <i class="fas fa-lock"></i> Procéder au paiement
-                </button>
-                <a href="index.html" class="btn-continue">
-                  <i class="fas fa-arrow-left"></i> Continuer mes achats
-                </a>
-              </div>
-            `;
-
-            html += "</div>"; // .cart-content
-          } else {
-            html = this.getEmptyCartHTML();
-          }
-
-          document.getElementById("cartContent").innerHTML = html;
-        }
-
-        getEmptyCartHTML() {
-          return `
-            <div class="cart-empty">
-              <i class="fas fa-shopping-cart"></i>
-              <h2>Votre panier est vide</h2>
-              <p>Explorez notre collection de cadeaux élégants et trouvez les articles parfaits pour vos proches</p>
-              <a href="index.php" class="btn-continue" style="display: inline-block; width: auto; padding: 15px 30px;">
-                <i class="fas fa-store"></i> Découvrir nos produits
-              </a>
-            </div>
-          `;
-        }
-
-        displayEmptyCart() {
-          document.getElementById("cartContent").innerHTML =
-            this.getEmptyCartHTML();
-          this.updateCartCount(0);
-          this.updateCartMessage(0);
-        }
-
-        updateCartMessage(itemCount) {
-          if (this.cartMessageElement) {
-            if (itemCount === 0) {
-              this.cartMessageElement.textContent = "Votre panier est vide";
-            } else if (itemCount === 1) {
-              this.cartMessageElement.textContent =
-                "1 article dans votre panier";
-            } else {
-              this.cartMessageElement.textContent = `${itemCount} articles dans votre panier`;
-            }
-          }
-        }
-
-        async updateQuantity(productId, newQuantity) {
-          if (this.isProcessing) return;
-
-          newQuantity = parseInt(newQuantity);
-
-          if (isNaN(newQuantity) || newQuantity < 0) {
-            newQuantity = 1;
-          }
-
-          if (newQuantity < 1) {
-            await this.removeItem(productId);
-            return;
-          }
-
-          this.isProcessing = true;
-
-          try {
-            const response = await fetch(this.apiUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                action: "update_quantite",
-                id_produit: productId,
-                quantite: newQuantity,
-              }),
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-              this.showNotification(
-                `Quantité mise à jour à ${newQuantity}`,
-                "success"
-              );
-              await this.loadCart();
-            } else {
-              this.showNotification(
-                data.message || "Erreur lors de la mise à jour",
-                "error"
-              );
-            }
-          } catch (error) {
-            console.error("Erreur mise à jour quantité:", error);
-            this.showNotification("Erreur de connexion au serveur", "error");
-          } finally {
-            this.isProcessing = false;
-          }
-        }
-
-        async removeItem(productId) {
-          if (
-            !confirm("Êtes-vous sûr de vouloir retirer ce produit du panier ?")
-          ) {
-            return;
-          }
-
-          try {
-            const response = await fetch(this.apiUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                action: "supprimer",
-                id_produit: productId,
-              }),
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-              this.showNotification("Produit retiré du panier", "success");
-              await this.loadCart();
-            } else {
-              this.showNotification(
-                data.message || "Erreur lors de la suppression",
-                "error"
-              );
-            }
-          } catch (error) {
-            console.error("Erreur suppression produit:", error);
-            this.showNotification("Erreur de connexion au serveur", "error");
-          }
-        }
-
-        async checkout() {
-          // EMPÊCHER LES CLICS MULTIPLES
-          if (this.isProcessing) return;
-          this.isProcessing = true;
-
-          try {
-            // DÉSACTIVER LE BOUTON PENDANT LE TRAITEMENT
-            const checkoutBtn = document.querySelector(".btn-checkout");
-            if (checkoutBtn) {
-              const originalText = checkoutBtn.innerHTML;
-              checkoutBtn.innerHTML =
-                '<i class="fas fa-spinner fa-spin"></i> Vérification...';
-              checkoutBtn.disabled = true;
-            }
-
-            // VÉRIFIER RAPIDEMENT SI LE PANIER EST VALIDE
-            const response = await fetch(`${this.apiUrl}?action=get`);
-            const data = await response.json();
-
-            if (data.success && data.panier && data.panier.length > 0) {
-              // VÉRIFIER SI TOUS LES ARTICLES SONT DISPONIBLES
-              const allAvailable = data.panier.every(
-                (item) => item.disponible !== false
-              );
-
-              if (!allAvailable) {
-                this.showNotification(
-                  "Certains articles ne sont pas disponibles. Veuillez vérifier votre panier.",
-                  "error"
-                );
-
-                // RECHARGER LE PANIER POUR METTRE À JOUR L'AFFICHAGE
-                setTimeout(() => {
-                  this.loadCart();
-                }, 1500);
-
-                // RÉACTIVER LE BOUTON
-                if (checkoutBtn) {
-                  checkoutBtn.innerHTML =
-                    '<i class="fas fa-lock"></i> Procéder au paiement';
-                  checkoutBtn.disabled = false;
+                if ($id_panier_bdd) {
+                    updateItemInBDD($id_panier_bdd, $id_produit, 0);
                 }
-                this.isProcessing = false;
-                return;
-              }
-
-              this.showNotification(
-                "Redirection vers la livraison...",
-                "success"
-              );
-
-              // REDIRECTION SIMPLE APRÈS UN COURT DÉLAI
-              setTimeout(() => {
-                window.location.href = "livraison_form.php";
-              }, 1000);
-            } else {
-              this.showNotification(
-                "Votre panier est vide ou contient des articles indisponibles",
-                "error"
-              );
-
-              // RÉACTIVER LE BOUTON
-              if (checkoutBtn) {
-                checkoutBtn.innerHTML =
-                  '<i class="fas fa-lock"></i> Procéder au paiement';
-                checkoutBtn.disabled = false;
-              }
-              this.isProcessing = false;
+                
+                $total = compterArticlesPanier();
+                
+                echo json_encode([
+                    'success' => true, 
+                    'message' => 'Produit retiré', 
+                    'total_articles' => $total
+                ]);
+                exit;
             }
-          } catch (error) {
-            console.error("Erreur checkout:", error);
-
-            // FALLBACK: REDIRECTION DIRECTE MÊME EN CAS D'ERREUR
-            this.showNotification(
-              "Redirection vers la livraison...",
-              "success"
-            );
-            setTimeout(() => {
-              window.location.href = "livraison_form.php";
-            }, 1500);
-          }
-        }
-
-        updateCartCount(count) {
-          if (this.cartCountElement) {
-            if (count > 0) {
-              this.cartCountElement.textContent = count > 99 ? "99+" : count;
-              this.cartCountElement.style.display = "flex";
-            } else {
-              this.cartCountElement.style.display = "none";
+            
+            $produit = getProductDetails($id_produit);
+            
+            if (!$produit) {
+                echo json_encode(['success' => false, 'message' => 'Produit non trouvé']);
+                exit;
             }
-          }
-
-          // Mettre à jour le titre de la page
-          if (count > 0) {
-            document.title = `(${count}) Mon Panier - HEURE DU CADEAU`;
-          } else {
-            document.title = "Mon Panier - HEURE DU CADEAU";
-          }
-        }
-
-        showNotification(message, type = "success") {
-          // Supprimer les notifications existantes
-          document.querySelectorAll(".notification").forEach((notification) => {
-            notification.remove();
-          });
-
-          const notification = document.createElement("div");
-          notification.className = `notification ${type}`;
-
-          const icon =
-            type === "success"
-              ? "check-circle"
-              : type === "error"
-              ? "exclamation-triangle"
-              : "info-circle";
-
-          notification.innerHTML = `
-            <i class="fas fa-${icon}"></i>
-            <span>${message}</span>
-          `;
-
-          document.body.appendChild(notification);
-
-          // Supprimer automatiquement après 3 secondes
-          setTimeout(() => {
-            if (notification.parentElement) {
-              notification.remove();
+            
+            // Mise à jour session
+            if (!isset($_SESSION['panier'])) {
+                $_SESSION['panier'] = [];
             }
-          }, 3000);
-        }
-
-        initEvents() {
-          // Écouter les clics en dehors des notifications pour les fermer
-          document.addEventListener("click", (event) => {
-            if (!event.target.closest(".notification")) {
-              document
-                .querySelectorAll(".notification")
-                .forEach((notification) => {
-                  notification.remove();
-                });
+            
+            $found = false;
+            foreach ($_SESSION['panier'] as &$item) {
+                if (isset($item['id_produit']) && $item['id_produit'] == $id_produit) {
+                    $item['quantite'] = $quantite;
+                    $item['date_maj'] = date('Y-m-d H:i:s');
+                    $found = true;
+                    break;
+                }
             }
-          });
-
-          // Rafraîchir le panier toutes les 30 secondes
-          setInterval(() => {
-            this.updateCartCounter();
-          }, 30000);
-        }
-
-        async updateCartCounter() {
-          try {
-            const response = await fetch(`${this.apiUrl}?action=compter`);
-
-            if (!response.ok) return;
-
-            const data = await response.json();
-
-            if (data.success) {
-              this.updateCartCount(data.total || 0);
+            
+            if (!$found) {
+                $_SESSION['panier'][] = [
+                    'id_produit' => $id_produit,
+                    'quantite' => $quantite,
+                    'nom' => $produit['nom'],
+                    'prix' => floatval($produit['prix_ttc']),
+                    'reference' => $produit['reference'],
+                    'image' => $produit['image'],
+                    'date_ajout' => date('Y-m-d H:i:s'),
+                    'date_maj' => date('Y-m-d H:i:s')
+                ];
             }
-          } catch (error) {
-            console.error("Erreur mise à jour compteur:", error);
-          }
+            
+            // Mise à jour BDD
+            if ($id_panier_bdd) {
+                updateItemInBDD($id_panier_bdd, $id_produit, $quantite);
+            }
+            
+            $total = compterArticlesPanier();
+            $prix_total = floatval($produit['prix_ttc']) * $quantite;
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Quantité mise à jour',
+                'produit' => [
+                    'id' => $produit['id_produit'],
+                    'nom' => $produit['nom']
+                ],
+                'quantite' => $quantite,
+                'prix_unitaire' => floatval($produit['prix_ttc']),
+                'prix_total' => $prix_total,
+                'total_articles' => $total,
+                'stock_disponible' => $produit['quantite_stock']
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false, 
+                'message' => 'Erreur mise à jour quantité', 
+                'error' => $e->getMessage()
+            ]);
         }
-      }
+        break;
+        
+    case 'supprimer':
+        $id_produit = intval($inputData['id_produit'] ?? 0);
+        
+        if ($id_produit <= 0) {
+            echo json_encode(['success' => false, 'message' => 'ID produit invalide']);
+            exit;
+        }
+        
+        if (isset($_SESSION['panier']) && is_array($_SESSION['panier'])) {
+            $_SESSION['panier'] = array_values(array_filter($_SESSION['panier'], function($item) use ($id_produit) {
+                return !isset($item['id_produit']) || $item['id_produit'] != $id_produit;
+            }));
+        }
+        
+        if ($id_panier_bdd) {
+            updateItemInBDD($id_panier_bdd, $id_produit, 0);
+        }
+        
+        $total = compterArticlesPanier();
+        
+        echo json_encode([
+            'success' => true, 
+            'message' => 'Produit retiré du panier', 
+            'total_articles' => $total
+        ]);
+        break;
+        
+    case 'vider':
+        $_SESSION['panier'] = [];
+        
+        if ($id_panier_bdd) {
+            @include_once __DIR__ . '/db_config.php';
+            if (function_exists('getDB') && ($db = @getDB())) {
+                try {
+                    $stmt = $db->prepare("DELETE FROM panier_items WHERE id_panier = ?");
+                    $stmt->execute([$id_panier_bdd]);
+                } catch (PDOException $e) {
+                    error_log("Erreur vider panier BDD: " . $e->getMessage());
+                }
+            }
+        }
+        
+        echo json_encode([
+            'success' => true, 
+            'message' => 'Panier vidé avec succès', 
+            'total_articles' => 0
+        ]);
+        break;
+        
+    case 'init_checkout':
+        try {
+            $total = compterArticlesPanier();
+            
+            if ($total === 0) {
+                echo json_encode([
+                    'success' => false, 
+                    'message' => 'Votre panier est vide'
+                ]);
+                exit;
+            }
+            
+            $_SESSION['checkout_authorized'] = true;
+            $_SESSION['checkout_time'] = time();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Checkout autorisé',
+                'redirect_url' => 'livraison_form.php',
+                'items_count' => $total
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false, 
+                'message' => 'Erreur lors de l\'initialisation du checkout',
+                'error' => $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'synchroniser':
+        if ($id_panier_bdd && !empty($_SESSION['panier'])) {
+            $result = syncPanierToBDD($id_panier_bdd);
+            
+            echo json_encode([
+                'success' => $result,
+                'message' => $result ? 'Panier synchronisé avec BDD' : 'Erreur synchronisation',
+                'items_count' => count($_SESSION['panier'])
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Rien à synchroniser',
+                'session_items' => isset($_SESSION['panier']) ? count($_SESSION['panier']) : 0
+            ]);
+        }
+        break;
+        
+    default:
+        echo json_encode([
+            'success' => false, 
+            'message' => 'Action non reconnue',
+            'action_demandee' => $action,
+            'actions_disponibles' => [
+                'test', 'compter', 'ajouter', 'get', 'update_quantite', 
+                'supprimer', 'vider', 'init_checkout', 'synchroniser'
+            ]
+        ]);
+}
 
-      // Initialiser le gestionnaire de panier
-      const cartManager = new CartManager();
-      window.cartManager = cartManager;
-
-      // Gestion du rafraîchissement de la page
-      window.addEventListener("beforeunload", () => {
-        // Sauvegarder l'état du panier si nécessaire
-      });
-
-      // Gestion de la reconnexion réseau
-      window.addEventListener("online", () => {
-        cartManager.showNotification("Connexion rétablie", "success");
-        cartManager.loadCart();
-      });
-
-      window.addEventListener("offline", () => {
-        cartManager.showNotification("Vous êtes hors ligne", "error");
-      });
-    </script>
-  </body>
-</html>
+exit;
+?>

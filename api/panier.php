@@ -824,7 +824,7 @@ switch ($action) {
             echo json_encode([
                 'success' => true,
                 'message' => 'Checkout autorisé',
-                'redirect_url' => 'livraison.php',
+                'redirect_url' => 'livraison_form.php',
                 'items_count' => $total
             ]);
             
