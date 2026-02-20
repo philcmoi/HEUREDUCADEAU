@@ -1,250 +1,179 @@
 <?php
-// paiement.php
-session_start();
+// ============================================
+// PAGE DE PAIEMENT - VERSION CORRIGÉE
+// ============================================
+
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// ============================================
-// PROTECTION D'ACCÈS - VÉRIFIER L'ÉTAPE DE LIVRAISON
-// ============================================
+require_once __DIR__ . '/session_verification.php';
 
-// Vérifier si l'utilisateur a complété l'étape de livraison
-if (!isset($_SESSION['livraison_complete']) || !$_SESSION['livraison_complete']) {
-    // Vérifier si on a des données en base de données comme fallback
-    $has_livraison_data = false;
-    
-    try {
-        $pdo = new PDO(
-            "mysql:host=localhost;dbname=heureducadeau;charset=utf8mb4",
-            "Philippe",
-            "l@99339R"
-        );
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        
-        $session_id = session_id();
-        $panier_id = $_SESSION['panier_id'] ?? null;
-        
-        if ($panier_id) {
-            $stmt = $pdo->prepare("
-                SELECT donnees_livraison 
-                FROM commande_temporaire 
-                WHERE panier_id = ? 
-                ORDER BY date_creation DESC LIMIT 1
-            ");
-            $stmt->execute([$panier_id]);
-            $temp_data = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($temp_data && !empty($temp_data['donnees_livraison'])) {
-                $livraison_data = json_decode($temp_data['donnees_livraison'], true);
-                
-                if ($livraison_data) {
-                    // Récupérer les données depuis la base
-                    $_SESSION['adresse_livraison'] = $livraison_data['livraison'] ?? [];
-                    $_SESSION['adresse_facturation'] = $livraison_data['facturation'] ?? [];
-                    $_SESSION['options_livraison'] = $livraison_data['options'] ?? [];
-                    $_SESSION['livraison_complete'] = true;
-                    $has_livraison_data = true;
-                }
-            }
-        }
-    } catch (Exception $e) {
-        error_log("Erreur vérification livraison: " . $e->getMessage());
-    }
-    
-    // Si pas de données de livraison, rediriger
-    if (!$has_livraison_data) {
-        header('Location: livraison_form.php');
-        exit();
-    }
-}
-
-// Vérifier aussi que le panier est valide
-if (!isset($_SESSION['checkout_authorized']) || !$_SESSION['checkout_authorized']) {
-    header('Location: panier.php');
-    exit();
+// ============================================
+// DÉTECTION DU TYPE DE REQUÊTE (API ou HTML)
+// ============================================
+$is_api_request = false;
+if (isset($_GET['action']) || 
+    ($_SERVER['REQUEST_METHOD'] === 'POST' && 
+     strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false)) {
+    $is_api_request = true;
 }
 
 // ============================================
-// RÉCUPÉRATION DES DONNÉES DE LIVRAISON
+// CONNEXION BDD
 // ============================================
+$pdo = getPDOConnection();
 
-// Données depuis la session
-$adresse_livraison = $_SESSION['adresse_livraison'] ?? [];
-$adresse_facturation = $_SESSION['adresse_facturation'] ?? [];
-$options_livraison = $_SESSION['options_livraison'] ?? [];
-$frais_livraison = $_SESSION['frais_livraison'] ?? 0;
-
-// Récupérer les articles du panier avec détails
-$articles_panier = [];
-$total_panier = 0;
-
-try {
-    $pdo = new PDO(
-        "mysql:host=localhost;dbname=heureducadeau;charset=utf8mb4",
-        "Philippe",
-        "l@99339R"
-    );
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    
-    $panier_id = $_SESSION['panier_id'] ?? null;
-    
-    if ($panier_id) {
-        // Récupérer les articles du panier avec les détails des produits
-        $stmt = $pdo->prepare("
-            SELECT pi.*, p.nom, p.prix, p.image, p.description_courte 
-            FROM panier_items pi 
-            JOIN produits p ON pi.id_produit = p.id_produit 
-            WHERE pi.id_panier = ?
-        ");
-        $stmt->execute([$panier_id]);
-        $articles_panier = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Calculer le total
-        foreach ($articles_panier as $item) {
-            $total_panier += ($item['prix'] * $item['quantite']);
-        }
-    }
-} catch (Exception $e) {
-    error_log("Erreur récupération panier: " . $e->getMessage());
-    
-    // Fallback sur la session si la BDD échoue
-    if (isset($_SESSION['panier_items'])) {
-        $articles_panier = $_SESSION['panier_items'];
-        foreach ($_SESSION['panier_items'] as $item) {
-            $total_panier += ($item['prix'] * $item['quantite']);
-        }
-    }
+// Synchroniser le panier
+if ($pdo) {
+    synchroniserPanierSessionBDD($pdo, session_id());
 }
 
-$total_commande = $total_panier + $frais_livraison;
-
 // ============================================
-// TRAITEMENT DU PAIEMENT
+// TRAITEMENT DES ACTIONS API
 // ============================================
-
-$errors = [];
-$success = false;
-$payment_method = '';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Déterminer la méthode de paiement
-    if (isset($_POST['process_card'])) {
-        $payment_method = 'carte';
-        
-        // Valider les données de carte
-        $required_payment = ['card_number', 'card_expiry', 'card_cvc', 'card_name'];
-        
-        foreach ($required_payment as $field) {
-            if (empty($_POST[$field])) {
-                $errors[] = "Le champ $field est requis pour le paiement par carte.";
-            }
-        }
-    } elseif (isset($_POST['process_paypal'])) {
-        $payment_method = 'paypal';
-        // Pour PayPal, on va simplement créer la commande en attente
-    } else {
-        $errors[] = "Veuillez sélectionner une méthode de paiement.";
+if ($is_api_request) {
+    ob_clean();
+    header("Content-Type: application/json; charset=UTF-8");
+    header("Access-Control-Allow-Origin: *");
+    header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+    header("Access-Control-Allow-Headers: Content-Type");
+    
+    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+        http_response_code(200);
+        exit;
     }
     
-    if (empty($errors)) {
-        // Sauvegarder la commande finale
-        try {
-            if (!isset($pdo)) {
-                $pdo = new PDO(
-                    "mysql:host=localhost;dbname=heureducadeau;charset=utf8mb4",
-                    "Philippe",
-                    "l@99339R"
-                );
-                $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $action = $_GET['action'] ?? '';
+    $inputData = [];
+    
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = file_get_contents('php://input');
+        if (!empty($input)) {
+            $inputData = json_decode($input, true) ?: [];
+        }
+        if (empty($inputData)) {
+            $inputData = $_POST;
+        }
+        if (empty($action) && isset($inputData['action'])) {
+            $action = $inputData['action'];
+        }
+    }
+
+    switch ($action) {
+        case 'get_recap':
+            if (!hasValidCart()) {
+                echo json_encode(['success' => false, 'message' => 'Panier vide']);
+                exit;
             }
             
-            // Créer la commande
-            $numero_commande = 'CMD-' . date('Ymd') . '-' . strtoupper(uniqid());
-            $client_id = $_SESSION['client_id'] ?? null;
-            $panier_id = $_SESSION['panier_id'] ?? null;
-            $session_id = session_id();
-            
-            // Déterminer le statut selon la méthode de paiement
-            if ($payment_method === 'carte') {
-                // Simuler un traitement de carte bancaire réussi
-                // EN PRODUCTION: Intégrer avec une vraie API de paiement
-                $statut = 'paye';
-                $methode_paiement = 'carte_bancaire';
-            } else {
-                // Pour PayPal, on crée la commande en attente
-                $statut = 'en_attente_paiement';
-                $methode_paiement = 'paypal';
+            $panier_details = [];
+            foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
+                $produit = getProductDetails($item['id_produit'], $pdo);
+                $prix_unitaire = floatval($produit['prix_ttc'] ?? $item['prix'] ?? 0);
+                $quantite = intval($item['quantite']);
+                $panier_details[] = [
+                    'id_produit' => $item['id_produit'],
+                    'quantite' => $quantite,
+                    'nom' => $produit['nom'],
+                    'prix_unitaire' => $prix_unitaire,
+                    'prix_total' => $quantite * $prix_unitaire,
+                    'reference' => $produit['reference'],
+                    'image' => $produit['image']
+                ];
             }
             
-            // Données de livraison complètes
-            $donnees_commande = [
-                'adresse_livraison' => $adresse_livraison,
-                'adresse_facturation' => $adresse_facturation,
-                'options_livraison' => $options_livraison,
-                'frais_livraison' => $frais_livraison,
-                'total_panier' => $total_panier,
-                'total_commande' => $total_commande,
-                'articles' => $articles_panier,
-                'methode_paiement' => $methode_paiement
-            ];
+            $totaux = calculerTotauxPanier($panier_details, $_SESSION[SESSION_KEY_CHECKOUT] ?? []);
+            $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
             
-            // Insérer la commande
-            $stmt = $pdo->prepare("
-                INSERT INTO commandes 
-                (numero_commande, client_id, panier_id, session_id, 
-                 donnees_commande, statut, montant_total, frais_livraison, 
-                 methode_paiement, date_creation) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-            ");
-            
-            $stmt->execute([
-                $numero_commande,
-                $client_id,
-                $panier_id,
-                $session_id,
-                json_encode($donnees_commande, JSON_UNESCAPED_UNICODE),
-                $statut,
-                $total_commande,
-                $frais_livraison,
-                $methode_paiement
+            echo json_encode([
+                'success' => true,
+                'panier' => $panier_details,
+                'totaux' => $totaux,
+                'adresse' => $adresse,
+                'livraison' => [
+                    'mode' => $_SESSION[SESSION_KEY_CHECKOUT]['mode_livraison'] ?? 'standard',
+                    'emballage_cadeau' => $_SESSION[SESSION_KEY_CHECKOUT]['emballage_cadeau'] ?? false,
+                    'instructions' => $_SESSION[SESSION_KEY_CHECKOUT]['instructions'] ?? null
+                ],
+                'panier_vide' => empty($panier_details),
+                'nb_articles' => countCartItems()
             ]);
-            
-            $commande_id = $pdo->lastInsertId();
-            
-            // Marquer le panier comme terminé
-            if ($panier_id) {
-                $stmt = $pdo->prepare("UPDATE panier SET statut = 'termine' WHERE id_panier = ?");
-                $stmt->execute([$panier_id]);
+            break;
+
+        case 'valider_paiement':
+            if (!hasValidCart()) {
+                echo json_encode(['success' => false, 'message' => 'Panier vide']);
+                exit;
             }
             
-            // Nettoyer la session (sauf données de confirmation)
-            $_SESSION['numero_commande'] = $numero_commande;
-            $_SESSION['commande_id'] = $commande_id;
-            $_SESSION['commande_validee'] = true;
-            $_SESSION['methode_paiement'] = $methode_paiement;
-            
-            unset($_SESSION['panier_items']);
-            unset($_SESSION['checkout_authorized']);
-            
-            // Rediriger selon la méthode de paiement
-            if ($payment_method === 'paypal') {
-                // Rediriger vers PayPal
-                // EN PRODUCTION: Utiliser l'API PayPal pour créer un paiement
-                header('Location: traitement_paypal.php?commande=' . $commande_id);
-                exit();
-            } else {
-                $success = true;
-            }
-            
-        } catch (Exception $e) {
-            $errors[] = "Erreur lors de l'enregistrement de la commande: " . $e->getMessage();
-        }
+            echo json_encode([
+                'success' => true,
+                'message' => 'Paiement validé',
+                'redirect' => 'confirmation.php'
+            ]);
+            break;
+
+        case 'redirect_paypal':
+            $montant = $_GET['montant'] ?? 0;
+            $commande_id = $_GET['commande'] ?? 0;
+            echo json_encode([
+                'success' => true,
+                'redirect_url' => "paiement_paypal.php?commande=$commande_id&montant=$montant&from=paiement"
+            ]);
+            break;
+
+        case 'redirect_cb':
+            $montant = $_GET['montant'] ?? 0;
+            $commande_id = $_GET['commande'] ?? 0;
+            echo json_encode([
+                'success' => true,
+                'redirect_url' => "paiement_cb.php?commande=$commande_id&montant=$montant&from=paiement"
+            ]);
+            break;
+
+        case 'check_adresse':
+            echo json_encode([
+                'success' => hasShippingAddress(),
+                'commande_id' => $_SESSION[SESSION_KEY_CHECKOUT]['client_id'] ?? null
+            ]);
+            break;
+
+        default:
+            echo json_encode(['success' => false, 'message' => 'Action API non reconnue']);
     }
+    exit;
 }
 
 // ============================================
-// AFFICHAGE
+// VÉRIFICATION D'ACCÈS STANDARDISÉE
 // ============================================
+checkPaiementAccess();
+
+// ============================================
+// RÉCUPÉRATION DES DONNÉES POUR AFFICHAGE
+// ============================================
+$messages = getSessionMessages();
+$nb_articles = countCartItems();
+
+// Récupérer les détails du panier
+$panier_details = [];
+foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
+    $produit = getProductDetails($item['id_produit'], $pdo);
+    $prix_unitaire = floatval($produit['prix_ttc'] ?? $item['prix'] ?? 0);
+    $quantite = intval($item['quantite']);
+    $panier_details[] = [
+        'id_produit' => $item['id_produit'],
+        'quantite' => $quantite,
+        'nom' => $produit['nom'],
+        'prix_unitaire' => $prix_unitaire,
+        'prix_total' => $quantite * $prix_unitaire,
+        'reference' => $produit['reference'],
+        'image' => $produit['image']
+    ];
+}
+
+$totaux = calculerTotauxPanier($panier_details, $_SESSION[SESSION_KEY_CHECKOUT] ?? []);
+$adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -252,612 +181,566 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Paiement - HEURE DU CADEAU</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        /* STYLES CSS COMPLETS - Identiques à l'original */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: Arial, sans-serif;
-            max-width: 1000px;
-            margin: 50px auto;
-            padding: 20px;
-            background: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f8f9fa;
+            color: #333;
         }
-
         .container {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
         }
-
-        h1 {
-            color: #333;
-            border-bottom: 2px solid #5a67d8;
-            padding-bottom: 10px;
-            margin-bottom: 30px;
+        header {
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            color: white;
+            padding: 20px 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
         }
-
-        h2 {
-            color: #555;
-            font-size: 18px;
-            margin: 25px 0 15px 0;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #eee;
-        }
-
-        .order-summary {
-            background: #f7fafc;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 30px;
-            border: 1px solid #e2e8f0;
-        }
-
-        .items-list {
-            margin-bottom: 20px;
-        }
-
-        .item-row {
-            display: flex;
-            align-items: center;
-            padding: 15px 0;
-            border-bottom: 1px solid #e2e8f0;
-        }
-
-        .item-row:last-child {
-            border-bottom: none;
-        }
-
-        .item-image {
-            width: 60px;
-            height: 60px;
-            object-fit: cover;
-            border-radius: 6px;
-            margin-right: 15px;
-        }
-
-        .item-details {
-            flex-grow: 1;
-        }
-
-        .item-name {
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 5px;
-        }
-
-        .item-price {
-            color: #5a67d8;
-            font-weight: bold;
-        }
-
-        .item-quantity {
-            color: #666;
-        }
-
-        .summary-row {
+        .header-content {
             display: flex;
             justify-content: space-between;
-            padding: 10px 0;
-            border-bottom: 1px solid #e2e8f0;
+            align-items: center;
         }
-
-        .summary-row:last-child {
-            border-bottom: none;
+        .logo {
+            color: white;
+            text-decoration: none;
+            font-size: 1.8rem;
             font-weight: bold;
-            font-size: 18px;
-            color: #2d3748;
-        }
-
-        .address-box {
             display: flex;
-            gap: 30px;
-            margin-bottom: 30px;
+            align-items: center;
+            gap: 10px;
         }
-
-        .address-card {
-            flex: 1;
-            background: #f7fafc;
-            padding: 20px;
-            border-radius: 8px;
-            border: 1px solid #e2e8f0;
-        }
-
-        .address-card h3 {
-            margin-top: 0;
-            color: #4a5568;
-            font-size: 16px;
-            border-bottom: 1px solid #cbd5e0;
-            padding-bottom: 10px;
-        }
-
-        .payment-methods {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .payment-method {
-            flex: 1;
-            cursor: pointer;
+        .logo i { color: #e74c3c; }
+        nav { display: flex; gap: 25px; align-items: center; }
+        nav a {
+            color: white;
+            text-decoration: none;
+            font-weight: 500;
+            padding: 8px 12px;
+            border-radius: 6px;
             transition: all 0.3s;
         }
-
-        .payment-method input[type="radio"] {
-            display: none;
-        }
-
-        .payment-method-content {
-            border: 2px solid #e2e8f0;
-            border-radius: 10px;
-            padding: 20px;
-            text-align: center;
-            transition: all 0.3s;
-        }
-
-        .payment-method input[type="radio"]:checked + .payment-method-content {
-            border-color: #5a67d8;
-            background-color: #f0f5ff;
-        }
-
-        .payment-method:hover .payment-method-content {
-            border-color: #c3dafe;
-        }
-
-        .payment-icon {
-            font-size: 40px;
-            margin-bottom: 10px;
-        }
-
-        .paypal-icon {
-            color: #003087;
-        }
-
-        .card-icon {
-            color: #5a67d8;
-        }
-
-        .payment-form {
-            display: none;
-        }
-
-        .payment-form.active {
-            display: block;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: bold;
-            color: #555;
-        }
-
-        input, select {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            font-size: 16px;
-            box-sizing: border-box;
-        }
-
-        input:focus, select:focus {
-            outline: none;
-            border-color: #5a67d8;
-            box-shadow: 0 0 0 3px rgba(90,103,216,0.1);
-        }
-
-        .form-row {
-            display: flex;
-            gap: 15px;
-        }
-
-        .form-row .form-group {
-            flex: 1;
-        }
-
-        button {
-            padding: 15px 30px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            width: 100%;
-            transition: all 0.3s;
-            margin-top: 20px;
+        nav a:hover { background: rgba(255,255,255,0.1); }
+        .cart-link { position: relative; }
+        .cart-count {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #e74c3c;
+            color: white;
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            font-size: 0.8rem;
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+        .paiement-page { padding: 40px 0; min-height: 70vh; }
+        .paiement-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .paiement-header h1 {
+            font-size: 2.5rem;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #2c3e50, #3498db);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .paiement-content {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 30px;
+        }
+        @media (max-width: 992px) {
+            .paiement-content { grid-template-columns: 1fr; }
+        }
+        .paiement-form {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+        }
+        .section-title {
+            color: #2c3e50;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f8f9fa;
+            display: flex;
+            align-items: center;
             gap: 10px;
         }
-
-        .btn-card {
-            background-color: #5a67d8;
+        .adresse-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            border-left: 5px solid #3498db;
+        }
+        .paiement-options {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .paiement-option {
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .paiement-option:hover { border-color: #3498db; }
+        .paiement-option.selected {
+            border-color: #27ae60;
+            background: rgba(39, 174, 96, 0.05);
+        }
+        .option-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-weight: 600;
+        }
+        .btn-payer {
+            width: 100%;
+            padding: 18px;
+            background: linear-gradient(135deg, #27ae60, #219653);
             color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            transition: all 0.3s;
+            margin-top: 20px;
         }
-
-        .btn-card:hover {
-            background-color: #4c51bf;
+        .btn-payer:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(39,174,96,0.3);
+        }
+        .btn-payer:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .cart-summary {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            position: sticky;
+            top: 100px;
+        }
+        .cart-item-mini {
+            display: flex;
+            gap: 15px;
+            padding: 15px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .cart-item-mini:last-child { border-bottom: none; }
+        .mini-image {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .mini-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .mini-details {
+            flex: 1;
+        }
+        .mini-details h4 {
+            font-size: 1rem;
+            margin-bottom: 5px;
+            color: #2c3e50;
+        }
+        .mini-price {
+            font-weight: 700;
+            color: #e74c3c;
+        }
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .summary-total {
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: #e74c3c;
+            border-top: 2px solid #f0f0f0;
+            padding-top: 20px;
+            margin-top: 10px;
+        }
+        .btn-continue {
+            display: block;
+            text-align: center;
+            padding: 15px;
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            text-decoration: none;
+            border-radius: 12px;
+            margin-top: 20px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .btn-continue:hover {
             transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(52,152,219,0.3);
         }
-
-        .btn-paypal {
-            background-color: #FFC439;
-            color: #003087;
-            border: 1px solid #003087;
+        .loading {
+            text-align: center;
+            padding: 40px;
         }
-
-        .btn-paypal:hover {
-            background-color: #F2BA30;
-            transform: translateY(-2px);
+        .loading i { font-size: 3rem; color: #3498db; }
+        .notification {
+            position: fixed;
+            top: 30px;
+            right: 30px;
+            background: #27ae60;
+            color: white;
+            padding: 18px 25px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            z-index: 9999;
+            animation: slideInRight 0.5s, fadeOut 0.5s 2.5s forwards;
         }
-
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            to { opacity: 0; transform: translateX(100%); }
+        }
+        .notification.error { background: #e74c3c; }
+        .info-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 5px solid #3498db;
+        }
+        .info-box i { color: #3498db; margin-right: 10px; }
         .message {
             padding: 15px;
             margin-bottom: 25px;
             border-radius: 8px;
             border: 1px solid transparent;
         }
-
         .success {
             background-color: #d4edda;
             color: #155724;
             border-color: #c3e6cb;
         }
-
         .error {
             background-color: #f8d7da;
             color: #721c24;
             border-color: #f5c6cb;
         }
-
-        .info-box {
-            background: #e6f7ff;
-            border: 1px solid #91d5ff;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-
-        @media (max-width: 768px) {
-            .address-box, .form-row, .payment-methods {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .payment-methods {
-                gap: 10px;
-            }
-            
-            body {
-                padding: 20px;
-                margin: 20px auto;
-            }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border-color: #bee5eb;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1><i class="fas fa-credit-card"></i> Paiement Sécurisé</h1>
-
-        <?php if ($success): ?>
-            <div class="message success">
-                <strong><i class="fas fa-check-circle"></i> Paiement réussi !</strong><br>
-                Votre commande <strong><?php echo htmlspecialchars($_SESSION['numero_commande']); ?></strong> a été validée.<br>
-                Un email de confirmation vous a été envoyé à <?php echo htmlspecialchars($adresse_livraison['email']); ?>.<br><br>
-                <a href="confirmation.php?commande=<?php echo $_SESSION['commande_id']; ?>" style="color: #155724; font-weight: bold;">
-                    Voir le détail de votre commande →
-                </a>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <a href="index.html" class="logo"><i class="fas fa-gift"></i> HEURE DU CADEAU</a>
+                <nav>
+                    <a href="index.html">Accueil</a>
+                    <a href="index.php">Produits</a>
+                    <a href="panier.html" class="cart-link">
+                        <i class="fas fa-shopping-cart"></i> Panier
+                        <span id="cartCount" class="cart-count"><?= $nb_articles ?></span>
+                    </a>
+                </nav>
             </div>
-        <?php else: ?>
-            <!-- Récapitulatif de la commande -->
-            <div class="order-summary">
-                <h2>Détail de votre commande</h2>
-                
-                <div class="items-list">
-                    <?php foreach ($articles_panier as $item): ?>
-                        <div class="item-row">
-                            <?php if (!empty($item['image'])): ?>
-                                <img src="images/<?php echo htmlspecialchars($item['image']); ?>" 
-                                     alt="<?php echo htmlspecialchars($item['nom']); ?>" 
-                                     class="item-image">
-                            <?php else: ?>
-                                <div class="item-image" style="background:#eee; display:flex; align-items:center; justify-content:center;">
-                                    <i class="fas fa-gift"></i>
-                                </div>
-                            <?php endif; ?>
-                            
-                            <div class="item-details">
-                                <div class="item-name"><?php echo htmlspecialchars($item['nom']); ?></div>
-                                <div class="item-quantity">Quantité: <?php echo $item['quantite']; ?></div>
-                                <?php if (!empty($item['description_courte'])): ?>
-                                    <div style="color:#666; font-size:14px; margin-top:5px;">
-                                        <?php echo htmlspecialchars($item['description_courte']); ?>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                            <div class="item-price">
-                                <?php echo number_format($item['prix'] * $item['quantite'], 2, ',', ' '); ?> €
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-                
-                <div class="summary-row">
-                    <span>Sous-total panier:</span>
-                    <span><?php echo number_format($total_panier, 2, ',', ' '); ?> €</span>
-                </div>
-                
-                <div class="summary-row">
-                    <span>Frais de livraison (<?php echo htmlspecialchars($options_livraison['mode_livraison'] ?? 'standard'); ?>):</span>
-                    <span><?php echo number_format($frais_livraison, 2, ',', ' '); ?> €</span>
-                </div>
-                
-                <?php if ($options_livraison['emballage_cadeau'] ?? false): ?>
-                <div class="summary-row">
-                    <span>Emballage cadeau:</span>
-                    <span>+3,90 €</span>
-                </div>
-                <?php endif; ?>
-                
-                <div class="summary-row">
-                    <span><strong>Total à payer:</strong></span>
-                    <span><strong><?php echo number_format($total_commande, 2, ',', ' '); ?> €</strong></span>
-                </div>
+        </div>
+    </header>
+
+    <main class="paiement-page">
+        <div class="container">
+            <div class="paiement-header">
+                <h1>Paiement sécurisé</h1>
+                <p id="pageMessage">Finalisez votre commande</p>
             </div>
 
-            <!-- Affichage des adresses -->
-            <h2>Adresses</h2>
-            <div class="address-box">
-                <div class="address-card">
-                    <h3><i class="fas fa-truck"></i> Livraison</h3>
-                    <p>
-                        <strong><?php echo htmlspecialchars($adresse_livraison['prenom'] . ' ' . $adresse_livraison['nom']); ?></strong><br>
-                        <?php if (!empty($adresse_livraison['societe'])): ?>
-                            <?php echo htmlspecialchars($adresse_livraison['societe']); ?><br>
-                        <?php endif; ?>
-                        <?php echo htmlspecialchars($adresse_livraison['adresse']); ?><br>
-                        <?php if (!empty($adresse_livraison['complement'])): ?>
-                            <?php echo htmlspecialchars($adresse_livraison['complement']); ?><br>
-                        <?php endif; ?>
-                        <?php echo htmlspecialchars($adresse_livraison['code_postal'] . ' ' . $adresse_livraison['ville']); ?><br>
-                        <?php echo htmlspecialchars($adresse_livraison['pays']); ?><br>
-                        <?php if (!empty($adresse_livraison['telephone'])): ?>
-                            Tél: <?php echo htmlspecialchars($adresse_livraison['telephone']); ?><br>
-                        <?php endif; ?>
-                        Email: <?php echo htmlspecialchars($adresse_livraison['email']); ?>
-                    </p>
-                    <?php if (!empty($adresse_livraison['instructions'])): ?>
-                        <p><strong>Instructions:</strong> <?php echo htmlspecialchars($adresse_livraison['instructions']); ?></p>
-                    <?php endif; ?>
-                </div>
-
-                <div class="address-card">
-                    <h3><i class="fas fa-file-invoice"></i> Facturation</h3>
-                    <?php if ($adresse_facturation == $adresse_livraison): ?>
-                        <p><em>Même adresse que la livraison</em></p>
-                    <?php else: ?>
-                        <p>
-                            <strong><?php echo htmlspecialchars($adresse_facturation['prenom'] . ' ' . $adresse_facturation['nom']); ?></strong><br>
-                            <?php if (!empty($adresse_facturation['societe'])): ?>
-                                <?php echo htmlspecialchars($adresse_facturation['societe']); ?><br>
-                            <?php endif; ?>
-                            <?php echo htmlspecialchars($adresse_facturation['adresse']); ?><br>
-                            <?php if (!empty($adresse_facturation['complement'])): ?>
-                                <?php echo htmlspecialchars($adresse_facturation['complement']); ?><br>
-                            <?php endif; ?>
-                            <?php echo htmlspecialchars($adresse_facturation['code_postal'] . ' ' . $adresse_facturation['ville']); ?><br>
-                            <?php echo htmlspecialchars($adresse_facturation['pays']); ?>
-                        </p>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <!-- Options de livraison -->
-            <div class="info-box">
-                <strong><i class="fas fa-shipping-fast"></i> Mode de livraison:</strong> 
-                <?php 
-                $mode_livraison = $options_livraison['mode_livraison'] ?? 'standard';
-                $modes = [
-                    'standard' => 'Livraison Standard (3-5 jours ouvrés)',
-                    'express' => 'Livraison Express (24h)',
-                    'relais' => 'Point Relais'
-                ];
-                echo htmlspecialchars($modes[$mode_livraison] ?? $mode_livraison);
-                ?>
-            </div>
-
-            <!-- Messages d'erreur -->
-            <?php if (!empty($errors)): ?>
-            <div class="message error">
-                <strong>Erreurs :</strong>
-                <ul>
-                    <?php foreach ($errors as $erreur): ?>
-                    <li><?php echo htmlspecialchars($erreur); ?></li>
-                    <?php endforeach; ?>
-                </ul>
-            </div>
+            <?php if (!empty($messages)): ?>
+                <?php foreach ($messages as $msg): ?>
+                    <div class="message <?php echo $msg['type']; ?>">
+                        <?php echo htmlspecialchars($msg['message']); ?>
+                    </div>
+                <?php endforeach; ?>
             <?php endif; ?>
 
-            <!-- Choix de la méthode de paiement -->
-            <h2>Choisissez votre moyen de paiement</h2>
-            <form action="paiement.php" method="POST" id="payment-form">
-                <div class="payment-methods">
-                    <div class="payment-method">
-                        <input type="radio" id="paypal" name="payment_method" value="paypal">
-                        <label for="paypal" class="payment-method-content">
-                            <div class="payment-icon paypal-icon">
-                                <i class="fab fa-cc-paypal"></i>
-                            </div>
-                            <strong>Payer avec PayPal</strong>
-                            <div style="font-size: 14px; color: #666; margin-top: 5px;">
-                                Paiement sécurisé via votre compte PayPal
-                            </div>
-                        </label>
-                    </div>
-                    
-                    <div class="payment-method">
-                        <input type="radio" id="carte" name="payment_method" value="carte">
-                        <label for="carte" class="payment-method-content">
-                            <div class="payment-icon card-icon">
-                                <i class="fas fa-credit-card"></i>
-                            </div>
-                            <strong>Carte bancaire</strong>
-                            <div style="font-size: 14px; color: #666; margin-top: 5px;">
-                                Visa, Mastercard, etc.
-                            </div>
-                        </label>
-                    </div>
+            <div id="paiementContent">
+                <div class="loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Chargement de votre panier...</p>
                 </div>
-
-                <!-- Formulaire pour carte bancaire -->
-                <div id="card-form" class="payment-form">
-                    <h3>Informations de carte bancaire</h3>
-                    <div class="form-group">
-                        <label for="card_name">Nom sur la carte</label>
-                        <input type="text" id="card_name" name="card_name" placeholder="JEAN DUPONT">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="card_number">Numéro de carte</label>
-                        <input type="text" id="card_number" name="card_number" 
-                               placeholder="1234 5678 9012 3456" pattern="[0-9\s]{13,19}">
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="card_expiry">Date d'expiration (MM/AA)</label>
-                            <input type="text" id="card_expiry" name="card_expiry" 
-                                   placeholder="12/25" pattern="(0[1-9]|1[0-2])\/[0-9]{2}">
-                        </div>
-                        <div class="form-group">
-                            <label for="card_cvc">Code CVC</label>
-                            <input type="text" id="card_cvc" name="card_cvc" 
-                                   placeholder="123" pattern="[0-9]{3,4}">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Boutons de paiement -->
-                <div id="paypal-button" class="payment-form">
-                    <button type="submit" name="process_paypal" class="btn-paypal">
-                        <i class="fab fa-paypal"></i> Payer avec PayPal
-                    </button>
-                </div>
-
-                <div id="card-button" class="payment-form">
-                    <button type="submit" name="process_card" class="btn-card">
-                        <i class="fas fa-lock"></i> Payer <?php echo number_format($total_commande, 2, ',', ' '); ?> € par carte
-                    </button>
-                </div>
-
-                <div style="text-align: center; margin-top: 20px; color: #718096; font-size: 14px;">
-                    <i class="fas fa-shield-alt"></i> Paiement sécurisé SSL 256-bit
-                </div>
-            </form>
-
-            <!-- Lien pour modifier l'adresse -->
-            <div style="text-align: center; margin-top: 30px;">
-                <a href="livraison_form.php" style="color: #5a67d8;">
-                    <i class="fas fa-edit"></i> Modifier l'adresse de livraison
-                </a>
             </div>
-        <?php endif; ?>
-    </div>
+        </div>
+    </main>
 
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+    <footer style="background: #2c3e50; color: white; padding: 30px 0; margin-top: 60px;">
+        <div class="container">
+            <p style="text-align: center;">&copy; 2026 HEURE DU CADEAU - Paiement 100% sécurisé</p>
+        </div>
+    </footer>
+
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const paymentMethods = document.querySelectorAll('input[name="payment_method"]');
-            const cardForm = document.getElementById('card-form');
-            const paypalButton = document.getElementById('paypal-button');
-            const cardButton = document.getElementById('card-button');
+    // ============================================
+    // JAVASCRIPT COMPLET - GESTIONNAIRE DE PAIEMENT
+    // ============================================
+    const API_BASE_URL = window.location.href.split('?')[0];
+    let paiementManager = null;
+
+    class PaiementManager {
+        constructor() {
+            this.apiUrl = API_BASE_URL;
+            this.panierData = null;
+            this.totaux = <?= json_encode($totaux) ?>;
+            this.adresse = <?= json_encode($adresse) ?>;
+            this.panierDetails = <?= json_encode($panier_details) ?>;
+            this.paiementMethod = "paypal";
+            this.init();
+        }
+
+        init() {
+            console.log("Initialisation page paiement...");
+            this.afficherPaiement();
+            this.initEvents();
+        }
+
+        afficherPaiement() {
+            let html = `<div class="paiement-content">`;
             
-            // Masquer les formulaires et boutons au départ
-            cardForm.style.display = 'none';
-            paypalButton.style.display = 'none';
-            cardButton.style.display = 'none';
-            
-            // Gérer le changement de méthode de paiement
-            paymentMethods.forEach(method => {
-                method.addEventListener('change', function() {
-                    if (this.value === 'paypal') {
-                        cardForm.style.display = 'none';
-                        paypalButton.style.display = 'block';
-                        cardButton.style.display = 'none';
-                    } else if (this.value === 'carte') {
-                        cardForm.style.display = 'block';
-                        paypalButton.style.display = 'none';
-                        cardButton.style.display = 'block';
-                    } else {
-                        cardForm.style.display = 'none';
-                        paypalButton.style.display = 'none';
-                        cardButton.style.display = 'none';
+            html += `<div class="paiement-form">`;
+            html += `<h2 class="section-title"><i class="fas fa-credit-card"></i> Mode de paiement</h2>`;
+
+            if (this.adresse && Object.keys(this.adresse).length > 0) {
+                html += `<div class="adresse-card">`;
+                html += `<h3 style="margin-bottom: 10px;"><i class="fas fa-map-marker-alt"></i> Adresse de livraison</h3>`;
+                html += `<p><strong>${this.adresse.prenom || ''} ${this.adresse.nom || ''}</strong></p>`;
+                html += `<p>${this.adresse.adresse || ''}</p>`;
+                if (this.adresse.complement) html += `<p>${this.adresse.complement}</p>`;
+                html += `<p>${this.adresse.code_postal || ''} ${this.adresse.ville || ''}</p>`;
+                html += `<p>${this.adresse.pays || 'France'}</p>`;
+                html += `<p style="margin-top: 10px;"><i class="fas fa-envelope"></i> ${this.adresse.email || ''}</p>`;
+                if (this.adresse.telephone) html += `<p><i class="fas fa-phone"></i> ${this.adresse.telephone}</p>`;
+                
+                html += `<a href="livraison_form.php" style="color: #3498db; margin-top: 10px; display: inline-block;"><i class="fas fa-edit"></i> Modifier</a>`;
+                html += `</div>`;
+            } else {
+                html += `<div class="adresse-card" style="border-left-color: #e74c3c;">`;
+                html += `<p><i class="fas fa-exclamation-triangle"></i> <strong>Aucune adresse de livraison</strong></p>`;
+                html += `<a href="livraison_form.php" class="btn-continue" style="margin-top: 10px;">Ajouter une adresse</a>`;
+                html += `</div>`;
+            }
+
+            html += `<div class="paiement-options">`;
+            html += `<div class="paiement-option selected" id="optionPaypal">`;
+            html += `<div class="option-header">`;
+            html += `<input type="radio" name="paiement" id="paypal" value="paypal" checked hidden>`;
+            html += `<img src="https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_37x23.jpg" alt="PayPal" style="height: 24px;">`;
+            html += `<span>PayPal</span>`;
+            html += `</div>`;
+            html += `</div>`;
+
+            html += `<div class="paiement-option" id="optionCarte">`;
+            html += `<div class="option-header">`;
+            html += `<input type="radio" name="paiement" id="carte" value="carte" hidden>`;
+            html += `<i class="fas fa-credit-card" style="font-size: 24px; color: #718096;"></i>`;
+            html += `<span>Carte bancaire (Visa, Mastercard, Amex)</span>`;
+            html += `</div>`;
+            html += `</div>`;
+            html += `</div>`;
+
+            html += `<button id="btnPayer" class="btn-payer">`;
+            html += `<i class="fas fa-lock"></i> Payer ${(this.totaux?.total || 0).toFixed(2).replace('.', ',')} €`;
+            html += `</button>`;
+
+            html += `<p style="text-align: center; margin-top: 20px; color: #7f8c8d; font-size: 0.9rem;">`;
+            html += `<i class="fas fa-shield-alt"></i> Paiement 100% sécurisé - Cryptage SSL`;
+            html += `</p>`;
+            html += `</div>`;
+
+            html += `<div class="cart-summary">`;
+            html += `<h2 style="color: #2c3e50; margin-bottom: 25px; font-size: 1.8rem;">Votre panier</h2>`;
+
+            this.panierDetails.forEach(item => {
+                const prixTotal = (item.prix_total || 0).toFixed(2).replace('.', ',');
+                html += `<div class="cart-item-mini">`;
+                html += `<div class="mini-image">`;
+                html += `<img src="${item.image || 'img/default-product.jpg'}" alt="${item.nom}" onerror="this.src='img/default-product.jpg'">`;
+                html += `</div>`;
+                html += `<div class="mini-details">`;
+                html += `<h4>${item.nom}</h4>`;
+                html += `<div style="font-size: 0.9rem; color: #7f8c8d;">Réf: ${item.reference || ''}</div>`;
+                html += `<div style="display: flex; justify-content: space-between; margin-top: 5px;">`;
+                html += `<span>${item.quantite} x ${(item.prix_unitaire || 0).toFixed(2).replace('.', ',')} €</span>`;
+                html += `<span class="mini-price">${prixTotal} €</span>`;
+                html += `</div>`;
+                html += `</div>`;
+                html += `</div>`;
+            });
+
+            html += `<div style="margin-top: 25px;">`;
+            html += `<div class="summary-row">`;
+            html += `<span>Sous-total (${this.totaux?.total_items || 0} article${this.totaux?.total_items > 1 ? 's' : ''})</span>`;
+            html += `<span>${(this.totaux?.sous_total || 0).toFixed(2).replace('.', ',')} €</span>`;
+            html += `</div>`;
+
+            html += `<div class="summary-row">`;
+            html += `<span>Frais de livraison</span>`;
+            html += `<span>${(this.totaux?.frais_livraison || 0).toFixed(2).replace('.', ',')} €</span>`;
+            html += `</div>`;
+
+            if (this.totaux?.frais_emballage > 0) {
+                html += `<div class="summary-row">`;
+                html += `<span>Emballage cadeau</span>`;
+                html += `<span>${(this.totaux?.frais_emballage || 0).toFixed(2).replace('.', ',')} €</span>`;
+                html += `</div>`;
+            }
+
+            html += `<div class="summary-row summary-total">`;
+            html += `<span>Total TTC</span>`;
+            html += `<span>${(this.totaux?.total || 0).toFixed(2).replace('.', ',')} €</span>`;
+            html += `</div>`;
+            html += `</div>`;
+
+            if (this.totaux?.sous_total < this.totaux?.seuil_livraison_gratuite) {
+                const reste = (this.totaux.seuil_livraison_gratuite - this.totaux.sous_total).toFixed(2).replace('.', ',');
+                html += `<div class="info-box">`;
+                html += `<i class="fas fa-truck"></i> Plus que <strong>${reste} €</strong> pour la livraison gratuite !`;
+                html += `</div>`;
+            } else if (this.totaux?.frais_livraison == 0) {
+                html += `<div class="info-box" style="border-left-color: #27ae60; background: #d4edda;">`;
+                html += `<i class="fas fa-check-circle" style="color: #27ae60;"></i> <strong>Livraison gratuite</strong> !`;
+                html += `</div>`;
+            }
+
+            html += `<a href="panier.html" class="btn-continue"><i class="fas fa-arrow-left"></i> Modifier le panier</a>`;
+            html += `</div>`;
+            html += `</div>`;
+
+            document.getElementById("paiementContent").innerHTML = html;
+            this.initPaiementEvents();
+        }
+
+        initPaiementEvents() {
+            document.querySelectorAll('.paiement-option').forEach(opt => {
+                opt.addEventListener('click', (e) => {
+                    document.querySelectorAll('.paiement-option').forEach(o => o.classList.remove('selected'));
+                    opt.classList.add('selected');
+                    const radio = opt.querySelector('input[type="radio"]');
+                    if (radio) {
+                        radio.checked = true;
+                        this.paiementMethod = radio.value;
                     }
                 });
             });
-            
-            // Validation du formulaire carte bancaire
-            const form = document.getElementById('payment-form');
-            if (form) {
-                form.addEventListener('submit', function(e) {
-                    const selectedMethod = document.querySelector('input[name="payment_method"]:checked');
-                    
-                    if (!selectedMethod) {
-                        e.preventDefault();
-                        alert('Veuillez sélectionner une méthode de paiement.');
-                        return;
-                    }
-                    
-                    if (selectedMethod.value === 'carte') {
-                        let isValid = true;
-                        
-                        // Validation du numéro de carte
-                        const cardNumber = document.getElementById('card_number');
-                        if (cardNumber) {
-                            const cleaned = cardNumber.value.replace(/\s/g, '');
-                            if (!/^[0-9]{13,19}$/.test(cleaned)) {
-                                cardNumber.style.borderColor = '#e53e3e';
-                                isValid = false;
-                            } else {
-                                cardNumber.style.borderColor = '#ddd';
-                            }
-                        }
-                        
-                        // Validation de la date d'expiration
-                        const expiry = document.getElementById('card_expiry');
-                        if (expiry) {
-                            if (!/^(0[1-9]|1[0-2])\/[0-9]{2}$/.test(expiry.value)) {
-                                expiry.style.borderColor = '#e53e3e';
-                                isValid = false;
-                            } else {
-                                expiry.style.borderColor = '#ddd';
-                            }
-                        }
-                        
-                        // Validation du CVC
-                        const cvc = document.getElementById('card_cvc');
-                        if (cvc) {
-                            if (!/^[0-9]{3,4}$/.test(cvc.value)) {
-                                cvc.style.borderColor = '#e53e3e';
-                                isValid = false;
-                            } else {
-                                cvc.style.borderColor = '#ddd';
-                            }
-                        }
-                        
-                        if (!isValid) {
-                            e.preventDefault();
-                            alert('Veuillez vérifier les informations de carte bancaire.');
-                        }
-                    }
+
+            const btnPayer = document.getElementById('btnPayer');
+            if (btnPayer) {
+                btnPayer.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.procederPaiement();
                 });
             }
-        });
+        }
+
+        procederPaiement() {
+            if (!this.adresse || Object.keys(this.adresse).length === 0) {
+                this.showNotification("Veuillez renseigner une adresse de livraison", "error");
+                return;
+            }
+            
+            const btn = document.getElementById('btnPayer');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Redirection...';
+            btn.disabled = true;
+
+            if (this.paiementMethod === 'paypal') {
+                fetch(`${this.apiUrl}?action=redirect_paypal&commande=1&montant=${this.totaux.total}&_=${Date.now()}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.redirect_url) {
+                            window.location.href = data.redirect_url;
+                        } else {
+                            window.location.href = `paiement_paypal.php?commande=1&montant=${this.totaux.total}&from=paiement`;
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Erreur redirection:", error);
+                        window.location.href = `paiement_paypal.php?commande=1&montant=${this.totaux.total}&from=paiement`;
+                    });
+            } else {
+                fetch(`${this.apiUrl}?action=redirect_cb&commande=1&montant=${this.totaux.total}&_=${Date.now()}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.redirect_url) {
+                            window.location.href = data.redirect_url;
+                        } else {
+                            window.location.href = `paiement_cb.php?commande=1&montant=${this.totaux.total}&from=paiement`;
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Erreur redirection:", error);
+                        window.location.href = `paiement_cb.php?commande=1&montant=${this.totaux.total}&from=paiement`;
+                    });
+            }
+        }
+
+        initEvents() {
+            setInterval(() => this.updateCartCounter(), 30000);
+        }
+
+        async updateCartCounter() {
+            try {
+                const response = await fetch('panier.php?action=compter&_=' + Date.now());
+                const data = await response.json();
+                if (data.success) {
+                    const counter = document.getElementById('cartCount');
+                    if (counter) {
+                        counter.textContent = data.total > 99 ? '99+' : data.total;
+                    }
+                }
+            } catch (e) { }
+        }
+
+        showNotification(message, type = 'success') {
+            document.querySelectorAll('.notification').forEach(n => n.remove());
+            const notif = document.createElement('div');
+            notif.className = `notification ${type}`;
+            notif.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i> <span>${message}</span>`;
+            document.body.appendChild(notif);
+            setTimeout(() => notif.remove(), 3000);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        paiementManager = new PaiementManager();
+    });
     </script>
 </body>
 </html>

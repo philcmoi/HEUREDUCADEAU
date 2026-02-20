@@ -1,162 +1,92 @@
-[file name]: confirmation.php
-[file content begin]
 <?php
 session_start();
 
-// Vérifier si une commande a été créée
-$commande_numero = $_GET['cmd'] ?? null;
-$commande_data = $_SESSION['commande_confirmée'] ?? null;
+$id_commande = $_GET['commande'] ?? null;
 
-if (!$commande_numero && !$commande_data) {
-    header('Location: panier.php');
-    exit();
+if (!$id_commande) {
+    header('Location: index.html');
+    exit;
 }
 
-// Nettoyer la session après confirmation
-$adresse_livraison = $_SESSION['commande']['adresse_livraison'] ?? [];
-$total = $_SESSION['commande']['total'] ?? 0;
-$mode_livraison = $_SESSION['commande']['livraison']['mode'] ?? 'standard';
+// Récupérer les informations de la commande
+try {
+    $pdo = new PDO("mysql:host=localhost;dbname=heureducadeau;charset=utf8", "Philippe", "l@99339R");
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    
+    $sql = "SELECT 
+                c.id_commande,
+                c.numero_commande,
+                c.total_ttc,
+                c.date_commande,
+                c.statut_paiement,
+                c.mode_paiement,
+                cl.email,
+                cl.prenom,
+                cl.nom
+            FROM commandes c
+            JOIN clients cl ON c.id_client = cl.id_client
+            WHERE c.id_commande = ?";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$id_commande]);
+    $commande = $stmt->fetch();
+    
+    if (!$commande) {
+        die("Commande non trouvée");
+    }
+    
+    // Récupérer les articles
+    $sql_items = "SELECT nom_produit, quantite, prix_unitaire_ttc
+                  FROM commande_items
+                  WHERE id_commande = ?";
+    $stmt_items = $pdo->prepare($sql_items);
+    $stmt_items->execute([$id_commande]);
+    $articles = $stmt_items->fetchAll();
+    
+} catch (PDOException $e) {
+    die("Erreur: " . $e->getMessage());
+}
 
-// Nettoyer les données de session
-unset($_SESSION['commande']);
+// Vider le panier
 unset($_SESSION['panier']);
-unset($_SESSION['livraison_data']);
-unset($_SESSION['checkout_authorized']);
+unset($_SESSION['panier_id']);
+unset($_SESSION['adresse_livraison']);
+unset($_SESSION['commande']);
 ?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Confirmation de commande - HEURE DU CADEAU</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmation de commande</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f8f9fa;
-            margin: 0;
-            padding: 0;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        
-        .confirmation-container {
-            background: white;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-            max-width: 600px;
-            width: 100%;
-            text-align: center;
-        }
-        
-        .success-icon {
-            color: #38a169;
-            font-size: 60px;
-            margin-bottom: 20px;
-        }
-        
-        h1 {
-            color: #2d3748;
-            margin-bottom: 20px;
-        }
-        
-        .commande-numero {
-            background: #f7fafc;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-            font-size: 18px;
-            font-weight: bold;
-            color: #5a67d8;
-        }
-        
-        .adresse-box {
-            background: #f7fafc;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-            text-align: left;
-        }
-        
-        .total-box {
-            background: #e6fffa;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-            font-size: 20px;
-            font-weight: bold;
-            color: #234e52;
-        }
-        
-        .btn {
-            display: inline-block;
-            background: #5a67d8;
-            color: white;
-            padding: 15px 30px;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: bold;
-            margin-top: 20px;
-            transition: all 0.3s;
-        }
-        
-        .btn:hover {
-            background: #4c51bf;
-            transform: translateY(-2px);
-        }
-        
-        .info-box {
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #e2e8f0;
-            color: #718096;
-            font-size: 14px;
-        }
+        body { font-family: Arial, sans-serif; background: #f9f9f9; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { max-width: 600px; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); text-align: center; }
+        .success { color: #28a745; font-size: 64px; margin-bottom: 20px; }
+        h1 { color: #333; margin-bottom: 20px; }
+        .details { background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: left; margin: 20px 0; }
+        .btn { display: inline-block; background: #5a67d8; color: white; padding: 12px 30px; text-decoration: none; border-radius: 4px; margin-top: 20px; }
+        .btn:hover { background: #4c51bf; }
     </style>
 </head>
 <body>
-    <div class="confirmation-container">
-        <div class="success-icon">
-            <i class="fas fa-check-circle"></i>
+    <div class="container">
+        <div class="success">✓</div>
+        <h1>Merci pour votre commande !</h1>
+        
+        <div class="details">
+            <p><strong>Numéro de commande :</strong> <?= htmlspecialchars($commande['numero_commande']) ?></p>
+            <p><strong>Date :</strong> <?= date('d/m/Y H:i', strtotime($commande['date_commande'])) ?></p>
+            <p><strong>Montant total :</strong> <?= number_format($commande['total_ttc'], 2, ',', ' ') ?> €</p>
+            <p><strong>Mode de paiement :</strong> 
+                <?= $commande['mode_paiement'] === 'paypal' ? 'PayPal' : 'Carte bancaire' ?>
+            </p>
+            <p><strong>Statut :</strong> Confirmée</p>
         </div>
         
-        <h1>Commande confirmée !</h1>
-        <p>Merci pour votre commande. Nous vous avons envoyé un email de confirmation.</p>
+        <p>Un email de confirmation vous a été envoyé à <strong><?= htmlspecialchars($commande['email']) ?></strong></p>
         
-        <div class="commande-numero">
-            Numéro de commande : <?php echo htmlspecialchars($commande_numero ?: 'CMD-' . time()); ?>
-        </div>
-        
-        <?php if (!empty($adresse_livraison)): ?>
-        <div class="adresse-box">
-            <h3><i class="fas fa-truck"></i> Adresse de livraison</h3>
-            <p><strong><?php echo htmlspecialchars(($adresse_livraison['prenom'] ?? '') . ' ' . ($adresse_livraison['nom'] ?? '')); ?></strong></p>
-            <p><?php echo htmlspecialchars($adresse_livraison['adresse'] ?? ''); ?></p>
-            <?php if (!empty($adresse_livraison['complement'])): ?>
-            <p><?php echo htmlspecialchars($adresse_livraison['complement']); ?></p>
-            <?php endif; ?>
-            <p><?php echo htmlspecialchars(($adresse_livraison['code_postal'] ?? '') . ' ' . ($adresse_livraison['ville'] ?? '')); ?></p>
-            <p><?php echo htmlspecialchars($adresse_livraison['pays'] ?? 'France'); ?></p>
-            <p><i class="fas fa-envelope"></i> <?php echo htmlspecialchars($adresse_livraison['email'] ?? ''); ?></p>
-        </div>
-        <?php endif; ?>
-        
-        <div class="total-box">
-            <p>Total payé : <?php echo number_format($total, 2, ',', ' '); ?> €</p>
-            <p>Mode de livraison : <?php echo htmlspecialchars(ucfirst($mode_livraison)); ?></p>
-        </div>
-        
-        <div class="info-box">
-            <p><i class="fas fa-info-circle"></i> Vous recevrez un email de suivi lorsque votre commande sera expédiée.</p>
-        </div>
-        
-        <a href="index.php" class="btn">
-            <i class="fas fa-home"></i> Retour à l'accueil
-        </a>
+        <a href="index.html" class="btn">Retour à l'accueil</a>
     </div>
 </body>
 </html>
-[file content end]
