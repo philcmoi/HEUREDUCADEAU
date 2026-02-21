@@ -100,6 +100,10 @@ if (!isset($_SESSION[SESSION_KEY_COMMANDE])) {
         
         $id_commande = $pdo->lastInsertId();
         
+        if (!$id_commande) {
+            throw new Exception("Échec de la création de la commande - ID non généré");
+        }
+        
         // Récupérer le numéro de commande généré par le trigger
         $stmt = $pdo->prepare("SELECT numero_commande FROM commandes WHERE id_commande = ?");
         $stmt->execute([$id_commande]);
@@ -114,7 +118,7 @@ if (!isset($_SESSION[SESSION_KEY_COMMANDE])) {
         ");
         
         foreach ($items_data as $item) {
-            $stmt_item->execute([
+            $result = $stmt_item->execute([
                 $id_commande,
                 $item['id_produit'],
                 $item['reference'],
@@ -124,6 +128,10 @@ if (!isset($_SESSION[SESSION_KEY_COMMANDE])) {
                 $item['prix_unitaire_ttc'],
                 20.00
             ]);
+            
+            if (!$result) {
+                throw new Exception("Échec insertion article: " . $item['nom']);
+            }
         }
         
         // Mettre à jour le statut du panier en BDD
