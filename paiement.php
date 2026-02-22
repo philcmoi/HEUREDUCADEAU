@@ -671,46 +671,23 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
         }
 
         procederPaiement() {
-            if (!this.adresse || Object.keys(this.adresse).length === 0) {
-                this.showNotification("Veuillez renseigner une adresse de livraison", "error");
-                return;
-            }
-            
-            const btn = document.getElementById('btnPayer');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Redirection...';
-            btn.disabled = true;
+    if (!this.adresse || Object.keys(this.adresse).length === 0) {
+        this.showNotification("Veuillez renseigner une adresse de livraison", "error");
+        return;
+    }
+    
+    const btn = document.getElementById('btnPayer');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Redirection...';
+    btn.disabled = true;
 
-            if (this.paiementMethod === 'paypal') {
-                fetch(`${this.apiUrl}?action=redirect_paypal&commande=1&montant=${this.totaux.total}&_=${Date.now()}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success && data.redirect_url) {
-                            window.location.href = data.redirect_url;
-                        } else {
-                            window.location.href = `paiement_paypal.php?commande=1&montant=${this.totaux.total}&from=paiement`;
-                        }
-                    })
-                    .catch(error => {
-                        console.error("Erreur redirection:", error);
-                        window.location.href = `paiement_paypal.php?commande=1&montant=${this.totaux.total}&from=paiement`;
-                    });
-            } else {
-                fetch(`${this.apiUrl}?action=redirect_cb&commande=1&montant=${this.totaux.total}&_=${Date.now()}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success && data.redirect_url) {
-                            window.location.href = data.redirect_url;
-                        } else {
-                            window.location.href = `paiement_cb.php?commande=1&montant=${this.totaux.total}&from=paiement`;
-                        }
-                    })
-                    .catch(error => {
-                        console.error("Erreur redirection:", error);
-                        window.location.href = `paiement_cb.php?commande=1&montant=${this.totaux.total}&from=paiement`;
-                    });
-            }
-        }
+    if (this.paiementMethod === 'paypal') {
+        // Redirection directe au lieu de fetch pour éviter les problèmes CORS
+        window.location.href = `paiement_paypal.php?commande=1&montant=${this.totaux.total}&from=paiement&_=${Date.now()}`;
+    } else {
+        window.location.href = `paiement_cb.php?commande=1&montant=${this.totaux.total}&from=paiement&_=${Date.now()}`;
+    }
+}
 
         initEvents() {
             setInterval(() => this.updateCartCounter(), 30000);
