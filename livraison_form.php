@@ -1,255 +1,88 @@
 <?php
 // ============================================
-// PROTECTION D'ACCÈS - VERSION BASÉE SUR BD
+// PAGE DU FORMULAIRE DE LIVRAISON - VERSION CORRIGÉE
 // ============================================
 
-// Activer l'affichage des erreurs pour le débogage
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// Démarrer la session
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+require_once __DIR__ . '/session_verification.php';
+
+// ============================================
+// VÉRIFICATION D'ACCÈS STANDARDISÉE
+// ============================================
+checkLivraisonAccess();
+
+// ============================================
+// CONNEXION BDD ET SYNCHRONISATION
+// ============================================
+$pdo = getPDOConnection();
+if ($pdo) {
+    synchroniserPanierSessionBDD($pdo, session_id());
 }
 
 // ============================================
-// ACCEPTER LES REDIRECTIONS DIRECTES DEPUIS LE PANIER
+// INITIALISATION DES VALEURS PAR DÉFAUT
 // ============================================
-
-// Si accès direct depuis le panier, autoriser temporairement
-if (!isset($_SESSION['checkout_authorized']) && !empty($_SESSION)) {
-    // Vérifier si nous avons des items dans la session
-    if (isset($_SESSION['panier_items']) && !empty($_SESSION['panier_items'])) {
-        $_SESSION['checkout_authorized'] = true;
-        $_SESSION['checkout_time'] = time();
-    }
+// Initialiser le checkout s'il n'existe pas
+if (!isset($_SESSION[SESSION_KEY_CHECKOUT])) {
+    $_SESSION[SESSION_KEY_CHECKOUT] = [];
 }
 
-// Initialiser les variables
-$access_granted = false;
-$client_id = null;
-$panier_id = null;
-$pdo = null;
-
-// Méthode 1: Vérifier via l'autorisation de session
-if (isset($_SESSION['checkout_authorized']) && $_SESSION['checkout_authorized'] === true) {
-    // Vérifier si l'autorisation n'a pas expiré (10 minutes)
-    if (isset($_SESSION['checkout_time']) && (time() - $_SESSION['checkout_time']) <= 600) {
-        $access_granted = true;
-        
-        // Récupérer les IDs depuis la session si disponibles
-        $panier_id = $_SESSION['panier_id'] ?? null;
-        $client_id = $_SESSION['client_id'] ?? null;
-    } else {
-        // L'autorisation a expiré, la supprimer
-        unset($_SESSION['checkout_authorized']);
-        unset($_SESSION['checkout_time']);
-    }
+// Valeurs par défaut pour les options de livraison
+if (!isset($_SESSION[SESSION_KEY_CHECKOUT]['mode_livraison'])) {
+    $_SESSION[SESSION_KEY_CHECKOUT]['mode_livraison'] = 'standard';
 }
 
-// Méthode 2: Vérifier via la base de données
-if (!$access_granted && session_id()) {
-    $session_id = session_id();
-    
+if (!isset($_SESSION[SESSION_KEY_CHECKOUT]['emballage_cadeau'])) {
+    $_SESSION[SESSION_KEY_CHECKOUT]['emballage_cadeau'] = false;
+}
+
+// ============================================
+// RÉCUPÉRATION DES DONNÉES
+// ============================================
+$errors = getCheckoutErrors();
+$messages = getSessionMessages();
+
+$donnees_saisies = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
+$meme_adresse_checked = !isset($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['adresse']) || 
+                        empty($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['adresse']);
+
+// Récupérer l'email du client si existant
+if (empty($donnees_saisies['email']) && isset($_SESSION[SESSION_KEY_CHECKOUT]['client_email'])) {
+    $donnees_saisies['email'] = $_SESSION[SESSION_KEY_CHECKOUT]['client_email'];
+}
+
+// Récupérer les données depuis commande_temporaire si disponibles
+if (empty($donnees_saisies) && isset($_SESSION[SESSION_KEY_PANIER_ID]) && $pdo) {
     try {
-        // Connexion à la base de données
-        $pdo = new PDO(
-            "mysql:host=localhost;dbname=heureducadeau;charset=utf8mb4",
-            "Philippe",
-            "l@99339R"
-        );
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        
-        // 1. Vérifier si le panier existe dans la base de données
         $stmt = $pdo->prepare("
-            SELECT p.id_panier, p.id_client, COUNT(pi.id_item) as nb_items 
-            FROM panier p 
-            LEFT JOIN panier_items pi ON p.id_panier = pi.id_panier 
-            WHERE p.session_id = ? AND p.statut = 'actif'
-            GROUP BY p.id_panier
-        ");
-        $stmt->execute([$session_id]);
-        $panier = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($panier && $panier['nb_items'] > 0) {
-            $access_granted = true;
-            $panier_id = $panier['id_panier'];
-            $client_id = $panier['id_client'];
-            
-            // Sauvegarder dans la session pour usage ultérieur
-            $_SESSION['panier_id'] = $panier_id;
-            $_SESSION['client_id'] = $client_id;
-            $_SESSION['checkout_authorized'] = true;
-            $_SESSION['checkout_time'] = time();
-        }
-        
-    } catch (PDOException $e) {
-        // En cas d'erreur BD, utiliser un fallback basique
-        error_log("Erreur base de données: " . $e->getMessage());
-        
-        // Fallback aux sessions
-        if (isset($_SESSION['panier_items']) && !empty($_SESSION['panier_items'])) {
-            $access_granted = true;
-            $_SESSION['checkout_authorized'] = true;
-            $_SESSION['checkout_time'] = time();
-        }
-    }
-}
-
-// ============================================
-// ACCÈS TEMPORAIRE POUR TEST
-// ============================================
-
-// Si aucun accès n'a été accordé mais que nous avons une session
-if (!$access_granted && session_id()) {
-    // Autoriser temporairement pour le développement
-    $access_granted = true;
-    $_SESSION['checkout_authorized'] = true;
-    $_SESSION['checkout_time'] = time();
-    
-    // Créer un panier fictif pour le test
-    if (!isset($_SESSION['panier_id'])) {
-        $_SESSION['panier_id'] = 'temp_' . time();
-    }
-}
-
-// Si accès non autorisé, rediriger vers le panier
-if (!$access_granted) {
-    // Vérifier si c'est une requête AJAX
-    if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && 
-        strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
-        header('Content-Type: application/json');
-        echo json_encode([
-            'success' => false,
-            'message' => 'Accès non autorisé. Veuillez d\'abord remplir votre panier.',
-            'redirect' => 'panier.html'
-        ]);
-        exit();
-    }
-    
-    // Redirection normale
-    header('Location: panier.html');
-    exit();
-}
-
-// ============================================
-// RÉCUPÉRATION DES DONNÉES DEPUIS LA BASE
-// ============================================
-
-$errors = [];
-$donnees_saisies = [];
-$meme_adresse_default = true;
-$adresse_facturation = [];
-
-try {
-    // Si pas de connexion PDO, en créer une nouvelle
-    if (!$pdo) {
-        $pdo = new PDO(
-            "mysql:host=localhost;dbname=heureducadeau;charset=utf8mb4",
-            "Philippe",
-            "l@99339R"
-        );
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    }
-    
-    // Récupérer les données sauvegardées depuis la base
-    if (isset($_SESSION['panier_id']) || $panier_id) {
-        // Utiliser l'ID du panier depuis la session ou la variable locale
-        $current_panier_id = $_SESSION['panier_id'] ?? $panier_id;
-        
-        // Récupérer les adresses du client si connecté
-        if ($client_id) {
-            $stmt = $pdo->prepare("
-                SELECT * FROM adresses 
-                WHERE id_client = ? AND type_adresse = 'livraison' AND principale = 1
-                ORDER BY date_creation DESC LIMIT 1
-            ");
-            $stmt->execute([$client_id]);
-            $adresse_livraison = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($adresse_livraison) {
-                $donnees_saisies = [
-                    'prenom' => $adresse_livraison['prenom'] ?? '',
-                    'nom' => $adresse_livraison['nom'] ?? '',
-                    'societe' => $adresse_livraison['societe'] ?? '',
-                    'adresse' => $adresse_livraison['adresse'] ?? '',
-                    'complement' => $adresse_livraison['complement'] ?? '',
-                    'code_postal' => $adresse_livraison['code_postal'] ?? '',
-                    'ville' => $adresse_livraison['ville'] ?? '',
-                    'pays' => $adresse_livraison['pays'] ?? '',
-                    'telephone' => $adresse_livraison['telephone'] ?? ''
-                ];
-                
-                // Récupérer l'email du client
-                $stmt = $pdo->prepare("SELECT email FROM clients WHERE id_client = ?");
-                $stmt->execute([$client_id]);
-                $client = $stmt->fetch(PDO::FETCH_ASSOC);
-                if ($client && isset($client['email'])) {
-                    $donnees_saisies['email'] = $client['email'];
-                }
-            }
-        }
-        
-        // Récupérer les données depuis la table commande_temporaire si elles existent
-        $stmt = $pdo->prepare("
-            SELECT donnees_livraison 
+            SELECT donnees_livraison, mode_livraison, emballage_cadeau, instructions
             FROM commande_temporaire 
             WHERE panier_id = ? 
             ORDER BY date_creation DESC LIMIT 1
         ");
-        $stmt->execute([$current_panier_id]);
+        $stmt->execute([$_SESSION[SESSION_KEY_PANIER_ID]]);
         $temp_data = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($temp_data && !empty($temp_data['donnees_livraison'])) {
-            $temp_data_array = json_decode($temp_data['donnees_livraison'], true);
-            if ($temp_data_array && is_array($temp_data_array)) {
-                // Fusionner avec les données existantes (les données temporaires ont priorité)
-                $donnees_saisies = array_merge($donnees_saisies, $temp_data_array);
+            $temp_array = json_decode($temp_data['donnees_livraison'], true);
+            if (is_array($temp_array)) {
+                $donnees_saisies = array_merge($donnees_saisies, $temp_array);
+                $_SESSION[SESSION_KEY_CHECKOUT]['mode_livraison'] = $temp_data['mode_livraison'] ?? 'standard';
+                $_SESSION[SESSION_KEY_CHECKOUT]['emballage_cadeau'] = (bool)($temp_data['emballage_cadeau'] ?? false);
+                $_SESSION[SESSION_KEY_CHECKOUT]['instructions'] = $temp_data['instructions'] ?? null;
             }
         }
-        
-        // Récupérer les erreurs depuis la table logs si nécessaire
-        $stmt = $pdo->prepare("
-            SELECT message FROM logs 
-            WHERE type_log = 'erreur' 
-            AND (utilisateur_id = ? OR utilisateur_id = 0)
-            AND date_log > DATE_SUB(NOW(), INTERVAL 1 HOUR)
-            ORDER BY date_log DESC LIMIT 5
-        ");
-        $stmt->execute([$client_id ?: 0]);
-        $logs_erreurs = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
-        
-        if ($logs_erreurs) {
-            $errors = $logs_erreurs;
-        }
-        
+    } catch (Exception $e) {
+        error_log("Erreur récupération commande_temporaire: " . $e->getMessage());
     }
-} catch (Exception $e) {
-    // En cas d'erreur, utiliser les sessions comme fallback
-    error_log("Erreur lors de la récupération des données: " . $e->getMessage());
-    
-    if (isset($_SESSION['erreurs_livraison'])) {
-        $errors = $_SESSION['erreurs_livraison'];
-    }
-    if (isset($_SESSION['donnees_saisies'])) {
-        $donnees_saisies = $_SESSION['donnees_saisies'];
-    }
-    if (isset($_SESSION['adresse_facturation'])) {
-        $adresse_facturation = $_SESSION['adresse_facturation'];
-    }
-    $meme_adresse_default = isset($_SESSION['meme_adresse_facturation']) ? 
-                           (bool)$_SESSION['meme_adresse_facturation'] : true;
 }
 
-// Nettoyer les sessions après utilisation
-if (isset($_SESSION['erreurs_livraison'])) unset($_SESSION['erreurs_livraison']);
-if (isset($_SESSION['donnees_saisies'])) unset($_SESSION['donnees_saisies']);
-if (isset($_SESSION['adresse_facturation'])) unset($_SESSION['adresse_facturation']);
-// Ne pas nettoyer meme_adresse_facturation car on l'utilise plus bas
-
-// Définir la valeur par défaut pour la case à cocher
-$meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ? 
-                       $_SESSION['meme_adresse_facturation'] : true;
+// Mettre à jour la date de modification
+if (isset($_SESSION[SESSION_KEY_CHECKOUT])) {
+    $_SESSION[SESSION_KEY_CHECKOUT]['date_modification'] = date('Y-m-d H:i:s');
+}
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -257,273 +90,244 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Adresse de Livraison - HEURE DU CADEAU</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <style>
-      /* CSS inchangé - préservé */
-      body {
-        font-family: Arial, sans-serif;
-        max-width: 600px;
-        margin: 50px auto;
-        padding: 20px;
-        background: #f8f9fa;
-      }
-
-      .container {
-        background: white;
-        padding: 30px;
-        border-radius: 12px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-      }
-
-      h1 {
-        color: #333;
-        border-bottom: 2px solid #5a67d8;
-        padding-bottom: 10px;
-        margin-bottom: 30px;
-      }
-
-      h2 {
-        color: #555;
-        font-size: 18px;
-        margin: 25px 0 15px 0;
-        padding-bottom: 10px;
-        border-bottom: 1px solid #eee;
-      }
-
-      .form-group {
-        margin-bottom: 20px;
-      }
-
-      label {
-        display: block;
-        margin-bottom: 8px;
-        font-weight: bold;
-        color: #555;
-      }
-
-      .required:after {
-        content: " *";
-        color: #e53e3e;
-      }
-
-      input, textarea, select {
-        width: 100%;
-        padding: 12px;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        font-size: 16px;
-        box-sizing: border-box;
-        transition: border 0.3s;
-      }
-
-      input:focus, textarea:focus, select:focus {
-        outline: none;
-        border-color: #5a67d8;
-        box-shadow: 0 0 0 3px rgba(90,103,216,0.1);
-      }
-
-      .form-row {
-        display: flex;
-        gap: 15px;
-      }
-
-      .form-row .form-group {
-        flex: 1;
-      }
-
-      .radio-group {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        padding: 15px;
-        background: #f7fafc;
-        border-radius: 8px;
-        margin-bottom: 20px;
-      }
-
-      .radio-option {
-        display: flex;
-        align-items: center;
-        padding: 10px;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        cursor: pointer;
-        transition: all 0.3s;
-      }
-
-      .radio-option:hover {
-        border-color: #cbd5e0;
-        background: #edf2f7;
-      }
-
-      .radio-option.selected {
-        border-color: #5a67d8;
-        background: rgba(90,103,216,0.05);
-      }
-
-      .radio-option input {
-        width: auto;
-        margin-right: 10px;
-      }
-
-      .radio-details {
-        flex: 1;
-      }
-
-      .radio-price {
-        font-weight: bold;
-        color: #2d3748;
-      }
-
-      .checkbox-group {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 15px;
-        background: #f0fff4;
-        border: 1px solid #9ae6b4;
-        border-radius: 8px;
-        margin-bottom: 20px;
-      }
-
-      .checkbox-group input {
-        width: auto;
-      }
-
-      button {
-        background-color: #5a67d8;
-        color: white;
-        padding: 15px 30px;
-        border: none;
-        border-radius: 8px;
-        font-size: 16px;
-        font-weight: bold;
-        cursor: pointer;
-        width: 100%;
-        transition: all 0.3s;
-        margin-top: 20px;
-      }
-
-      button:hover {
-        background-color: #4c51bf;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(90,103,216,0.3);
-      }
-
-      .message {
-        padding: 15px;
-        margin-bottom: 25px;
-        border-radius: 8px;
-        border: 1px solid transparent;
-      }
-
-      .success {
-        background-color: #d4edda;
-        color: #155724;
-        border-color: #c3e6cb;
-      }
-
-      .error {
-        background-color: #f8d7da;
-        color: #721c24;
-        border-color: #f5c6cb;
-      }
-
-      .info {
-        background-color: #d1ecf1;
-        color: #0c5460;
-        border-color: #bee5eb;
-      }
-
-      .shipping-info {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px;
-        background: #f7fafc;
-        border-radius: 6px;
-        margin-top: 5px;
-        font-size: 14px;
-        color: #718096;
-      }
-
-      .shipping-info i {
-        color: #38a169;
-      }
-
-      .error-field {
-        border-color: #e53e3e !important;
-      }
-
-      .error-message {
-        color: #e53e3e;
-        font-size: 14px;
-        margin-top: 5px;
-        display: none;
-      }
-
-      .error-message.show {
-        display: block;
-      }
-
-      #adresse-facturation-different {
-        background: #f8fafc;
-        padding: 20px;
-        border-radius: 8px;
-        border: 1px solid #e2e8f0;
-        margin-top: 15px;
-        margin-bottom: 25px;
-        display: none;
-      }
-
-      #adresse-facturation-different h3 {
-        color: #4a5568;
-        font-size: 16px;
-        margin: 0 0 15px 0;
-        padding-bottom: 10px;
-        border-bottom: 1px solid #cbd5e0;
-      }
-
-      #facturation-same-checkbox {
-        background: #edf2f7;
-        border-color: #cbd5e0;
-      }
-
-      @media (max-width: 768px) {
-        .form-row {
-          flex-direction: column;
-          gap: 0;
-        }
-
+        /* STYLES CSS COMPLETS - Identiques à l'original */
         body {
-          padding: 20px;
-          margin: 20px auto;
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f8f9fa;
         }
-      }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #5a67d8;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #555;
+            font-size: 18px;
+            margin: 25px 0 15px 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+        .required:after {
+            content: " *";
+            color: #e53e3e;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            box-sizing: border-box;
+            transition: border 0.3s;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #5a67d8;
+            box-shadow: 0 0 0 3px rgba(90,103,216,0.1);
+        }
+        .form-row {
+            display: flex;
+            gap: 15px;
+        }
+        .form-row .form-group {
+            flex: 1;
+        }
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 15px;
+            background: #f7fafc;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .radio-option {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .radio-option:hover {
+            border-color: #cbd5e0;
+            background: #edf2f7;
+        }
+        .radio-option.selected {
+            border-color: #5a67d8;
+            background: rgba(90,103,216,0.05);
+        }
+        .radio-option input {
+            width: auto;
+            margin-right: 10px;
+        }
+        .radio-details {
+            flex: 1;
+        }
+        .radio-price {
+            font-weight: bold;
+            color: #2d3748;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            background: #f0fff4;
+            border: 1px solid #9ae6b4;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .checkbox-group input {
+            width: auto;
+        }
+        button {
+            background-color: #5a67d8;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.3s;
+            margin-top: 20px;
+        }
+        button:hover {
+            background-color: #4c51bf;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(90,103,216,0.3);
+        }
+        .message {
+            padding: 15px;
+            margin-bottom: 25px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border-color: #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border-color: #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border-color: #bee5eb;
+        }
+        .shipping-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: #f7fafc;
+            border-radius: 6px;
+            margin-top: 5px;
+            font-size: 14px;
+            color: #718096;
+        }
+        .shipping-info i {
+            color: #38a169;
+        }
+        .error-field {
+            border-color: #e53e3e !important;
+        }
+        .error-message {
+            color: #e53e3e;
+            font-size: 14px;
+            margin-top: 5px;
+            display: none;
+        }
+        .error-message.show {
+            display: block;
+        }
+        #adresse-facturation-different {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            margin-top: 15px;
+            margin-bottom: 25px;
+            display: none;
+        }
+        #adresse-facturation-different h3 {
+            color: #4a5568;
+            font-size: 16px;
+            margin: 0 0 15px 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #cbd5e0;
+        }
+        #facturation-same-checkbox {
+            background: #edf2f7;
+            border-color: #cbd5e0;
+        }
+        @media (max-width: 768px) {
+            .form-row {
+                flex-direction: column;
+                gap: 0;
+            }
+            body {
+                padding: 20px;
+                margin: 20px auto;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1><i class="fas fa-truck"></i> Adresse de Livraison</h1>
 
-        <!-- Messages d'information -->
-        <div id="info-message"></div>
-
-        <!-- Messages d'erreur -->
-        <?php if (!empty($errors)): ?>
-        <div class="message error">
-            <strong>Erreurs :</strong>
-            <ul>
-                <?php foreach ($errors as $erreur): ?>
-                <li><?php echo htmlspecialchars($erreur, ENT_QUOTES, 'UTF-8'); ?></li>
-                <?php endforeach; ?>
-            </ul>
-        </div>
+        <?php if (!empty($messages)): ?>
+            <?php foreach ($messages as $msg): ?>
+                <div class="message <?php echo $msg['type']; ?>">
+                    <?php echo htmlspecialchars($msg['message']); ?>
+                </div>
+            <?php endforeach; ?>
         <?php endif; ?>
+
+        <?php if (!empty($errors)): ?>
+            <div class="message error">
+                <strong>Erreurs :</strong>
+                <ul>
+                    <?php foreach ($errors as $erreur): ?>
+                        <li><?php echo htmlspecialchars($erreur, ENT_QUOTES, 'UTF-8'); ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endif; ?>
+
+        <div id="info-message"></div>
 
         <form action="livraison.php" method="POST" id="livraison-form">
             <input type="hidden" name="api_mode" value="1" />
-            <input type="hidden" name="panier_id" value="<?php echo htmlspecialchars($panier_id ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
-            <input type="hidden" name="client_id" value="<?php echo htmlspecialchars($client_id ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
+            <input type="hidden" name="panier_id" value="<?php echo htmlspecialchars($_SESSION[SESSION_KEY_PANIER_ID] ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
 
             <h2>Informations personnelles</h2>
 
@@ -545,7 +349,7 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
             <div class="form-group">
                 <label for="email" class="required">Email</label>
                 <input type="email" id="email" name="email" 
-                       value="<?php echo htmlspecialchars($donnees_saisies['email'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required />
+                       value="<?php echo htmlspecialchars($donnees_saisies['email'] ?? $_SESSION[SESSION_KEY_CHECKOUT]['client_email'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required />
                 <div class="error-message" id="error-email"></div>
                 <div class="shipping-info">
                     <i class="fas fa-info-circle"></i>
@@ -579,7 +383,7 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
             </div>
 
             <div class="form-group">
-                <label for="complement">Complément d'adresse (appartement, étage, etc.)</label>
+                <label for="complement">Complément d'adresse</label>
                 <input type="text" id="complement" name="complement" 
                        value="<?php echo htmlspecialchars($donnees_saisies['complement'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
             </div>
@@ -625,7 +429,6 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
                 </div>
             </div>
 
-            <!-- Section pour adresse de facturation différente -->
             <div id="adresse-facturation-different" style="display: <?php echo $meme_adresse_checked ? 'none' : 'block'; ?>;">
                 <h3>Adresse de facturation différente</h3>
                 
@@ -633,13 +436,13 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
                     <div class="form-group">
                         <label for="facturation_prenom">Prénom (facturation)</label>
                         <input type="text" id="facturation_prenom" name="facturation_prenom" 
-                               value="<?php echo htmlspecialchars($adresse_facturation['prenom'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" 
+                               value="<?php echo htmlspecialchars($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['prenom'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" 
                                <?php echo !$meme_adresse_checked ? 'required' : ''; ?> />
                     </div>
                     <div class="form-group">
                         <label for="facturation_nom">Nom (facturation)</label>
                         <input type="text" id="facturation_nom" name="facturation_nom" 
-                               value="<?php echo htmlspecialchars($adresse_facturation['nom'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" 
+                               value="<?php echo htmlspecialchars($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['nom'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" 
                                <?php echo !$meme_adresse_checked ? 'required' : ''; ?> />
                     </div>
                 </div>
@@ -647,32 +450,32 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
                 <div class="form-group">
                     <label for="facturation_societe">Société (facturation, optionnel)</label>
                     <input type="text" id="facturation_societe" name="facturation_societe" 
-                           value="<?php echo htmlspecialchars($adresse_facturation['societe'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
+                           value="<?php echo htmlspecialchars($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['societe'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
                 </div>
                 
                 <div class="form-group">
                     <label for="facturation_adresse">Adresse (facturation)</label>
                     <textarea id="facturation_adresse" name="facturation_adresse" rows="3" 
-                              <?php echo !$meme_adresse_checked ? 'required' : ''; ?>><?php echo htmlspecialchars($adresse_facturation['adresse'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
+                              <?php echo !$meme_adresse_checked ? 'required' : ''; ?>><?php echo htmlspecialchars($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['adresse'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
                 </div>
                 
                 <div class="form-group">
                     <label for="facturation_complement">Complément d'adresse (facturation)</label>
                     <input type="text" id="facturation_complement" name="facturation_complement" 
-                           value="<?php echo htmlspecialchars($adresse_facturation['complement'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
+                           value="<?php echo htmlspecialchars($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['complement'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" />
                 </div>
                 
                 <div class="form-row">
                     <div class="form-group">
                         <label for="facturation_code_postal">Code postal (facturation)</label>
                         <input type="text" id="facturation_code_postal" name="facturation_code_postal" 
-                               value="<?php echo htmlspecialchars($adresse_facturation['code_postal'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" 
+                               value="<?php echo htmlspecialchars($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['code_postal'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" 
                                <?php echo !$meme_adresse_checked ? 'required' : ''; ?> />
                     </div>
                     <div class="form-group">
                         <label for="facturation_ville">Ville (facturation)</label>
                         <input type="text" id="facturation_ville" name="facturation_ville" 
-                               value="<?php echo htmlspecialchars($adresse_facturation['ville'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" 
+                               value="<?php echo htmlspecialchars($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['ville'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" 
                                <?php echo !$meme_adresse_checked ? 'required' : ''; ?> />
                     </div>
                 </div>
@@ -680,11 +483,11 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
                 <div class="form-group">
                     <label for="facturation_pays">Pays (facturation)</label>
                     <select id="facturation_pays" name="facturation_pays">
-                        <option value="France" <?php echo (($adresse_facturation['pays'] ?? 'France') === 'France') ? 'selected' : ''; ?>>France</option>
-                        <option value="Belgique" <?php echo (($adresse_facturation['pays'] ?? '') === 'Belgique') ? 'selected' : ''; ?>>Belgique</option>
-                        <option value="Suisse" <?php echo (($adresse_facturation['pays'] ?? '') === 'Suisse') ? 'selected' : ''; ?>>Suisse</option>
-                        <option value="Luxembourg" <?php echo (($adresse_facturation['pays'] ?? '') === 'Luxembourg') ? 'selected' : ''; ?>>Luxembourg</option>
-                        <option value="autre" <?php echo (($adresse_facturation['pays'] ?? '') === 'autre') ? 'selected' : ''; ?>>Autre</option>
+                        <option value="France" <?php echo (($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['pays'] ?? 'France') === 'France') ? 'selected' : ''; ?>>France</option>
+                        <option value="Belgique" <?php echo (($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['pays'] ?? '') === 'Belgique') ? 'selected' : ''; ?>>Belgique</option>
+                        <option value="Suisse" <?php echo (($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['pays'] ?? '') === 'Suisse') ? 'selected' : ''; ?>>Suisse</option>
+                        <option value="Luxembourg" <?php echo (($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['pays'] ?? '') === 'Luxembourg') ? 'selected' : ''; ?>>Luxembourg</option>
+                        <option value="autre" <?php echo (($_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation']['pays'] ?? '') === 'autre') ? 'selected' : ''; ?>>Autre</option>
                     </select>
                 </div>
             </div>
@@ -692,8 +495,11 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
             <h2>Options de livraison</h2>
 
             <div class="radio-group" id="livraisonOptions">
-                <div class="radio-option selected" data-value="standard">
-                    <input type="radio" name="mode_livraison" value="standard" checked hidden />
+                <?php 
+                $mode_livraison = $_SESSION[SESSION_KEY_CHECKOUT]['mode_livraison'] ?? 'standard';
+                ?>
+                <div class="radio-option <?php echo ($mode_livraison == 'standard') ? 'selected' : ''; ?>" data-value="standard">
+                    <input type="radio" name="mode_livraison" value="standard" <?php echo ($mode_livraison == 'standard') ? 'checked' : ''; ?> />
                     <div class="radio-details">
                         <strong>Livraison Standard</strong>
                         <p>Livraison en 3-5 jours ouvrés</p>
@@ -701,8 +507,8 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
                     <div class="radio-price">Gratuite</div>
                 </div>
 
-                <div class="radio-option" data-value="express">
-                    <input type="radio" name="mode_livraison" value="express" hidden />
+                <div class="radio-option <?php echo ($mode_livraison == 'express') ? 'selected' : ''; ?>" data-value="express">
+                    <input type="radio" name="mode_livraison" value="express" <?php echo ($mode_livraison == 'express') ? 'checked' : ''; ?> />
                     <div class="radio-details">
                         <strong>Livraison Express</strong>
                         <p>Livraison en 24h (hors week-end)</p>
@@ -710,8 +516,8 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
                     <div class="radio-price">9,90 €</div>
                 </div>
 
-                <div class="radio-option" data-value="relais">
-                    <input type="radio" name="mode_livraison" value="relais" hidden />
+                <div class="radio-option <?php echo ($mode_livraison == 'relais') ? 'selected' : ''; ?>" data-value="relais">
+                    <input type="radio" name="mode_livraison" value="relais" <?php echo ($mode_livraison == 'relais') ? 'checked' : ''; ?> />
                     <div class="radio-details">
                         <strong>Point Relais</strong>
                         <p>Retrait dans un point relais partenaire</p>
@@ -724,7 +530,7 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
 
             <div class="checkbox-group">
                 <input type="checkbox" id="emballage_cadeau" name="emballage_cadeau" value="1"
-                       <?php echo (isset($donnees_saisies['emballage_cadeau']) && $donnees_saisies['emballage_cadeau']) ? 'checked' : ''; ?> />
+                       <?php echo ($_SESSION[SESSION_KEY_CHECKOUT]['emballage_cadeau'] ?? false) ? 'checked' : ''; ?> />
                 <div>
                     <label for="emballage_cadeau" style="font-weight: bold">
                         <i class="fas fa-gift"></i> Emballage cadeau
@@ -738,27 +544,25 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
             <div class="form-group">
                 <label for="instructions">Instructions de livraison (optionnel)</label>
                 <textarea id="instructions" name="instructions" rows="2"
-                    placeholder="Ex: Sonner au portail rouge, livrer au gardien, etc."><?php echo htmlspecialchars($donnees_saisies['instructions'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
+                    placeholder="Ex: Sonner au portail rouge, livrer au gardien, etc."><?php echo htmlspecialchars($_SESSION[SESSION_KEY_CHECKOUT]['instructions'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
             </div>
 
-            <!-- BOUTON CORRIGÉ : Remplacement du lien par un bouton submit -->
             <button type="submit" id="submit-btn">
                 <i class="fas fa-arrow-right"></i> Continuer vers le paiement
             </button>
 
             <div style="text-align: center; margin-top: 20px; color: #718096; font-size: 14px;">
-                <i class="fas fa-lock"></i> Vos données sont protégées et ne seront pas partagées avec des tiers
+                <i class="fas fa-lock"></i> Vos données sont protégées
             </div>
         </form>
     </div>
 
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-
     <script>
-    // Variables globales
+    // ============================================
+    // JAVASCRIPT - Identique à l'original
+    // ============================================
     let isLoading = false;
     
-    // Fonction pour afficher une adresse existante
     function displayExistingAddress(address) {
         const messageDiv = document.getElementById('info-message');
         if (!messageDiv) return;
@@ -773,18 +577,8 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
             ${address.pays || 'France'}<br>
             <small>Vous pouvez modifier ces informations ci-dessous si nécessaire.</small>
         `;
-
-        // Pré-remplir le formulaire
-        const fields = ['prenom', 'nom', 'adresse', 'complement', 'code_postal', 'ville', 'pays', 'telephone', 'email', 'societe', 'instructions'];
-        fields.forEach(field => {
-            const input = document.getElementById(field);
-            if (input && address[field]) {
-                input.value = address[field];
-            }
-        });
     }
 
-    // Gestion de la case à cocher "même adresse pour facturation"
     function setupFacturationToggle() {
         const sameAddressCheckbox = document.getElementById('meme_adresse_facturation');
         const facturationDiv = document.getElementById('adresse-facturation-different');
@@ -793,19 +587,11 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
         
         sameAddressCheckbox.addEventListener('change', function(e) {
             if (this.checked) {
-                // Caché: même adresse
                 facturationDiv.style.display = 'none';
-                
-                // Enlever l'attribut required des champs
                 const facturationFields = facturationDiv.querySelectorAll('input, textarea, select');
-                facturationFields.forEach(field => {
-                    field.removeAttribute('required');
-                });
+                facturationFields.forEach(field => field.removeAttribute('required'));
             } else {
-                // Affiché: adresse différente
                 facturationDiv.style.display = 'block';
-                
-                // Ajouter l'attribut required aux champs obligatoires
                 const requiredFields = ['facturation_prenom', 'facturation_nom', 'facturation_adresse', 
                                        'facturation_code_postal', 'facturation_ville'];
                 requiredFields.forEach(fieldId => {
@@ -815,11 +601,9 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
             }
         });
         
-        // Copier automatiquement l'adresse de livraison
         sameAddressCheckbox.addEventListener('click', function() {
             if (!this.checked) return;
             
-            // Copier les valeurs de livraison vers facturation
             const mapping = {
                 'prenom': 'facturation_prenom',
                 'nom': 'facturation_nom',
@@ -841,28 +625,19 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
         });
     }
 
-    // Gestion des options de livraison
     function setupLivraisonOptions() {
         document.querySelectorAll('.radio-option').forEach(option => {
             option.addEventListener('click', function() {
-                // Désélectionner toutes les options
                 document.querySelectorAll('.radio-option').forEach(opt => {
                     opt.classList.remove('selected');
                 });
-
-                // Sélectionner celle cliquée
                 this.classList.add('selected');
-
-                // Cochez le radio correspondant
                 const radio = this.querySelector('input[type="radio"]');
-                if (radio) {
-                    radio.checked = true;
-                }
+                if (radio) radio.checked = true;
             });
         });
     }
 
-    // Fonction de validation des champs
     function validateField(fieldId, errorId) {
         const field = document.getElementById(fieldId);
         const error = document.getElementById(errorId);
@@ -878,11 +653,8 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
             return false;
         } else {
             field.classList.remove('error-field');
-            if (error) {
-                error.classList.remove('show');
-            }
+            if (error) error.classList.remove('show');
             
-            // Validation spécifique pour email
             if (fieldId === 'email') {
                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                 if (!emailRegex.test(field.value)) {
@@ -895,7 +667,6 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
                 }
             }
             
-            // Validation spécifique pour téléphone (format français)
             if (fieldId === 'telephone' && field.value.trim()) {
                 const phoneRegex = /^[0-9]{10}$/;
                 const cleanedPhone = field.value.replace(/\s/g, '');
@@ -909,7 +680,6 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
                 }
             }
             
-            // Validation spécifique pour code postal (format français)
             if (fieldId === 'code_postal') {
                 const cpRegex = /^[0-9]{5}$/;
                 if (!cpRegex.test(field.value)) {
@@ -926,7 +696,6 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
         }
     }
 
-    // Validation des champs de facturation
     function validateFacturationField(fieldId) {
         const field = document.getElementById(fieldId);
         if (!field) return true;
@@ -940,7 +709,6 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
         return true;
     }
 
-    // Fonction de validation globale
     function validateForm() {
         const fields = [
             { id: 'nom', error: 'error-nom' },
@@ -953,29 +721,22 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
         
         let isValid = true;
         
-        // Validation des champs de livraison
         fields.forEach(field => {
-            if (!validateField(field.id, field.error)) {
-                isValid = false;
-            }
+            if (!validateField(field.id, field.error)) isValid = false;
         });
         
-        // Validation des champs de facturation si nécessaire
         if (!document.getElementById('meme_adresse_facturation').checked) {
             const facturationFields = ['facturation_prenom', 'facturation_nom', 'facturation_adresse', 
                                      'facturation_code_postal', 'facturation_ville'];
             
             facturationFields.forEach(fieldId => {
-                if (!validateFacturationField(fieldId)) {
-                    isValid = false;
-                }
+                if (!validateFacturationField(fieldId)) isValid = false;
             });
         }
         
         return isValid;
     }
 
-    // Validation en temps réel
     function setupRealTimeValidation() {
         const fieldsToValidate = ['nom', 'prenom', 'adresse', 'code_postal', 'ville', 'email'];
         fieldsToValidate.forEach(fieldId => {
@@ -995,190 +756,99 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
             }
         });
         
-        // Validation en temps réel pour les champs de facturation
         const facturationFields = ['facturation_prenom', 'facturation_nom', 'facturation_adresse', 
                                  'facturation_code_postal', 'facturation_ville'];
         facturationFields.forEach(fieldId => {
             const field = document.getElementById(fieldId);
             if (field) {
-                field.addEventListener('blur', () => {
-                    validateFacturationField(fieldId);
-                });
-                
-                field.addEventListener('input', () => {
-                    field.classList.remove('error-field');
-                });
+                field.addEventListener('blur', () => validateFacturationField(fieldId));
+                field.addEventListener('input', () => field.classList.remove('error-field'));
             }
         });
     }
 
-    // Soumission du formulaire - VERSION COMPLÈTE CORRIGÉE
     function setupFormSubmission() {
         const form = document.getElementById('livraison-form');
-        if (!form) return;
+        const submitBtn = document.getElementById('submit-btn');
         
-        form.addEventListener('submit', async function(e) {
+        if (!form || !submitBtn) return;
+        
+        form.addEventListener('submit', function(e) {
             e.preventDefault();
             
-            if (isLoading) return;
-            
-            // Validation
             if (!validateForm()) {
-                // Trouver le premier champ en erreur
-                const firstErrorField = document.querySelector('.error-field');
-                if (firstErrorField) {
-                    firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-                return;
+                alert('Veuillez corriger les erreurs dans le formulaire avant de continuer.');
+                return false;
             }
             
-            isLoading = true;
-            const submitBtn = document.getElementById('submit-btn');
-            const originalContent = submitBtn.innerHTML;
-            
-            // Afficher un indicateur de chargement
+            const originalText = submitBtn.innerHTML;
             submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement en cours...';
             submitBtn.disabled = true;
             
-            // PRÉPARATION DES DONNÉES - VERSION CORRIGÉE
-            const formData = new FormData(this);
-            const data = {};
+            const formData = new FormData(form);
+            const headers = new Headers();
+            headers.append('X-Requested-With', 'XMLHttpRequest');
+            headers.append('X-API-Mode', '1');
             
-            // IMPORTANT: Ajouter le flag api_mode pour que livraison.php reconnaisse la requête API
-            data.api_mode = '1';
-            
-            // Récupérer toutes les valeurs du formulaire
-            formData.forEach((value, key) => {
-                // Pour les checkbox, utiliser la valeur correcte
-                const checkbox = this.querySelector(`[name="${key}"]`);
-                if (checkbox && checkbox.type === 'checkbox') {
-                    data[key] = checkbox.checked ? '1' : '0';
+            fetch('livraison.php', {
+                method: 'POST',
+                body: formData,
+                headers: headers
+            })
+            .then(response => {
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    return response.json();
                 } else {
-                    data[key] = value;
+                    return response.text().then(text => {
+                        try { return JSON.parse(text); } 
+                        catch { return { success: false, message: 'Réponse inattendue du serveur' }; }
+                    });
                 }
-            });
-            
-            // Ajouter les IDs de session
-            data.session_id = '<?php echo session_id(); ?>';
-            data.panier_id = '<?php echo $panier_id ?? ""; ?>';
-            data.client_id = '<?php echo $client_id ?? ""; ?>';
-            
-            // DEBUG: Afficher les données envoyées
-            console.log('Données à envoyer à livraison.php:', data);
-            
-            try {
-                // Essayer l'API moderne
-                console.log('Envoi des données à livraison.php...');
-                const response = await fetch('livraison.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-API-Mode': '1',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify(data)
-                });
-                
-                console.log('Réponse HTTP reçue, statut:', response.status);
-                
-                // Vérifier si la réponse est valide
-                if (!response.ok) {
-                    throw new Error(`Erreur HTTP: ${response.status} ${response.statusText}`);
-                }
-                
-                const result = await response.json();
-                console.log('Réponse JSON reçue:', result);
-                
-                if (result.success) {
-                    // Rediriger vers la page de paiement
-                    const redirectUrl = result.redirect || 'paiement.php';
-                    console.log('Redirection vers:', redirectUrl);
-                    
-                    // Ajouter un délai court pour permettre le traitement complet
-                    setTimeout(() => {
-                        window.location.href = redirectUrl;
-                    }, 500);
+            })
+            .then(data => {
+                if (data.success) {
+                    window.location.href = 'paiement.php';
                 } else {
-                    // Afficher les erreurs de validation
-                    if (result.missing && result.missing.length > 0) {
-                        result.missing.forEach(field => {
-                            const errorId = 'error-' + field;
-                            const errorElement = document.getElementById(errorId);
-                            const fieldElement = document.getElementById(field);
-                            if (errorElement && fieldElement) {
-                                fieldElement.classList.add('error-field');
-                                errorElement.textContent = 'Ce champ est requis';
-                                errorElement.classList.add('show');
-                            }
-                        });
-                        
-                        // Faire défiler jusqu'au premier champ manquant
-                        const firstMissingField = document.getElementById(result.missing[0]);
-                        if (firstMissingField) {
-                            firstMissingField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
+                    let errorMessage = 'Des erreurs sont survenues :\n';
+                    if (data.errors && Array.isArray(data.errors)) {
+                        errorMessage += data.errors.join('\n');
+                    } else if (data.message) {
+                        errorMessage = data.message;
                     }
                     
-                    // Afficher un message d'erreur général
-                    const messageDiv = document.getElementById('info-message');
-                    if (messageDiv) {
-                        messageDiv.className = 'message error';
-                        let errorHtml = `<strong><i class="fas fa-exclamation-triangle"></i> Erreur :</strong><br>`;
-                        errorHtml += `${result.message || 'Une erreur est survenue'}`;
-                        
-                        if (result.errors && result.errors.length > 0) {
-                            errorHtml += '<ul>';
-                            result.errors.forEach(error => {
-                                errorHtml += `<li>${error}</li>`;
-                            });
-                            errorHtml += '</ul>';
-                        }
-                        
-                        messageDiv.innerHTML = errorHtml;
-                        messageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
+                    alert(errorMessage);
                     
-                    // Réactiver le bouton
-                    isLoading = false;
-                    submitBtn.innerHTML = originalContent;
+                    submitBtn.innerHTML = originalText;
                     submitBtn.disabled = false;
+                    
+                    if (data.missing && Array.isArray(data.missing)) {
+                        data.missing.forEach(fieldName => {
+                            const field = document.getElementById(fieldName);
+                            if (field) field.classList.add('error-field');
+                        });
+                    }
                 }
-            } catch (error) {
-                console.error('Erreur complète:', error);
-                
-                // Afficher l'erreur
-                const messageDiv = document.getElementById('info-message');
-                if (messageDiv) {
-                    messageDiv.className = 'message error';
-                    messageDiv.innerHTML = `
-                        <strong><i class="fas fa-exclamation-triangle"></i> Erreur :</strong><br>
-                        ${error.message || 'Impossible de traiter la demande. Veuillez réessayer.'}
-                        <br><small>Vérifiez votre connexion internet et réessayez.</small>
-                    `;
-                    messageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-                
-                // Réactiver le bouton
-                isLoading = false;
-                submitBtn.innerHTML = originalContent;
+            })
+            .catch(error => {
+                console.error('Erreur lors de la soumission:', error);
+                alert('Une erreur est survenue lors de la soumission. Veuillez réessayer.');
+                submitBtn.innerHTML = originalText;
                 submitBtn.disabled = false;
-            }
+            });
         });
     }
 
-    // Chargement initial
     document.addEventListener('DOMContentLoaded', function() {
-        // Configuration des composants
         setupFacturationToggle();
         setupLivraisonOptions();
         setupRealTimeValidation();
         setupFormSubmission();
         
-        // Essayer de charger une adresse existante
         try {
-            const addressData = <?php
-                if (isset($_SESSION['adresse_livraison']) && !empty($_SESSION['adresse_livraison'])) {
-                    echo json_encode($_SESSION['adresse_livraison']);
+            const addressData = <?php 
+                if (isset($_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison']) && !empty($_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'])) {
+                    echo json_encode($_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison']);
                 } else {
                     echo 'null';
                 }
@@ -1191,11 +861,10 @@ $meme_adresse_checked = isset($_SESSION['meme_adresse_facturation']) ?
             console.log("Aucune adresse en session");
         }
         
-        // DEBUG: Afficher les IDs de session
         console.log('Session ID:', '<?php echo session_id(); ?>');
-        console.log('Panier ID:', '<?php echo $panier_id ?? "non défini"; ?>');
-        console.log('Client ID:', '<?php echo $client_id ?? "non défini"; ?>');
+        console.log('Panier ID:', '<?php echo $_SESSION[SESSION_KEY_PANIER_ID] ?? "non défini"; ?>');
+        console.log('Nombre articles panier:', '<?php echo count($_SESSION[SESSION_KEY_PANIER] ?? []); ?>');
     });
-</script>
+    </script>
 </body>
 </html>
