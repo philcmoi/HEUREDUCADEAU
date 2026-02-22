@@ -1,105 +1,113 @@
 <?php
 // ============================================
-// FICHIER DE TRAITEMENT DU FORMULAIRE LIVRAISON
+// TRAITEMENT DU FORMULAIRE LIVRAISON - VERSION CORRIGÉE
 // ============================================
 
-session_start();
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 
-// Configuration de la base de données
-require_once 'config/database.php';
+require_once __DIR__ . '/session_verification.php';
 
-// Vérifier si c'est une soumission de formulaire
-$is_form_submission = ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['api_mode']));
-$is_api_request = isset($_SERVER['HTTP_X_API_MODE']) || 
-                  (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && 
-                   strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest');
+// ============================================
+// DÉTECTION DU TYPE DE REQUÊTE
+// ============================================
+$is_api_request = false;
+if (strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false ||
+    isset($_SERVER['HTTP_X_API_MODE']) ||
+    (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') ||
+    isset($_POST['api_mode'])) {
+    $is_api_request = true;
+}
 
-// Si accès direct (GET) sans données valides, rediriger
-if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['api']) && !isset($_GET['debug'])) {
-    // Vérifier s'il y a un panier valide
-    $has_valid_cart = false;
-    
-    try {
-        $pdo = getPDOConnection();
-        $session_id = session_id();
-        
-        $stmt = $pdo->prepare("
-            SELECT COUNT(pi.id_item) as nb_items 
-            FROM panier p 
-            LEFT JOIN panier_items pi ON p.id_panier = pi.id_panier 
-            WHERE p.session_id = ? AND p.statut = 'actif'
-            GROUP BY p.id_panier
-        ");
-        $stmt->execute([$session_id]);
-        $result = $stmt->fetch();
-        
-        if ($result && $result['nb_items'] > 0) {
-            $has_valid_cart = true;
+// ============================================
+// RÉCUPÉRATION DES DONNÉES
+// ============================================
+$input = [];
+if ($is_api_request) {
+    $jsonInput = file_get_contents('php://input');
+    if (!empty($jsonInput)) {
+        $input = json_decode($jsonInput, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            error_log("Erreur parsing JSON: " . json_last_error_msg());
+            $input = $_POST;
         }
-    } catch (Exception $e) {
-        // Fallback à la session
-        $has_valid_cart = isset($_SESSION['panier']) && !empty($_SESSION['panier']);
+    } else {
+        $input = $_POST;
     }
-    
-    if (!$has_valid_cart) {
-        // Mode API : retourner JSON
+} else {
+    $input = $_POST;
+}
+
+// ============================================
+// VÉRIFICATION SI SOUMISSION DE FORMULAIRE
+// ============================================
+$is_form_submission = ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($input));
+
+// ============================================
+// GESTION DES ACCÈS GET
+// ============================================
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    if (isset($_GET['api']) || isset($_GET['debug'])) {
         if ($is_api_request) {
             header('Content-Type: application/json');
             echo json_encode([
                 'success' => false,
-                'message' => 'Accès direct interdit. Veuillez d\'abord remplir votre panier.',
-                'redirect' => 'panier.html'
+                'message' => 'Méthode GET non supportée pour l\'API. Utilisez POST.',
+                'redirect' => 'livraison_form.php'
             ]);
             exit();
         }
-        
-        // Mode normal : rediriger
-        $_SESSION['erreur_message'] = 'Accès direct interdit. Veuillez d\'abord remplir votre panier.';
-        header('Location: panier.html');
-        exit();
     } else {
-        // Afficher le formulaire si panier valide
+        // Utiliser la fonction standardisée
+        checkLivraisonAccess();
         header('Location: livraison_form.php');
         exit();
     }
 }
 
 // ============================================
-// TRAITEMENT DE LA SOUMISSION DU FORMULAIRE
+// INITIALISATION DE LA RÉPONSE
 // ============================================
-
-// Initialiser la réponse
 $response = [
     'success' => false,
     'message' => '',
     'errors' => [],
-    'redirect' => null
+    'redirect' => 'paiement.php',
+    'missing' => []
 ];
 
+// Si ce n'est pas une soumission de formulaire, on arrête ici
+if (!$is_form_submission) {
+    if ($is_api_request) {
+        header('Content-Type: application/json');
+        echo json_encode($response);
+        exit();
+    }
+    exit();
+}
+
+// ============================================
+// TRAITEMENT DU FORMULAIRE (POST)
+// ============================================
 try {
     $pdo = getPDOConnection();
+    if (!$pdo) {
+        throw new Exception('Impossible de se connecter à la base de données');
+    }
+    
     $session_id = session_id();
     
-    // Récupérer les données selon le mode
-    if ($is_api_request) {
-        // Mode API (JSON)
-        $input = json_decode(file_get_contents('php://input'), true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new Exception('Données JSON invalides');
-        }
-    } else {
-        // Mode formulaire traditionnel
-        $input = $_POST;
-    }
+    // ============================================
+    // SYNCHRONISATION DU PANIER AVANT TRAITEMENT
+    // ============================================
+    synchroniserPanierSessionBDD($pdo, $session_id);
     
     // ============================================
     // VALIDATION DES DONNÉES
     // ============================================
-    
     $errors = [];
     $donnees_valides = [];
     
-    // Champs obligatoires
     $required_fields = [
         'nom' => 'Nom',
         'prenom' => 'Prénom',
@@ -119,20 +127,20 @@ try {
         }
     }
     
-    // Validation spécifique
     if (!empty($input['email']) && !filter_var($input['email'], FILTER_VALIDATE_EMAIL)) {
         $errors[] = "L'adresse email n'est pas valide";
+        $response['missing'][] = 'email';
     }
     
     if (!empty($input['code_postal']) && !preg_match('/^\d{5}$/', $input['code_postal'])) {
         $errors[] = "Le code postal doit contenir 5 chiffres";
+        $response['missing'][] = 'code_postal';
     }
     
     if (!empty($input['telephone']) && !preg_match('/^[0-9]{10}$/', str_replace(' ', '', $input['telephone']))) {
         $errors[] = "Le numéro de téléphone doit contenir 10 chiffres";
     }
     
-    // Vérifier si adresse de facturation différente
     $meme_adresse = isset($input['meme_adresse_facturation']) && $input['meme_adresse_facturation'] == '1';
     
     if (!$meme_adresse) {
@@ -147,23 +155,22 @@ try {
         foreach ($facturation_fields as $field => $label) {
             if (empty(trim($input[$field] ?? ''))) {
                 $errors[] = "Le champ \"$label\" est obligatoire lorsque l'adresse de facturation est différente";
+                $response['missing'][] = $field;
             }
         }
     }
     
-    // Si il y a des erreurs
     if (!empty($errors)) {
         $response['message'] = 'Des erreurs ont été trouvées dans le formulaire';
         $response['errors'] = $errors;
         
-        // Sauvegarder les erreurs pour les afficher
         if (!$is_api_request) {
-            $_SESSION['erreurs_livraison'] = $errors;
-            $_SESSION['donnees_saisies'] = $input;
-            $_SESSION['meme_adresse_facturation'] = $meme_adresse;
+            addCheckoutErrors($errors);
+            $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] = $input;
+            $_SESSION[SESSION_KEY_CHECKOUT]['meme_adresse_facturation'] = $meme_adresse;
             
             if (!$meme_adresse) {
-                $adresse_facturation = [
+                $_SESSION[SESSION_KEY_CHECKOUT]['adresse_facturation'] = [
                     'nom' => $input['facturation_nom'] ?? '',
                     'prenom' => $input['facturation_prenom'] ?? '',
                     'societe' => $input['facturation_societe'] ?? '',
@@ -173,56 +180,69 @@ try {
                     'ville' => $input['facturation_ville'] ?? '',
                     'pays' => $input['facturation_pays'] ?? 'France'
                 ];
-                $_SESSION['adresse_facturation'] = $adresse_facturation;
             }
         }
         
         if ($is_api_request) {
             header('Content-Type: application/json');
             echo json_encode($response);
+            exit();
         } else {
             header('Location: livraison_form.php');
+            exit();
         }
-        exit();
     }
     
     // ============================================
     // VÉRIFICATION DU PANIER
     // ============================================
+    $panier_id = $input['panier_id'] ?? $_SESSION[SESSION_KEY_PANIER_ID] ?? null;
     
-    $stmt = $pdo->prepare("
-        SELECT p.id_panier, p.id_client 
-        FROM panier p 
-        WHERE p.session_id = ? AND p.statut = 'actif'
-        ORDER BY p.date_creation DESC LIMIT 1
-    ");
-    $stmt->execute([$session_id]);
-    $panier = $stmt->fetch();
-    
-    if (!$panier) {
-        throw new Exception('Aucun panier actif trouvé. Veuillez d\'abord ajouter des articles à votre panier.');
+    if (!$panier_id && hasValidCart()) {
+        // Créer un panier en BDD pour cette session
+        $stmt = $pdo->prepare("
+            INSERT INTO panier (session_id, statut, date_creation)
+            VALUES (?, 'actif', NOW())
+        ");
+        $stmt->execute([$session_id]);
+        $panier_id = $pdo->lastInsertId();
+        $_SESSION[SESSION_KEY_PANIER_ID] = $panier_id;
+        
+        // Ajouter les items du panier session
+        $stmt_item = $pdo->prepare("
+            INSERT INTO panier_items (id_panier, id_produit, quantite, prix_unitaire, date_ajout)
+            VALUES (?, ?, ?, ?, NOW())
+        ");
+        
+        foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
+            $produit = getProductDetails($item['id_produit'], $pdo);
+            $prix = $produit['prix_ttc'] ?? $item['prix'] ?? 19.99;
+            
+            $stmt_item->execute([
+                $panier_id,
+                $item['id_produit'],
+                $item['quantite'],
+                $prix
+            ]);
+        }
     }
     
-    $panier_id = $panier['id_panier'];
-    $client_id_existant = $panier['id_client'];
+    if (!$panier_id) {
+        throw new Exception('Aucun panier actif trouvé.');
+    }
     
     // ============================================
     // GESTION DU CLIENT
     // ============================================
-    
-    $client_id = $client_id_existant;
-    
-    // Vérifier si le client existe déjà
     $email = trim($input['email']);
     $stmt = $pdo->prepare("SELECT id_client FROM clients WHERE email = ?");
     $stmt->execute([$email]);
     $client_existant = $stmt->fetch();
     
     if ($client_existant) {
-        // Client existe déjà
         $client_id = $client_existant['id_client'];
+        $_SESSION[SESSION_KEY_CLIENT_ID] = $client_id;
         
-        // Mettre à jour les informations du client
         $stmt = $pdo->prepare("
             UPDATE clients 
             SET nom = ?, prenom = ?, telephone = ?, dernier_connexion = NOW()
@@ -235,12 +255,11 @@ try {
             $client_id
         ]);
     } else {
-        // Créer un nouveau client (temporaire pour l'instant)
         $stmt = $pdo->prepare("
             INSERT INTO clients (
                 email, nom, prenom, telephone, date_inscription, 
-                statut, is_temporary, created_from_session
-            ) VALUES (?, ?, ?, ?, NOW(), 'actif', 1, ?)
+                statut, is_temporary, created_from_session, mot_de_passe
+            ) VALUES (?, ?, ?, ?, NOW(), 'actif', 1, ?, NULL)
         ");
         
         $stmt->execute([
@@ -252,12 +271,13 @@ try {
         ]);
         
         $client_id = $pdo->lastInsertId();
+        $_SESSION[SESSION_KEY_CLIENT_ID] = $client_id;
     }
     
-    // Mettre à jour le panier avec l'ID client
+    // Mettre à jour le panier avec les infos client
     $stmt = $pdo->prepare("
         UPDATE panier 
-        SET id_client = ?, email_client = ?, telephone_client = ?
+        SET id_client = ?, email_client = ?, telephone_client = ?, date_modification = NOW()
         WHERE id_panier = ?
     ");
     $stmt->execute([
@@ -270,8 +290,6 @@ try {
     // ============================================
     // SAUVEGARDE DE L'ADRESSE DE LIVRAISON
     // ============================================
-    
-    // Désactiver les anciennes adresses principales
     $stmt = $pdo->prepare("
         UPDATE adresses 
         SET principale = 0 
@@ -279,7 +297,6 @@ try {
     ");
     $stmt->execute([$client_id]);
     
-    // Insérer la nouvelle adresse de livraison
     $stmt = $pdo->prepare("
         INSERT INTO adresses (
             id_client, type_adresse, nom, prenom, societe, adresse, complement,
@@ -305,14 +322,11 @@ try {
     // ============================================
     // SAUVEGARDE DE L'ADRESSE DE FACTURATION
     // ============================================
-    
     $adresse_facturation_id = null;
     
     if ($meme_adresse) {
-        // Utiliser la même adresse
         $adresse_facturation_id = $adresse_livraison_id;
     } else {
-        // Désactiver les anciennes adresses de facturation principales
         $stmt = $pdo->prepare("
             UPDATE adresses 
             SET principale = 0 
@@ -320,7 +334,6 @@ try {
         ");
         $stmt->execute([$client_id]);
         
-        // Insérer la nouvelle adresse de facturation
         $stmt = $pdo->prepare("
             INSERT INTO adresses (
                 id_client, type_adresse, nom, prenom, societe, adresse, complement,
@@ -330,14 +343,14 @@ try {
         
         $stmt->execute([
             $client_id,
-            trim($input['facturation_nom']),
-            trim($input['facturation_prenom']),
+            trim($input['facturation_nom'] ?? $input['nom']),
+            trim($input['facturation_prenom'] ?? $input['prenom']),
             !empty($input['facturation_societe']) ? trim($input['facturation_societe']) : null,
-            trim($input['facturation_adresse']),
+            trim($input['facturation_adresse'] ?? $input['adresse']),
             !empty($input['facturation_complement']) ? trim($input['facturation_complement']) : null,
-            trim($input['facturation_code_postal']),
-            trim($input['facturation_ville']),
-            trim($input['facturation_pays']),
+            trim($input['facturation_code_postal'] ?? $input['code_postal']),
+            trim($input['facturation_ville'] ?? $input['ville']),
+            trim($input['facturation_pays'] ?? $input['pays']),
             !empty($input['telephone']) ? trim($input['telephone']) : null
         ]);
         
@@ -347,32 +360,97 @@ try {
     // ============================================
     // SAUVEGARDE DES OPTIONS DE LIVRAISON
     // ============================================
-    
     $mode_livraison = $input['mode_livraison'] ?? 'standard';
     $emballage_cadeau = isset($input['emballage_cadeau']) && $input['emballage_cadeau'] == '1' ? 1 : 0;
     $instructions = !empty($input['instructions']) ? trim($input['instructions']) : null;
     
-    // Sauvegarder dans la session pour la page de paiement
-    $_SESSION['livraison_data'] = [
-        'client_id' => $client_id,
+    // ============================================
+    // MISE À JOUR DE LA SESSION CENTRALISÉE
+    // ============================================
+    $_SESSION[SESSION_KEY_CHECKOUT] = [
         'panier_id' => $panier_id,
-        'adresse_livraison_id' => $adresse_livraison_id,
-        'adresse_facturation_id' => $adresse_facturation_id,
+        'client_id' => $client_id,
+        'client_email' => $email,
+        'adresse_livraison' => [
+            'id' => $adresse_livraison_id,
+            'nom' => trim($input['nom']),
+            'prenom' => trim($input['prenom']),
+            'email' => $email,
+            'telephone' => !empty($input['telephone']) ? trim($input['telephone']) : null,
+            'societe' => !empty($input['societe']) ? trim($input['societe']) : null,
+            'adresse' => trim($input['adresse']),
+            'complement' => !empty($input['complement']) ? trim($input['complement']) : null,
+            'code_postal' => trim($input['code_postal']),
+            'ville' => trim($input['ville']),
+            'pays' => trim($input['pays'])
+        ],
+        'adresse_facturation' => $meme_adresse ? null : [
+            'id' => $adresse_facturation_id,
+            'nom' => trim($input['facturation_nom'] ?? $input['nom']),
+            'prenom' => trim($input['facturation_prenom'] ?? $input['prenom']),
+            'societe' => !empty($input['facturation_societe']) ? trim($input['facturation_societe']) : null,
+            'adresse' => trim($input['facturation_adresse'] ?? $input['adresse']),
+            'complement' => !empty($input['facturation_complement']) ? trim($input['facturation_complement']) : null,
+            'code_postal' => trim($input['facturation_code_postal'] ?? $input['code_postal']),
+            'ville' => trim($input['facturation_ville'] ?? $input['ville']),
+            'pays' => trim($input['facturation_pays'] ?? $input['pays'])
+        ],
         'mode_livraison' => $mode_livraison,
-        'emballage_cadeau' => $emballage_cadeau,
+        'emballage_cadeau' => (bool)$emballage_cadeau,
         'instructions' => $instructions,
-        'email' => $email,
-        'nom' => trim($input['nom']),
-        'prenom' => trim($input['prenom'])
+        'etape' => 'paiement',
+        'date_creation' => $_SESSION[SESSION_KEY_CHECKOUT]['date_creation'] ?? date('Y-m-d H:i:s'),
+        'date_modification' => date('Y-m-d H:i:s'),
+        'validation' => [
+            'panier_valide' => true,
+            'adresse_valide' => true,
+            'paiement_autorise' => false
+        ]
     ];
     
-    // Marquer comme autorisé pour le checkout
-    $_SESSION['checkout_authorized'] = true;
-    $_SESSION['checkout_time'] = time();
+    // Sauvegarde dans commande_temporaire
+    $donnees_livraison = json_encode($_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison']);
     
-    // ============================================
-    // PRÉPARER LA RÉPONSE
-    // ============================================
+    try {
+        // Vérifier si une entrée existe déjà
+        $stmt = $pdo->prepare("SELECT id FROM commande_temporaire WHERE panier_id = ?");
+        $stmt->execute([$panier_id]);
+        $exists = $stmt->fetch();
+        
+        if ($exists) {
+            $stmt = $pdo->prepare("
+                UPDATE commande_temporaire 
+                SET donnees_livraison = ?, mode_livraison = ?, emballage_cadeau = ?, instructions = ?, date_creation = NOW()
+                WHERE panier_id = ?
+            ");
+            $stmt->execute([$donnees_livraison, $mode_livraison, $emballage_cadeau, $instructions, $panier_id]);
+        } else {
+            $stmt = $pdo->prepare("
+                INSERT INTO commande_temporaire (
+                    panier_id, donnees_livraison, mode_livraison, emballage_cadeau, instructions, date_creation
+                ) VALUES (?, ?, ?, ?, ?, NOW())
+            ");
+            $stmt->execute([$panier_id, $donnees_livraison, $mode_livraison, $emballage_cadeau, $instructions]);
+        }
+    } catch (PDOException $e) {
+        error_log("Erreur commande_temporaire: " . $e->getMessage());
+    }
+    
+    // Logger la réussite
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO logs (type_log, niveau, message, utilisateur_id, ip_address, metadata)
+            VALUES ('info', 'info', ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            'Formulaire livraison traité avec succès - Redirection vers paiement.php',
+            $client_id,
+            $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+            json_encode(['panier_id' => $panier_id, 'mode_livraison' => $mode_livraison])
+        ]);
+    } catch (Exception $e) {
+        error_log("Erreur log: " . $e->getMessage());
+    }
     
     $response['success'] = true;
     $response['message'] = 'Adresse enregistrée avec succès';
@@ -380,26 +458,13 @@ try {
     $response['data'] = [
         'client_id' => $client_id,
         'panier_id' => $panier_id,
-        'adresse_livraison_id' => $adresse_livraison_id,
-        'adresse_facturation_id' => $adresse_facturation_id
+        'adresse_livraison_id' => $adresse_livraison_id
     ];
-    
-    // Logger la réussite
-    $stmt = $pdo->prepare("
-        INSERT INTO logs (type_log, niveau, message, utilisateur_id, ip_address)
-        VALUES ('info', 'info', ?, ?, ?)
-    ");
-    $stmt->execute([
-        'Formulaire livraison traité avec succès',
-        $client_id,
-        $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'
-    ]);
     
 } catch (Exception $e) {
     $response['message'] = 'Une erreur est survenue: ' . $e->getMessage();
     $response['errors'] = [$e->getMessage()];
     
-    // Logger l'erreur
     if (isset($pdo)) {
         try {
             $stmt = $pdo->prepare("
@@ -412,160 +477,26 @@ try {
                 json_encode(['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()])
             ]);
         } catch (Exception $logError) {
-            // Ne rien faire si le log échoue
+            // Ignorer les erreurs de log
         }
     }
 }
 
-// ============================================
-// ENVOI DE LA RÉPONSE
-// ============================================
-
 if ($is_api_request) {
     header('Content-Type: application/json');
     echo json_encode($response);
-    
-    // Si succès et pas de redirection JSON, terminer ici
-    if ($response['success'] && !$response['redirect']) {
-        exit();
-    }
+    exit();
 } else {
-    // Mode formulaire traditionnel
     if ($response['success']) {
-        // Rediriger vers la page de paiement
-        header('Location: ' . $response['redirect']);
+        header('Location: paiement.php');
         exit();
     } else {
-        // Rediriger vers le formulaire avec les erreurs
-        if (!isset($_SESSION['erreurs_livraison'])) {
-            $_SESSION['erreurs_livraison'] = $response['errors'];
-        }
+        addCheckoutErrors($response['errors']);
         if (isset($input)) {
-            $_SESSION['donnees_saisies'] = $input;
+            $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] = $input;
         }
         header('Location: livraison_form.php');
         exit();
     }
 }
-
-// Si on arrive ici, c'est une requête GET sans paramètres valides
-// Afficher une page d'information
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Adresse de Livraison - HEURE DU CADEAU</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            background: #f8f9fa;
-        }
-        .container {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        .success {
-            color: #155724;
-            background-color: #d4edda;
-            border-color: #c3e6cb;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-        }
-        .error {
-            color: #721c24;
-            background-color: #f8d7da;
-            border-color: #f5c6cb;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-        }
-        .info {
-            color: #0c5460;
-            background-color: #d1ecf1;
-            border-color: #bee5eb;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-        }
-        .btn {
-            display: inline-block;
-            background-color: #5a67d8;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: bold;
-            margin: 10px;
-            cursor: pointer;
-        }
-        .btn:hover {
-            background-color: #4c51bf;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1><i class="fas fa-truck"></i> Adresse de Livraison</h1>
-        
-        <?php if (isset($response['success']) && $response['success']): ?>
-            <div class="success">
-                <i class="fas fa-check-circle"></i>
-                <h3>Adresse enregistrée avec succès !</h3>
-                <p><?php echo htmlspecialchars($response['message']); ?></p>
-                <p>Redirection vers le paiement...</p>
-            </div>
-            <script>
-                setTimeout(function() {
-                    window.location.href = '<?php echo $response["redirect"] ?? "paiement.php"; ?>';
-                }, 2000);
-            </script>
-            <a href="<?php echo $response['redirect'] ?? 'paiement.php'; ?>" class="btn">
-                <i class="fas fa-arrow-right"></i> Continuer vers le paiement
-            </a>
-            
-        <?php elseif (isset($response['message'])): ?>
-            <div class="error">
-                <i class="fas fa-exclamation-triangle"></i>
-                <h3>Erreur</h3>
-                <p><?php echo htmlspecialchars($response['message']); ?></p>
-                <?php if (isset($response['errors']) && is_array($response['errors'])): ?>
-                    <ul>
-                        <?php foreach ($response['errors'] as $error): ?>
-                            <li><?php echo htmlspecialchars($error); ?></li>
-                        <?php endforeach; ?>
-                    </ul>
-                <?php endif; ?>
-            </div>
-            <a href="livraison_form.php" class="btn">
-                <i class="fas fa-arrow-left"></i> Retour au formulaire
-            </a>
-            
-        <?php else: ?>
-            <div class="info">
-                <i class="fas fa-info-circle"></i>
-                <h3>Accès à la page de livraison</h3>
-                <p>Cette page traite les informations de livraison.</p>
-                <p>Veuillez remplir le formulaire d'adresse de livraison.</p>
-            </div>
-            <a href="livraison_form.php" class="btn">
-                <i class="fas fa-edit"></i> Remplir le formulaire de livraison
-            </a>
-            <a href="panier.html" class="btn">
-                <i class="fas fa-shopping-cart"></i> Retour au panier
-            </a>
-        <?php endif; ?>
-    </div>
-    
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-</body>
-</html>
