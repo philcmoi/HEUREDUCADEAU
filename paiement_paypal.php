@@ -1,6 +1,6 @@
 <?php
 // ============================================
-// PAIEMENT PAYPAL - VERSION CORRIGÉE
+// PAIEMENT PAYPAL - VERSION AVEC API RÉELLE
 // ============================================
 
 error_reporting(E_ALL);
@@ -9,8 +9,8 @@ ini_set('display_errors', 1);
 require_once __DIR__ . '/session_verification.php';
 
 // Configuration PayPal
-define('PAYPAL_CLIENT_ID', 'AUe7uZH9uo6MpEhUD5qUL0B6kqE69b9OZi4XMaR-3RJGtklCXfgnSBmaNMUo1uyMmznhoBG-U0bmynR_');
-define('PAYPAL_CLIENT_SECRET', 'EDTCzIliUZi-_Jqxb3MUsTKjaS5Dkl0YKGQrCKy6LN7Gqde6CEmQhMBWtGEo4tbiUVerejXZ06rLP-2S');
+define('PAYPAL_CLIENT_ID', 'VOTRE_CLIENT_ID_ICI');
+define('PAYPAL_CLIENT_SECRET', 'VOTRE_CLIENT_SECRET_ICI');
 define('PAYPAL_MODE', 'sandbox'); // 'sandbox' pour test, 'live' pour production
 
 // Vérifications
@@ -53,21 +53,14 @@ function getPayPalAccessToken() {
     $result = curl_exec($ch);
     
     if (curl_errno($ch)) {
-        error_log('Erreur cURL PayPal token: ' . curl_error($ch));
-        curl_close($ch);
+        error_log('Erreur cURL PayPal: ' . curl_error($ch));
         return false;
     }
     
     curl_close($ch);
     
     $data = json_decode($result, true);
-    
-    if (!isset($data['access_token'])) {
-        error_log('Réponse token PayPal invalide: ' . $result);
-        return false;
-    }
-    
-    return $data['access_token'];
+    return $data['access_token'] ?? false;
 }
 
 function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $cancel_url) {
@@ -76,7 +69,28 @@ function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $ca
         return ['error' => 'Impossible d\'obtenir le token d\'accès PayPal'];
     }
     
-    // Version simplifiée - sans breakdown complexe pour éviter l'erreur 422
+    // Construction des items pour PayPal
+    $items = [];
+    $total_ht = 0;
+    foreach ($items_data as $item) {
+        $prix_unitaire = floatval($item['prix_unitaire_ttc']);
+        $quantite = intval($item['quantite']);
+        $items[] = [
+            'name' => substr($item['nom'], 0, 127),
+            'sku' => $item['reference'],
+            'unit_amount' => [
+                'currency_code' => 'EUR',
+                'value' => number_format($prix_unitaire, 2, '.', '')
+            ],
+            'quantity' => $quantite,
+            'category' => 'PHYSICAL_GOODS'
+        ];
+        $total_ht += $prix_unitaire * $quantite;
+    }
+    
+    $montant_total = number_format(floatval($montant), 2, '.', '');
+    
+    // Construction de la requête PayPal
     $order_data = [
         'intent' => 'CAPTURE',
         'purchase_units' => [
@@ -87,8 +101,15 @@ function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $ca
                 'invoice_id' => 'INV-' . date('Ymd') . '-' . $commande_id,
                 'amount' => [
                     'currency_code' => 'EUR',
-                    'value' => number_format(floatval($montant), 2, '.', '')
-                ]
+                    'value' => $montant_total,
+                    'breakdown' => [
+                        'item_total' => [
+                            'currency_code' => 'EUR',
+                            'value' => $montant_total
+                        ]
+                    ]
+                ],
+                'items' => $items
             ]
         ],
         'application_context' => [
@@ -100,26 +121,6 @@ function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $ca
             'cancel_url' => $cancel_url
         ]
     ];
-    
-    // Ajouter l'adresse de livraison si disponible
-    if (isset($_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'])) {
-        $addr = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'];
-        $order_data['purchase_units'][0]['shipping'] = [
-            'name' => [
-                'full_name' => ($addr['prenom'] ?? '') . ' ' . ($addr['nom'] ?? '')
-            ],
-            'address' => [
-                'address_line_1' => $addr['adresse'] ?? '',
-                'address_line_2' => $addr['complement'] ?? '',
-                'admin_area_2' => $addr['ville'] ?? '',
-                'postal_code' => $addr['code_postal'] ?? '',
-                'country_code' => 'FR'
-            ]
-        ];
-    }
-    
-    // Log pour debug
-    error_log("PayPal Order Data: " . json_encode($order_data));
     
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, PAYPAL_MODE === 'sandbox'
@@ -134,30 +135,21 @@ function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $ca
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($order_data));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     
     $result = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     
     if (curl_errno($ch)) {
-        $error = curl_error($ch);
+        error_log('Erreur cURL création commande PayPal: ' . curl_error($ch));
         curl_close($ch);
-        error_log('Erreur cURL création commande PayPal: ' . $error);
-        return ['error' => 'Erreur de communication avec PayPal: ' . $error];
+        return ['error' => 'Erreur de communication avec PayPal'];
     }
     
     curl_close($ch);
     
-    // Log de la réponse
-    error_log("PayPal Response ($http_code): " . $result);
-    
     if ($http_code >= 400) {
-        $response = json_decode($result, true);
-        $error_detail = isset($response['details'][0]['description']) 
-            ? $response['details'][0]['description'] 
-            : ($response['message'] ?? 'Erreur inconnue');
-        
-        return ['error' => "Erreur PayPal ($http_code): $error_detail"];
+        error_log('Erreur PayPal HTTP ' . $http_code . ': ' . $result);
+        return ['error' => 'Erreur PayPal: ' . $http_code];
     }
     
     return json_decode($result, true);
@@ -181,16 +173,14 @@ function capturePayPalOrder($order_id) {
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     
     $result = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     
     if (curl_errno($ch)) {
-        $error = curl_error($ch);
+        error_log('Erreur cURL capture PayPal: ' . curl_error($ch));
         curl_close($ch);
-        error_log('Erreur cURL capture PayPal: ' . $error);
-        return ['error' => 'Erreur de communication avec PayPal: ' . $error];
+        return ['error' => 'Erreur de communication avec PayPal'];
     }
     
     curl_close($ch);
@@ -206,10 +196,11 @@ function capturePayPalOrder($order_id) {
 // ============================================
 // TRAITEMENT RETOUR PAYPAL
 // ============================================
-if (isset($_GET['token']) && isset($_GET['PayerID'])) {
+if (isset($_GET['token']) && isset($_GET['PayerID']) && isset($_GET['paymentId'])) {
     
     $paypal_order_id = $_GET['token'];
     $payer_id = $_GET['PayerID'];
+    $payment_id = $_GET['paymentId'];
     
     // Capturer le paiement
     $capture_result = capturePayPalOrder($paypal_order_id);
@@ -222,8 +213,6 @@ if (isset($_GET['token']) && isset($_GET['PayerID'])) {
     $commande_id = null;
     if (isset($capture_result['purchase_units'][0]['custom_id'])) {
         $commande_id = $capture_result['purchase_units'][0]['custom_id'];
-    } elseif (isset($_SESSION[SESSION_KEY_COMMANDE]['id'])) {
-        $commande_id = $_SESSION[SESSION_KEY_COMMANDE]['id'];
     }
     
     if (!$commande_id) {
@@ -245,7 +234,6 @@ if (isset($_GET['token']) && isset($_GET['PayerID'])) {
         // Extraire les informations PayPal
         $paypal_email = $capture_result['payer']['email_address'] ?? null;
         $capture_id = $capture_result['purchase_units'][0]['payments']['captures'][0]['id'] ?? null;
-        $payment_id = $capture_result['id'] ?? $paypal_order_id;
         $montant_paye = $capture_result['purchase_units'][0]['payments']['captures'][0]['amount']['value'] ?? 0;
         
         // Mettre à jour la commande
@@ -310,43 +298,17 @@ if (isset($_GET['token']) && isset($_GET['PayerID'])) {
         ");
         $stmt_stock->execute([$commande_id]);
         
-        // Logger le succès
-        $stmt_log = $pdo->prepare("
-            INSERT INTO logs (type_log, niveau, message, utilisateur_id, ip_address)
-            VALUES ('paiement', 'info', ?, ?, ?)
-        ");
-        $stmt_log->execute([
-            'Paiement PayPal réussi pour commande #' . $commande_id,
-            $commande['id_client'],
-            $ip_client
-        ]);
-        
         $pdo->commit();
         
         // Vider le panier
         cleanUserSession();
         
-        // Rediriger vers confirmation
         header('Location: confirmation.php?commande=' . $commande_id);
         exit;
         
     } catch (Exception $e) {
         $pdo->rollBack();
         error_log("Erreur paiement PayPal: " . $e->getMessage());
-        
-        // Logger l'erreur
-        try {
-            $stmt_log = $pdo->prepare("
-                INSERT INTO logs (type_log, niveau, message, ip_address, metadata)
-                VALUES ('paiement', 'error', ?, ?, ?)
-            ");
-            $stmt_log->execute([
-                'Erreur paiement PayPal: ' . $e->getMessage(),
-                $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
-                json_encode(['commande_id' => $commande_id])
-            ]);
-        } catch (Exception $logError) {}
-        
         die("Erreur lors du paiement : " . $e->getMessage());
     }
 }
@@ -356,6 +318,7 @@ if (isset($_GET['token']) && isset($_GET['PayerID'])) {
 // ============================================
 $id_commande = null;
 $total = 0;
+$paypal_order = null;
 
 if (!isset($_SESSION[SESSION_KEY_COMMANDE])) {
     try {
@@ -454,12 +417,14 @@ if (!isset($_SESSION[SESSION_KEY_COMMANDE])) {
         // Frais de livraison
         $mode_livraison = $checkout['mode_livraison'] ?? 'standard';
         $frais_livraison = 0;
-        if ($mode_livraison === 'express') {
-            $frais_livraison = 9.90;
-        } elseif ($mode_livraison === 'relais') {
-            $frais_livraison = 4.90;
-        } elseif ($sous_total < 50.00) {
-            $frais_livraison = 4.90;
+        if ($sous_total < 50) {
+            if ($mode_livraison === 'express') {
+                $frais_livraison = 9.90;
+            } elseif ($mode_livraison === 'relais') {
+                $frais_livraison = 4.90;
+            } else {
+                $frais_livraison = 4.90;
+            }
         }
         
         $frais_emballage = ($checkout['emballage_cadeau'] ?? false) ? 3.90 : 0;
@@ -542,27 +507,19 @@ if (!isset($_SESSION[SESSION_KEY_COMMANDE])) {
             $stmt_panier->execute([$_SESSION[SESSION_KEY_PANIER_ID]]);
         }
         
-        // Récupérer le numéro de commande généré par le trigger
-        $stmt_num = $pdo->prepare("SELECT numero_commande FROM commandes WHERE id_commande = ?");
-        $stmt_num->execute([$id_commande]);
-        $commande_numero = $stmt_num->fetchColumn();
-        
         $pdo->commit();
         
         $_SESSION[SESSION_KEY_COMMANDE] = [
             'id' => $id_commande,
-            'numero' => $commande_numero,
             'montant' => $total,
             'items' => $items_data
         ];
         
-        error_log("Commande PayPal créée avec succès: ID $id_commande, Numéro: $commande_numero, Montant: $total €");
+        error_log("Commande PayPal créée avec succès: ID $id_commande, Montant: $total €");
         
         // ========== ÉTAPE 6 : CRÉATION DE LA COMMANDE PAYPAL ==========
-        $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://';
-        $host = $_SERVER['HTTP_HOST'];
-        $return_url = $protocol . $host . '/paiement_paypal.php';
-        $cancel_url = $protocol . $host . '/paiement-annule.php';
+        $return_url = (isset($_SERVER['HTTPS']) ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . '/paiement_paypal.php';
+        $cancel_url = (isset($_SERVER['HTTPS']) ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . '/paiement-annule.php';
         
         $paypal_order = createPayPalOrder(
             $id_commande,
@@ -602,7 +559,6 @@ if (!isset($_SESSION[SESSION_KEY_COMMANDE])) {
         
         error_log("ERREUR CRITIQUE création commande PayPal: " . $e->getMessage());
         
-        // Afficher une erreur détaillée en développement
         if (ini_get('display_errors')) {
             die("Erreur lors de la création de la commande : " . $e->getMessage());
         } else {
@@ -643,16 +599,12 @@ if (!$commande) {
 // Si on arrive ici sans redirection PayPal, afficher la page d'attente
 ?>
 <!DOCTYPE html>
-<html lang="fr">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Redirection PayPal - HEURE DU CADEAU</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
-            font-family: 'Segoe UI', Arial, sans-serif; 
+            font-family: Arial, sans-serif; 
             background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
             margin: 0;
             padding: 20px;
@@ -667,7 +619,6 @@ if (!$commande) {
             border-radius: 20px; 
             text-align: center; 
             max-width: 500px;
-            width: 100%;
             box-shadow: 0 20px 60px rgba(0,0,0,0.2);
         }
         h1 {
@@ -738,77 +689,59 @@ if (!$commande) {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .error-message {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 15px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border: 1px solid #f5c6cb;
-        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1><i class="fab fa-paypal" style="color: #003087;"></i> Paiement PayPal</h1>
+        <h1>🔵 Paiement PayPal</h1>
         
-        <?php if (isset($paypal_order['error'])): ?>
-            <div class="error-message">
-                <i class="fas fa-exclamation-triangle"></i>
-                <p style="margin-top: 10px;"><?= htmlspecialchars($paypal_order['error']) ?></p>
-                <p style="margin-top: 15px; font-size: 14px;">Veuillez réessayer ou contacter le support.</p>
-            </div>
-            <a href="paiement.php" class="btn btn-secondary">
-                <i class="fas fa-arrow-left"></i> Retour au paiement
-            </a>
-        <?php else: ?>
-            <div class="spinner"></div>
-            <p>Préparation de votre paiement sécurisé...</p>
-            
-            <div class="commande-info">
-                <p style="font-size: 16px; margin-bottom: 5px;">Commande</p>
-                <p style="font-size: 20px; font-weight: bold;">#<?= htmlspecialchars($commande['numero_commande'] ?? $id_commande) ?></p>
-            </div>
-            
-            <div class="montant">
-                <?= number_format(floatval($commande['total_ttc'] ?? $total), 2, ',', ' ') ?> €
-            </div>
-            
-            <p style="color: #495057; margin: 20px 0;">
-                <i class="fas fa-user"></i> 
-                <?= htmlspecialchars(($commande['prenom'] ?? '') . ' ' . ($commande['nom'] ?? '')) ?>
-            </p>
-            
-            <button class="btn" onclick="redirectToPayPal()" id="paypalBtn">
-                <i class="fab fa-paypal"></i> Payer avec PayPal
-            </button>
-            
-            <a href="paiement.php" class="btn btn-secondary">
-                <i class="fas fa-arrow-left"></i> Retour
-            </a>
-            
-            <div class="secure-badge">
-                <i class="fas fa-lock"></i> Paiement 100% sécurisé par PayPal
-            </div>
-            
-            <div class="details">
-                <p>Vous allez être redirigé vers PayPal</p>
-                <p>Aucun prélèvement ne sera effectué sans votre confirmation</p>
-            </div>
-        <?php endif; ?>
+        <div class="spinner"></div>
+        <p>Préparation de votre paiement sécurisé...</p>
+        
+        <div class="commande-info">
+            <p style="font-size: 16px; margin-bottom: 5px;">Commande</p>
+            <p style="font-size: 20px; font-weight: bold;">#<?= htmlspecialchars($commande['numero_commande'] ?? $id_commande) ?></p>
+        </div>
+        
+        <div class="montant">
+            <?= number_format(floatval($commande['total_ttc'] ?? $total), 2, ',', ' ') ?> €
+        </div>
+        
+        <p style="color: #495057; margin: 20px 0;">
+            <i class="fas fa-user"></i> 
+            <?= htmlspecialchars(($commande['prenom'] ?? '') . ' ' . ($commande['nom'] ?? '')) ?>
+        </p>
+        
+        <button class="btn" onclick="redirectToPayPal()" id="paypalBtn">
+            <i class="fas fa-paypal"></i> Payer avec PayPal
+        </button>
+        
+        <a href="paiement.php" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Retour
+        </a>
+        
+        <div class="secure-badge">
+            <i class="fas fa-lock"></i> Paiement 100% sécurisé par PayPal
+        </div>
+        
+        <div class="details">
+            <p>Vous allez être redirigé vers PayPal</p>
+            <p>Aucun prélèvement ne sera effectué sans votre confirmation</p>
+        </div>
     </div>
 
+    <script src="https://kit.fontawesome.com/your-code.js" crossorigin="anonymous"></script>
     <script>
         function redirectToPayPal() {
+            // Cette fonction sera appelée si la redirection automatique ne fonctionne pas
+            // Elle recharge la page pour tenter à nouveau la création de commande PayPal
             window.location.reload();
         }
         
-        // Tentative de redirection automatique après 2 secondes (seulement si pas d'erreur)
-        <?php if (!isset($paypal_order['error'])): ?>
+        // Tentative de redirection automatique après 2 secondes
         setTimeout(function() {
             window.location.reload();
         }, 2000);
-        <?php endif; ?>
     </script>
 </body>
 </html>
