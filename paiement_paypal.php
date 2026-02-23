@@ -1,6 +1,6 @@
 <?php
 // ============================================
-// PAIEMENT PAYPAL - VERSION CORRIGÉE
+// PAIEMENT PAYPAL - VERSION CORRIGÉE FINALE
 // ============================================
 
 error_reporting(E_ALL);
@@ -11,7 +11,7 @@ require_once __DIR__ . '/session_verification.php';
 // Configuration PayPal
 define('PAYPAL_CLIENT_ID', 'AUe7uZH9uo6MpEhUD5qUL0B6kqE69b9OZi4XMaR-3RJGtklCXfgnSBmaNMUo1uyMmznhoBG-U0bmynR_');
 define('PAYPAL_CLIENT_SECRET', 'EDTCzIliUZi-_Jqxb3MUsTKjaS5Dkl0YKGQrCKy6LN7Gqde6CEmQhMBWtGEo4tbiUVerejXZ06rLP-2S');
-define('PAYPAL_MODE', 'sandbox');
+define('PAYPAL_MODE', 'sandbox'); // 'sandbox' ou 'live'
 
 // Vérifications
 if (!hasShippingAddress()) {
@@ -35,7 +35,7 @@ if (!$pdo) {
 synchroniserPanierSessionBDD($pdo, session_id());
 
 // ============================================
-// FONCTIONS PAYPAL API
+// FONCTIONS PAYPAL API CORRIGÉES
 // ============================================
 
 /**
@@ -70,7 +70,7 @@ function getPayPalAccessToken() {
     
     if ($http_code !== 200) {
         error_log("Erreur PayPal token HTTP $http_code: $result");
-        return ['error' => "Erreur PayPal: $http_code"];
+        return ['error' => "Erreur PayPal: HTTP $http_code"];
     }
     
     $data = json_decode($result, true);
@@ -83,7 +83,7 @@ function getPayPalAccessToken() {
 }
 
 /**
- * Crée une commande PayPal
+ * Crée une commande PayPal - VERSION CORRIGÉE
  */
 function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $cancel_url) {
     $access_token = getPayPalAccessToken();
@@ -92,31 +92,38 @@ function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $ca
         return $access_token;
     }
     
+    // Formatage correct du montant total
     $montant_total = number_format(floatval($montant), 2, '.', '');
     
-    // Construire les items
+    // Construction des items avec validation
     $items = [];
-    $total_items = 0;
+    $total_items_calc = 0;
     
-    foreach ($items_data as $item) {
-        $prix_unitaire = number_format(floatval($item['prix_unitaire_ttc']), 2, '.', '');
-        $quantite = intval($item['quantite']);
-        $total_items += $prix_unitaire * $quantite;
-        
-        $items[] = [
-            'name' => mb_substr($item['nom'], 0, 120),
-            'sku' => $item['reference'] ?? ('SKU' . $item['id_produit']),
-            'unit_amount' => [
-                'currency_code' => 'EUR',
-                'value' => $prix_unitaire
-            ],
-            'quantity' => $quantite,
-            'category' => 'PHYSICAL_GOODS'
-        ];
+    if (!empty($items_data)) {
+        foreach ($items_data as $item) {
+            // Vérifier que les données essentielles existent
+            if (!isset($item['prix_unitaire_ttc']) || !isset($item['quantite'])) {
+                continue;
+            }
+            
+            $prix_unitaire = number_format(floatval($item['prix_unitaire_ttc']), 2, '.', '');
+            $quantite = intval($item['quantite']);
+            $total_ligne = floatval($prix_unitaire) * $quantite;
+            $total_items_calc += $total_ligne;
+            
+            $items[] = [
+                'name' => mb_substr($item['nom'] ?? 'Produit', 0, 120),
+                'unit_amount' => [
+                    'currency_code' => 'EUR',
+                    'value' => $prix_unitaire
+                ],
+                'quantity' => $quantite,
+                'category' => 'PHYSICAL_GOODS'
+            ];
+        }
     }
     
-    $total_items = number_format($total_items, 2, '.', '');
-    
+    // Construction de la requête - Version simplifiée mais robuste
     $order_data = [
         'intent' => 'CAPTURE',
         'purchase_units' => [
@@ -124,18 +131,10 @@ function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $ca
                 'reference_id' => 'ORDER_' . $commande_id,
                 'description' => 'Commande #' . $commande_id . ' - HEURE DU CADEAU',
                 'custom_id' => (string)$commande_id,
-                'invoice_id' => 'INV-' . date('Ymd') . '-' . $commande_id,
                 'amount' => [
                     'currency_code' => 'EUR',
-                    'value' => $montant_total,
-                    'breakdown' => [
-                        'item_total' => [
-                            'currency_code' => 'EUR',
-                            'value' => $total_items
-                        ]
-                    ]
-                ],
-                'items' => $items
+                    'value' => $montant_total
+                ]
             ]
         ],
         'application_context' => [
@@ -147,6 +146,21 @@ function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $ca
             'cancel_url' => $cancel_url
         ]
     ];
+    
+    // Ajouter le breakdown uniquement si on a des items et que le total correspond
+    if (!empty($items) && abs($total_items_calc - floatval($montant_total)) < 0.01) {
+        $total_items_formatted = number_format($total_items_calc, 2, '.', '');
+        $order_data['purchase_units'][0]['amount']['breakdown'] = [
+            'item_total' => [
+                'currency_code' => 'EUR',
+                'value' => $total_items_formatted
+            ]
+        ];
+        $order_data['purchase_units'][0]['items'] = $items;
+    }
+    
+    // LOG pour déboguer
+    error_log("PayPal Order Data: " . json_encode($order_data));
     
     $url = (PAYPAL_MODE === 'sandbox')
         ? 'https://api-m.sandbox.paypal.com/v2/checkout/orders'
@@ -176,9 +190,21 @@ function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $ca
     
     curl_close($ch);
     
+    // LOG de la réponse
+    error_log("PayPal Response (HTTP $http_code): " . $result);
+    
     if ($http_code >= 400) {
-        error_log("Erreur PayPal création commande HTTP $http_code: " . $result);
-        return ['error' => "Erreur PayPal: $http_code", 'details' => json_decode($result, true)];
+        $response_data = json_decode($result, true);
+        $error_message = $response_data['message'] ?? $response_data['error_description'] ?? 'Erreur inconnue';
+        $error_details = $response_data['details'][0]['description'] ?? '';
+        
+        error_log("Erreur PayPal création commande: $error_message - $error_details");
+        
+        return [
+            'error' => "Erreur PayPal: " . $error_message . ($error_details ? " - $error_details" : ""),
+            'details' => $response_data,
+            'http_code' => $http_code
+        ];
     }
     
     return json_decode($result, true);
@@ -223,7 +249,7 @@ function capturePayPalOrder($order_id) {
     
     if ($http_code >= 400) {
         error_log("Erreur capture PayPal HTTP $http_code: " . $result);
-        return ['error' => "Erreur capture PayPal: $http_code", 'details' => json_decode($result, true)];
+        return ['error' => "Erreur capture PayPal: $http_code"];
     }
     
     return json_decode($result, true);
@@ -232,13 +258,12 @@ function capturePayPalOrder($order_id) {
 // ============================================
 // TRAITEMENT RETOUR PAYPAL
 // ============================================
-if (isset($_GET['token']) && isset($_GET['PayerID']) && isset($_GET['paymentId'])) {
+if (isset($_GET['token']) && isset($_GET['PayerID'])) {
     
     $paypal_order_id = $_GET['token'];
     $payer_id = $_GET['PayerID'];
-    $payment_id = $_GET['paymentId'];
     
-    error_log("Retour PayPal - OrderID: $paypal_order_id, PayerID: $payer_id, PaymentID: $payment_id");
+    error_log("Retour PayPal - OrderID: $paypal_order_id, PayerID: $payer_id");
     
     // Récupérer l'ID commande depuis la session
     $commande_id = $_SESSION[SESSION_KEY_COMMANDE]['id'] ?? null;
@@ -287,7 +312,7 @@ if (isset($_GET['token']) && isset($_GET['PayerID']) && isset($_GET['paymentId']
             WHERE id_commande = ?
         ");
         $stmt->execute([
-            $payment_id,
+            $paypal_order_id,
             $paypal_order_id,
             $payer_id,
             $paypal_email,
@@ -308,11 +333,9 @@ if (isset($_GET['token']) && isset($_GET['PayerID']) && isset($_GET['paymentId']
         
         $details_json = json_encode([
             'paypal_order_id' => $paypal_order_id,
-            'payment_id' => $payment_id,
             'payer_id' => $payer_id,
             'capture_id' => $capture_id,
-            'payer_email' => $paypal_email,
-            'full_response' => $capture_result
+            'payer_email' => $paypal_email
         ]);
         
         $stmt_trans->execute([
@@ -320,7 +343,7 @@ if (isset($_GET['token']) && isset($_GET['PayerID']) && isset($_GET['paymentId']
             $commande_id,
             $commande['id_client'],
             $montant_paye,
-            $payment_id,
+            $paypal_order_id,
             $ip_client,
             $details_json
         ]);
@@ -340,7 +363,7 @@ if (isset($_GET['token']) && isset($_GET['PayerID']) && isset($_GET['paymentId']
         // Vider le panier et la session checkout
         cleanUserSession();
         
-        header('Location: paiement-reussi.php?commande=' . $commande_id . '&paypal_order=' . $paypal_order_id);
+        header('Location: paiement-reussi.php?commande=' . $commande_id . '&token=' . $paypal_order_id);
         exit;
         
     } catch (Exception $e) {
@@ -353,12 +376,11 @@ if (isset($_GET['token']) && isset($_GET['PayerID']) && isset($_GET['paymentId']
 }
 
 // ============================================
-// CRÉATION DE LA COMMANDE (UNE SEULE FOIS)
+// CRÉATION DE LA COMMANDE
 // ============================================
 
 // Vérifier si on a déjà une commande PayPal en cours
 if (isset($_SESSION['paypal_processing']) && $_SESSION['paypal_processing'] === true) {
-    // Afficher la page d'attente
     afficherPageAttente();
     exit;
 }
@@ -460,14 +482,12 @@ try {
     $mode_livraison = $checkout['mode_livraison'] ?? 'standard';
     $frais_livraison = 0;
     
-    if ($sous_total < 50) {
-        if ($mode_livraison === 'express') {
-            $frais_livraison = 9.90;
-        } elseif ($mode_livraison === 'relais') {
-            $frais_livraison = 4.90;
-        } else {
-            $frais_livraison = 4.90;
-        }
+    if ($mode_livraison === 'express') {
+        $frais_livraison = 9.90;
+    } elseif ($mode_livraison === 'relais') {
+        $frais_livraison = 4.90;
+    } elseif ($sous_total < 50) {
+        $frais_livraison = 4.90;
     }
     
     $frais_emballage = ($checkout['emballage_cadeau'] ?? false) ? 3.90 : 0;
@@ -496,7 +516,7 @@ try {
     $client_type = ($checkout['is_guest'] ?? false) ? 'guest' : 'registered';
     $instructions = $checkout['instructions'] ?? null;
     
-    $stmt->execute([
+    $result = $stmt->execute([
         $client_id,
         $adresse_livraison_id,
         $adresse_facturation_id,
@@ -506,6 +526,11 @@ try {
         $client_type,
         $instructions
     ]);
+    
+    if (!$result) {
+        $errorInfo = $stmt->errorInfo();
+        throw new Exception("Échec insertion commande: " . ($errorInfo[2] ?? 'Erreur inconnue'));
+    }
     
     $id_commande = $pdo->lastInsertId();
     
@@ -522,7 +547,7 @@ try {
     ");
     
     foreach ($items_data as $item) {
-        $stmt_item->execute([
+        $result_item = $stmt_item->execute([
             $id_commande,
             $item['id_produit'],
             $item['reference'],
@@ -532,6 +557,11 @@ try {
             $item['prix_unitaire_ttc'],
             $item['tva']
         ]);
+        
+        if (!$result_item) {
+            $errorInfo = $stmt_item->errorInfo();
+            throw new Exception("Échec insertion item: " . ($errorInfo[2] ?? 'Erreur inconnue'));
+        }
     }
     
     // ========== MISE À JOUR DU PANIER ==========
@@ -550,8 +580,7 @@ try {
     $_SESSION[SESSION_KEY_COMMANDE] = [
         'id' => $id_commande,
         'numero' => $commande_numero,
-        'montant' => $total,
-        'items' => $items_data
+        'montant' => $total
     ];
     
     error_log("Commande PayPal créée: ID $id_commande, N° $commande_numero, Montant: $total €");
@@ -604,11 +633,18 @@ try {
     
     error_log("ERREUR CRITIQUE création commande PayPal: " . $e->getMessage());
     
-    if (ini_get('display_errors')) {
-        die("Erreur lors de la création de la commande : " . $e->getMessage());
-    } else {
-        die("Une erreur est survenue. Veuillez réessayer ou contacter le support.");
-    }
+    // Afficher l'erreur de façon plus détaillée
+    echo "<!DOCTYPE html>";
+    echo "<html><head><title>Erreur PayPal</title>";
+    echo "<style>body{font-family:Arial;padding:40px;background:#f5f5f5;}.error{background:#fff;padding:30px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);max-width:600px;margin:0 auto;border-left:5px solid #e74c3c;}</style>";
+    echo "</head><body>";
+    echo "<div class='error'>";
+    echo "<h2 style='color:#e74c3c;'><i class='fas fa-exclamation-triangle'></i> Erreur de paiement</h2>";
+    echo "<p><strong>Message :</strong> " . htmlspecialchars($e->getMessage()) . "</p>";
+    echo "<p><a href='panier.html' style='background:#3498db;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;display:inline-block;margin-top:15px;'><i class='fas fa-shopping-cart'></i> Retour au panier</a></p>";
+    echo "</div>";
+    echo "</body></html>";
+    exit;
 }
 
 // Fonction pour afficher la page d'attente
@@ -677,6 +713,7 @@ function afficherPageAttente() {
                 transition: all 0.3s ease;
                 margin: 20px 0;
                 display: inline-block;
+                text-decoration: none;
             }
             .btn:hover { 
                 background: #002060; 
@@ -715,9 +752,9 @@ function afficherPageAttente() {
                 </div>
             </div>
             
-            <button class="btn" onclick="window.location.reload()">
+            <a href="javascript:window.location.reload()" class="btn">
                 <i class="fab fa-paypal"></i> Payer maintenant
-            </button>
+            </a>
         </div>
     </body>
     </html>
