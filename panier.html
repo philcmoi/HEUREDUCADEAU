@@ -731,6 +731,7 @@
           this.cartCountElement = document.getElementById("cartCount");
           this.cartMessageElement = document.getElementById("cartMessage");
           this.isProcessing = false;
+          this.SEUIL_LIVRAISON_GRATUITE = 50; // Seuil fixe de 50€ pour la livraison gratuite
           this.init();
         }
 
@@ -810,7 +811,9 @@
             html += '<div class="cart-items">';
 
             data.panier.forEach((item, index) => {
-              const prixUnitaire = parseFloat(item.prix_unitaire || 0).toFixed(2);
+              const prixUnitaire = parseFloat(item.prix_unitaire || 0).toFixed(
+                2,
+              );
               const prixTotal = parseFloat(item.prix_total || 0).toFixed(2);
               const image = item.image || "img/default-product.jpg";
 
@@ -848,11 +851,14 @@
 
             // Récupérer les totaux depuis l'API
             const sousTotal = parseFloat(data.sous_total || 0);
-            const fraisLivraison = parseFloat(data.frais_livraison || 4.90);
-            const total = parseFloat(data.total || 0);
-            
-            // Utiliser le seuil de livraison gratuite depuis l'API ou valeur par défaut
-            const seuilLivraisonGratuite = parseFloat(data.seuil_livraison_gratuite || 50);
+
+            // Calculer les frais de livraison en fonction du sous-total
+            let fraisLivraison = 4.9; // Frais par défaut
+            if (sousTotal >= this.SEUIL_LIVRAISON_GRATUITE) {
+              fraisLivraison = 0; // Livraison gratuite si sous-total >= 50€
+            }
+
+            const total = sousTotal + fraisLivraison;
 
             html += `
               <div class="cart-summary">
@@ -863,7 +869,7 @@
                 </div>
                 <div class="summary-row">
                   <span>Frais de livraison</span>
-                  <span>${fraisLivraison.toFixed(2).replace(".", ",")} €</span>
+                  <span>${fraisLivraison === 0 ? '<span style="color: #27ae60; font-weight: bold;">0 €</span>' : fraisLivraison.toFixed(2).replace(".", ",") + " €"}</span>
                 </div>
                 <div class="summary-row summary-total">
                   <span>Total TTC</span>
@@ -871,12 +877,12 @@
                 </div>
                 
                 ${
-                  sousTotal < seuilLivraisonGratuite
+                  sousTotal < this.SEUIL_LIVRAISON_GRATUITE
                     ? `<div class="shipping-message">
-                        <i class="fas fa-truck"></i> Plus que <strong>${(seuilLivraisonGratuite - sousTotal).toFixed(2).replace(".", ",")} €</strong> pour la livraison gratuite !
+                        <i class="fas fa-truck"></i> Plus que <strong>${(this.SEUIL_LIVRAISON_GRATUITE - sousTotal).toFixed(2).replace(".", ",")} €</strong> pour la livraison gratuite !
                       </div>`
                     : `<div class="shipping-message free">
-                        <i class="fas fa-check-circle"></i> <strong>Livraison gratuite</strong> - Vous économisez ${fraisLivraison.toFixed(2).replace(".", ",")} € !
+                        <i class="fas fa-check-circle"></i> <strong>Livraison gratuite</strong> - Vous économisez ${(4.9).toFixed(2).replace(".", ",")} € !
                       </div>`
                 }
                 

@@ -9,8 +9,8 @@ ini_set('display_errors', 1);
 require_once __DIR__ . '/session_verification.php';
 
 // Configuration PayPal
-define('PAYPAL_CLIENT_ID', 'VOTRE_CLIENT_ID_ICI');
-define('PAYPAL_CLIENT_SECRET', 'VOTRE_CLIENT_SECRET_ICI');
+define('PAYPAL_CLIENT_ID', 'AUe7uZH9uo6MpEhUD5qUL0B6kqE69b9OZi4XMaR-3RJGtklCXfgnSBmaNMUo1uyMmznhoBG-U0bmynR_');
+define('PAYPAL_CLIENT_SECRET', 'EDTCzIliUZi-_Jqxb3MUsTKjaS5Dkl0YKGQrCKy6LN7Gqde6CEmQhMBWtGEo4tbiUVerejXZ06rLP-2S');
 define('PAYPAL_MODE', 'sandbox'); // 'sandbox' pour test, 'live' pour production
 
 // Vérifications
