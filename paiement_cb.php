@@ -8,9 +8,6 @@ ini_set('display_errors', 1);
 
 require_once __DIR__ . '/session_verification.php';
 
-// Vérification de l'étape
-checkPaiementAccess();
-
 // ============================================
 // CONNEXION BDD
 // ============================================
@@ -21,6 +18,265 @@ if (!$pdo) {
 
 // Synchroniser le panier
 synchroniserPanierSessionBDD($pdo, session_id());
+
+// ============================================
+// FONCTIONS UTILITAIRES (sans getProductDetails qui est déjà dans session_verification.php)
+// ============================================
+
+/**
+ * Calcule les totaux du panier avec les frais
+ */
+function calculerTotauxPanierComplet($panier_details, $checkout_data) {
+    $sous_total = 0;
+    
+    foreach ($panier_details as $item) {
+        $sous_total += $item['prix_total'] ?? 0;
+    }
+    
+    // Frais de livraison par défaut
+    $frais_livraison = 4.90;
+    $seuil_gratuit = 50.00;
+    
+    if ($sous_total >= $seuil_gratuit) {
+        $frais_livraison = 0;
+    }
+    
+    // Frais d'emballage cadeau
+    $frais_emballage = ($checkout_data['emballage_cadeau'] ?? false) ? 2.90 : 0;
+    
+    // Mode livraison (express, etc.)
+    if (isset($checkout_data['mode_livraison'])) {
+        switch ($checkout_data['mode_livraison']) {
+            case 'express':
+                $frais_livraison = 9.90;
+                break;
+            case 'point_relais':
+                $frais_livraison = 3.90;
+                break;
+        }
+    }
+    
+    $total_ttc = $sous_total + $frais_livraison + $frais_emballage;
+    
+    return [
+        'sous_total' => $sous_total,
+        'frais_livraison' => $frais_livraison,
+        'frais_emballage' => $frais_emballage,
+        'total_ttc' => $total_ttc
+    ];
+}
+
+/**
+ * Crée une commande à partir du panier en session - VERSION CORRIGÉE
+ */
+function creerCommandeDepuisPanier($pdo) {
+    try {
+        $pdo->beginTransaction();
+        
+        // Vérifier qu'il y a des articles dans le panier
+        if (empty($_SESSION[SESSION_KEY_PANIER])) {
+            throw new Exception("Panier vide");
+        }
+        
+        // Récupérer l'ID client
+        $id_client = $_SESSION['client_id'] ?? null;
+        if (!$id_client) {
+            // Créer un client temporaire si nécessaire
+            $email = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison']['email'] ?? 'temp_' . uniqid() . '@temp.com';
+            
+            $stmt = $pdo->prepare("
+                INSERT INTO clients (email, nom, prenom, is_temporary, date_inscription)
+                VALUES (?, 'Client', 'Temporaire', 1, NOW())
+            ");
+            $stmt->execute([$email]);
+            $id_client = $pdo->lastInsertId();
+            $_SESSION['client_id'] = $id_client;
+        }
+        
+        // Récupérer l'adresse de livraison depuis la session
+        $adresse_livraison = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? null;
+        
+        // Si pas d'adresse en session, en créer une temporaire
+        if (!$adresse_livraison || empty($adresse_livraison['id'])) {
+            // Créer une adresse temporaire
+            $stmt = $pdo->prepare("
+                INSERT INTO adresses (id_client, nom, prenom, adresse, code_postal, ville, pays)
+                VALUES (?, 'Client', 'Temporaire', 'Adresse temporaire', '75000', 'Paris', 'France')
+            ");
+            $stmt->execute([$id_client]);
+            $id_adresse = $pdo->lastInsertId();
+        } else {
+            $id_adresse = $adresse_livraison['id'];
+        }
+        
+        // Préparer les détails du panier
+        $panier_details = [];
+        $sous_total = 0;
+        
+        foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
+            // Utiliser la fonction getProductDetails du fichier session_verification.php
+            $produit = getProductDetails($item['id_produit'], $pdo);
+            
+            $prix_ttc = floatval($produit['prix_ttc'] ?? $item['prix'] ?? 0);
+            if ($prix_ttc == 0) {
+                // Essayer de récupérer depuis la BDD
+                $stmt = $pdo->prepare("SELECT prix_ttc FROM produits WHERE id_produit = ?");
+                $stmt->execute([$item['id_produit']]);
+                $prod = $stmt->fetch(PDO::FETCH_ASSOC);
+                $prix_ttc = floatval($prod['prix_ttc'] ?? 0);
+            }
+            
+            $prix_ht = $prix_ttc / 1.20; // TVA 20%
+            $quantite = intval($item['quantite']);
+            $total_ligne = $quantite * $prix_ttc;
+            $sous_total += $total_ligne;
+            
+            $panier_details[] = [
+                'id_produit' => $item['id_produit'],
+                'quantite' => $quantite,
+                'prix_ht' => $prix_ht,
+                'prix_ttc' => $prix_ttc,
+                'prix_total' => $total_ligne,
+                'nom' => $produit['nom'] ?? 'Produit',
+                'reference' => $produit['reference'] ?? 'REF' . $item['id_produit'],
+                'tva' => 20.00
+            ];
+        }
+        
+        // Calculer les frais
+        $totaux = calculerTotauxPanierComplet($panier_details, $_SESSION[SESSION_KEY_CHECKOUT] ?? []);
+        
+        // INSÉRER LA COMMANDE
+        $stmt = $pdo->prepare("
+            INSERT INTO commandes (
+                id_client, 
+                id_adresse_livraison, 
+                statut, 
+                sous_total, 
+                frais_livraison, 
+                total_ttc, 
+                mode_paiement,
+                statut_paiement,
+                client_type,
+                date_commande
+            ) VALUES (
+                ?, ?, 'en_attente', ?, ?, ?, 'carte', 'en_attente', 'guest', NOW()
+            )
+        ");
+        
+        $result = $stmt->execute([
+            $id_client,
+            $id_adresse,
+            $totaux['sous_total'],
+            $totaux['frais_livraison'],
+            $totaux['total_ttc']
+        ]);
+        
+        if (!$result) {
+            throw new Exception("Erreur lors de la création de la commande");
+        }
+        
+        $id_commande = $pdo->lastInsertId();
+        
+        // Insérer les articles de la commande
+        $stmt_item = $pdo->prepare("
+            INSERT INTO commande_items (
+                id_commande, 
+                id_produit, 
+                reference_produit, 
+                nom_produit, 
+                quantite, 
+                prix_unitaire_ht,
+                prix_unitaire_ttc,
+                tva
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?
+            )
+        ");
+        
+        foreach ($panier_details as $item) {
+            $result = $stmt_item->execute([
+                $id_commande,
+                $item['id_produit'],
+                $item['reference'],
+                $item['nom'],
+                $item['quantite'],
+                $item['prix_ht'],
+                $item['prix_ttc'],
+                $item['tva']
+            ]);
+            
+            if (!$result) {
+                throw new Exception("Erreur lors de l'ajout des articles");
+            }
+            
+            // Mettre à jour le stock du produit
+            $stmt_update = $pdo->prepare("
+                UPDATE produits 
+                SET quantite_stock = quantite_stock - ?,
+                    ventes = ventes + ?
+                WHERE id_produit = ?
+            ");
+            $stmt_update->execute([
+                $item['quantite'],
+                $item['quantite'],
+                $item['id_produit']
+            ]);
+        }
+        
+        $pdo->commit();
+        
+        // Sauvegarder l'ID en session
+        $_SESSION[SESSION_KEY_COMMANDE]['id'] = $id_commande;
+        
+        // Récupérer le numéro de commande généré par le trigger
+        $stmt = $pdo->prepare("SELECT numero_commande FROM commandes WHERE id_commande = ?");
+        $stmt->execute([$id_commande]);
+        $num = $stmt->fetchColumn();
+        $_SESSION[SESSION_KEY_COMMANDE]['numero'] = $num;
+        
+        return $id_commande;
+        
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        error_log("Erreur création commande: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+        throw $e;
+    }
+}
+
+/**
+ * Récupère les détails d'une commande
+ */
+function getCommandeDetails($pdo, $id_commande) {
+    $stmt = $pdo->prepare("
+        SELECT 
+            c.id_commande,
+            c.numero_commande,
+            c.total_ttc as montant_total,
+            c.sous_total,
+            c.frais_livraison,
+            c.statut,
+            c.statut_paiement,
+            c.mode_paiement,
+            cl.id_client,
+            cl.email,
+            cl.prenom,
+            cl.nom,
+            a.id_adresse,
+            a.adresse as adresse_livraison,
+            a.complement,
+            a.code_postal,
+            a.ville,
+            a.pays,
+            a.telephone
+        FROM commandes c
+        JOIN clients cl ON c.id_client = cl.id_client
+        LEFT JOIN adresses a ON c.id_adresse_livraison = a.id_adresse
+        WHERE c.id_commande = ?
+    ");
+    $stmt->execute([$id_commande]);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
+}
 
 // ============================================
 // CONFIGURATION PAYPAL
@@ -37,7 +293,7 @@ $return_url = $base_url . 'paiement-reussi.php';
 $cancel_url = $base_url . 'paiement-annule.php';
 
 // ============================================
-// FONCTIONS PAYPAL CORRIGÉES
+// FONCTIONS PAYPAL
 // ============================================
 
 /**
@@ -85,9 +341,9 @@ function getPayPalAccessToken() {
 }
 
 /**
- * Crée une commande PayPal avec paiement par carte
+ * Crée une commande PayPal
  */
-function createPayPalCardOrder($montant, $commande_id, $return_url, $cancel_url) {
+function createPayPalOrder($montant, $commande_id, $return_url, $cancel_url) {
     $access_token = getPayPalAccessToken();
     
     if (is_array($access_token) && isset($access_token['error'])) {
@@ -105,7 +361,7 @@ function createPayPalCardOrder($montant, $commande_id, $return_url, $cancel_url)
         'intent' => 'CAPTURE',
         'purchase_units' => [
             [
-                'reference_id' => 'ORDER_' . $commande_id,
+                'reference_id' => 'COMMANDE_' . $commande_id,
                 'description' => 'Commande #' . $commande_id . ' - HEURE DU CADEAU',
                 'custom_id' => (string)$commande_id,
                 'amount' => [
@@ -119,12 +375,12 @@ function createPayPalCardOrder($montant, $commande_id, $return_url, $cancel_url)
             'landing_page' => 'BILLING',
             'shipping_preference' => 'NO_SHIPPING',
             'user_action' => 'PAY_NOW',
-            'return_url' => $return_url,
-            'cancel_url' => $cancel_url
+            'return_url' => $return_url . '?commande=' . $commande_id,
+            'cancel_url' => $cancel_url . '?commande=' . $commande_id
         ]
     ];
     
-    error_log("PayPal Card Order Data: " . json_encode($order_data));
+    error_log("PayPal Order Data: " . json_encode($order_data));
     
     $url = (PAYPAL_MODE === 'sandbox')
         ? 'https://api-m.sandbox.paypal.com/v2/checkout/orders'
@@ -149,20 +405,20 @@ function createPayPalCardOrder($montant, $commande_id, $return_url, $cancel_url)
     if (curl_errno($ch)) {
         $error = curl_error($ch);
         curl_close($ch);
-        error_log("Erreur cURL création commande PayPal carte: " . $error);
+        error_log("Erreur cURL création commande PayPal: " . $error);
         return ['error' => "Erreur de communication avec PayPal: $error"];
     }
     
     curl_close($ch);
     
-    error_log("PayPal Card Response (HTTP $http_code): " . $result);
+    error_log("PayPal Response (HTTP $http_code): " . $result);
     
     if ($http_code >= 400) {
         $response_data = json_decode($result, true);
         $error_message = $response_data['message'] ?? $response_data['error_description'] ?? 'Erreur inconnue';
         $error_details = $response_data['details'][0]['description'] ?? '';
         
-        error_log("Erreur PayPal création commande carte: $error_message - $error_details");
+        error_log("Erreur PayPal création commande: $error_message - $error_details");
         
         return [
             'error' => "Erreur PayPal: " . $error_message . ($error_details ? " - $error_details" : ""),
@@ -174,144 +430,48 @@ function createPayPalCardOrder($montant, $commande_id, $return_url, $cancel_url)
     return json_decode($result, true);
 }
 
-/**
- * Capture un paiement PayPal
- */
-function capturePayPalOrder($order_id) {
-    $access_token = getPayPalAccessToken();
-    
-    if (is_array($access_token) && isset($access_token['error'])) {
-        return $access_token;
-    }
-    
-    $url = (PAYPAL_MODE === 'sandbox')
-        ? "https://api-m.sandbox.paypal.com/v2/checkout/orders/$order_id/capture"
-        : "https://api-m.paypal.com/v2/checkout/orders/$order_id/capture";
-    
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/json',
-        'Authorization: Bearer ' . $access_token,
-        'Prefer: return=representation'
-    ]);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    
-    $result = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    
-    if (curl_errno($ch)) {
-        $error = curl_error($ch);
-        curl_close($ch);
-        error_log("Erreur cURL capture PayPal: " . $error);
-        return ['error' => "Erreur de communication avec PayPal: $error"];
-    }
-    
-    curl_close($ch);
-    
-    if ($http_code >= 400) {
-        error_log("Erreur capture PayPal HTTP $http_code: " . $result);
-        return ['error' => "Erreur capture PayPal: $http_code"];
-    }
-    
-    return json_decode($result, true);
-}
-
 // ============================================
-// RÉCUPÉRATION DE L'ID COMMANDE
+// RÉCUPÉRATION OU CRÉATION DE LA COMMANDE
 // ============================================
 
-// Récupérer l'ID commande depuis l'URL d'abord
+// Récupérer l'ID commande depuis l'URL
 $id_commande = isset($_GET['commande']) && is_numeric($_GET['commande']) ? intval($_GET['commande']) : null;
+$montant_param = isset($_GET['montant']) ? floatval($_GET['montant']) : 0;
 
-// Si pas dans l'URL, essayer la session
-if (!$id_commande && isset($_SESSION[SESSION_KEY_COMMANDE]['id'])) {
-    $id_commande = $_SESSION[SESSION_KEY_COMMANDE]['id'];
-}
-
-// Si toujours pas d'ID, essayer de récupérer la dernière commande en attente
-if (!$id_commande && isset($_SESSION['client_id'])) {
-    try {
-        $stmt = $pdo->prepare("
-            SELECT id_commande 
-            FROM commandes 
-            WHERE id_client = ? AND statut_paiement = 'en_attente' 
-            ORDER BY date_commande DESC 
-            LIMIT 1
-        ");
-        $stmt->execute([$_SESSION['client_id']]);
-        $id_commande = $stmt->fetchColumn();
-    } catch (Exception $e) {
-        error_log("Erreur récupération dernière commande: " . $e->getMessage());
-    }
-}
-
-// Si toujours pas d'ID, afficher une erreur
-if (!$id_commande) {
-    error_log("ID commande non trouvé - URL: " . $_SERVER['REQUEST_URI'] . ", Session: " . print_r($_SESSION, true));
-    
-    // Rediriger vers le panier avec un message
-    $_SESSION['messages'][] = [
-        'type' => 'error',
-        'message' => 'Aucune commande en cours. Veuillez recommencer votre achat.'
-    ];
-    header('Location: panier.html');
-    exit;
-}
-
-// ============================================
-// RÉCUPÉRATION DES INFORMATIONS DE LA COMMANDE
-// ============================================
 try {
-    $stmt = $pdo->prepare("
-        SELECT 
-            c.id_commande,
-            c.numero_commande,
-            c.total_ttc as montant_total,
-            c.statut,
-            c.statut_paiement,
-            cl.id_client,
-            cl.email,
-            cl.prenom,
-            cl.nom,
-            a.adresse as adresse_livraison,
-            a.complement,
-            a.code_postal,
-            a.ville,
-            a.pays,
-            a.telephone
-        FROM commandes c
-        JOIN clients cl ON c.id_client = cl.id_client
-        LEFT JOIN adresses a ON c.id_adresse_livraison = a.id_adresse
-        WHERE c.id_commande = ?
-    ");
-    $stmt->execute([$id_commande]);
-    $commande = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$commande) {
-        throw new Exception("Commande #$id_commande non trouvée dans la base de données");
+    // Vérifier si la commande existe en base
+    if ($id_commande) {
+        $commande = getCommandeDetails($pdo, $id_commande);
+        
+        if (!$commande) {
+            error_log("Commande #$id_commande non trouvée - tentative de création");
+            $id_commande = null; // Forcer la création
+        }
     }
     
-    // Vérifier que la commande est bien en attente de paiement
-    if ($commande['statut_paiement'] !== 'en_attente') {
-        // Si déjà payée, rediriger vers la page de succès
-        if ($commande['statut_paiement'] === 'paye') {
-            header('Location: paiement-reussi.php?commande=' . $id_commande);
-            exit;
-        }
+    // Si pas d'ID commande valide, créer la commande
+    if (!$id_commande) {
+        $id_commande = creerCommandeDepuisPanier($pdo);
+        error_log("Nouvelle commande créée avec ID: $id_commande");
         
-        // Sinon, permettre le paiement quand même
-        error_log("Attention: Commande #$id_commande avec statut_paiement = " . $commande['statut_paiement']);
+        // Récupérer les détails de la nouvelle commande
+        $commande = getCommandeDetails($pdo, $id_commande);
+        
+        if (!$commande) {
+            throw new Exception("Impossible de récupérer la commande #$id_commande après création");
+        }
     }
     
     $total = floatval($commande['montant_total']);
     
-} catch (Exception $e) {
-    error_log("Erreur récupération commande CB: " . $e->getMessage() . " - ID commande: " . $id_commande);
+    // Vérifier que le montant correspond (tolérance de 0.01€)
+    if ($montant_param > 0 && abs($total - $montant_param) > 0.01) {
+        error_log("Attention: Montant incohérent - URL: $montant_param, BDD: $total");
+        // On utilise le montant de la BDD qui est la source de vérité
+    }
     
-    // Afficher une page d'erreur plus informative
+} catch (Exception $e) {
+    error_log("Erreur fatale paiement CB: " . $e->getMessage());
     ?>
     <!DOCTYPE html>
     <html lang="fr">
@@ -357,17 +517,22 @@ try {
                 margin-top: 20px;
             }
             .btn:hover { background: #4c51bf; }
+            pre { 
+                text-align: left; 
+                background: #f8f9fa; 
+                padding: 15px; 
+                border-radius: 8px; 
+                margin: 20px 0;
+                max-height: 300px;
+                overflow: auto;
+            }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="error-icon">❌</div>
-            <h1>Erreur lors de la récupération de la commande</h1>
-            <p>Nous n'avons pas pu trouver votre commande. Voici les détails techniques :</p>
-            <p style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0; text-align: left;">
-                <strong>Message :</strong> <?= htmlspecialchars($e->getMessage()) ?><br>
-                <strong>ID commande :</strong> <?= htmlspecialchars($id_commande ?? 'Non défini') ?>
-            </p>
+            <h1>Erreur lors de la préparation de la commande</h1>
+            <p><?= htmlspecialchars($e->getMessage()) ?></p>
             <p>Veuillez réessayer ou contacter notre service client.</p>
             <a href="panier.html" class="btn">Retour au panier</a>
         </div>
@@ -389,8 +554,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $expiration_annee = $_POST['expiration_annee'] ?? '';
     $cryptogramme = $_POST['cryptogramme'] ?? '';
     $titulaire = $_POST['titulaire_carte'] ?? '';
-    
-    $date_expiration = $expiration_mois . '/' . $expiration_annee;
     
     // Validation des données carte
     if (strlen($numero_carte) < 15 || !ctype_digit($numero_carte)) {
@@ -420,16 +583,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $_SESSION[SESSION_KEY_COMMANDE]['id'] = $id_commande;
         
         // Créer la commande PayPal
-        $paypal_order = createPayPalCardOrder(
+        $paypal_order = createPayPalOrder(
             $total,
             $id_commande,
-            $return_url . '?commande=' . $id_commande,
-            $cancel_url . '?commande=' . $id_commande
+            $return_url,
+            $cancel_url
         );
         
         if (isset($paypal_order['error'])) {
             $erreurs[] = "Erreur PayPal: " . $paypal_order['error'];
-            error_log("Erreur PayPal Card: " . json_encode($paypal_order));
+            error_log("Erreur PayPal: " . json_encode($paypal_order));
         } else {
             // Rediriger vers l'URL d'approbation PayPal
             $approval_url = null;
@@ -444,7 +607,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 // Sauvegarder l'ID PayPal pour le retour
                 $_SESSION['paypal_order_id'] = $paypal_order['id'];
                 
-                // Rediriger vers PayPal pour la saisie de la carte
+                // Mettre à jour la commande avec la référence PayPal
+                $stmt = $pdo->prepare("UPDATE commandes SET reference_paiement = ? WHERE id_commande = ?");
+                $stmt->execute([$paypal_order['id'], $id_commande]);
+                
+                // Rediriger vers PayPal
                 header('Location: ' . $approval_url);
                 exit;
             } else {
@@ -455,7 +622,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // ============================================
-// AFFICHAGE HTML - FORMULAIRE SIMPLIFIÉ
+// AFFICHAGE HTML
 // ============================================
 ?>
 <!DOCTYPE html>
