@@ -406,4 +406,12 @@ function cleanUserSession() {
     // On garde SESSION_KEY_PANIER_ID et SESSION_KEY_CLIENT_ID pour l'historique
 }
 
+/**
+ * Nettoie les flags de session PayPal
+ */
+function cleanPayPalFlags() {
+    unset($_SESSION['paypal_processing']);
+    unset($_SESSION['paypal_order_id']);
+}
+
 ?>

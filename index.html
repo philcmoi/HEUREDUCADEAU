@@ -1,28 +1,3 @@
-<?php
-// index.php - Page d'accueil avec gestion panier
-require_once 'session_verification.php';
-
-// Récupérer les produits phares depuis la BDD
-$pdo = getPDOConnection();
-$produits_phares = [];
-
-if ($pdo) {
-    try {
-        $stmt = $pdo->query(" SELECT p.*, c.nom as categorie_nom, (SELECT
-url_image FROM images_produits WHERE id_produit = p.id_produit AND principale =
-1 LIMIT 1) as image FROM produits p LEFT JOIN categories c ON p.id_categorie =
-c.id_categorie WHERE p.statut = 'actif' ORDER BY p.ventes DESC, p.note_moyenne
-DESC LIMIT 4 "); $produits_phares = $stmt->fetchAll(); } catch (Exception $e) {
-error_log("Erreur récupération produits: " . $e->getMessage()); } } // Fallback
-si aucun produit if (empty($produits_phares)) { $produits_phares = [
-['id_produit' => 1, 'nom' => 'Bougie parfumée "Élégance"', 'prix_ttc' => 29.08,
-'categorie_nom' => 'Cadeau', 'image' => 'img/default-product.jpg'],
-['id_produit' => 2, 'nom' => 'Coffret gourmand "Délice"', 'prix_ttc' => 41.58,
-'categorie_nom' => 'Cadeau', 'image' => 'img/default-product.jpg'],
-['id_produit' => 3, 'nom' => 'Montre "Temps Précieux"', 'prix_ttc' => 74.92,
-'categorie_nom' => 'Cadeau', 'image' => 'img/default-product.jpg'],
-['id_produit' => 4, 'nom' => 'Set bijoux "Lumière"', 'prix_ttc' => 1000.00,
-'categorie_nom' => 'Cadeau', 'image' => 'img/default-product.jpg'] ]; } ?>
 <!doctype html>
 <html lang="fr">
   <head>
@@ -160,6 +135,29 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
         align-items: center;
       }
 
+      .discount-badge {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        background: #e74c3c;
+        color: white;
+        padding: 5px 10px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        z-index: 1;
+      }
+
+      .far.fa-star {
+        color: #ddd;
+      }
+
+      .modal-product-ref {
+        color: #7f8c8d;
+        font-size: 0.9rem;
+        margin: 5px 0;
+      }
+
       .product-rating {
         display: flex;
         align-items: center;
@@ -217,6 +215,7 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
 
       .btn-add-to-cart.loading {
         background: #3498db;
+        position: relative;
       }
 
       .btn-add-to-cart.loading i {
@@ -248,6 +247,31 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
 
       .btn-view:hover {
         background: #2980b9;
+      }
+
+      /* État de chargement */
+      .products-loading {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 60px;
+        color: #7f8c8d;
+      }
+
+      .products-loading i {
+        font-size: 2rem;
+        margin-bottom: 15px;
+      }
+
+      .products-loading-error {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 60px;
+        color: #e74c3c;
+      }
+
+      .products-loading-error i {
+        font-size: 3rem;
+        margin-bottom: 15px;
       }
 
       /* Styles pour la modal panier */
@@ -479,6 +503,23 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
         color: #7f8c8d;
       }
 
+      /* Animation du compteur panier */
+      .cart-count.has-items {
+        animation: pulse 0.5s ease;
+      }
+
+      @keyframes pulse {
+        0% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.2);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+
       .cart-count {
         background: #e74c3c;
         color: white;
@@ -493,6 +534,10 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
         top: -8px;
         right: -8px;
         font-weight: bold;
+      }
+
+      .text-center {
+        text-align: center;
       }
 
       .cart-count.pulse {
@@ -511,58 +556,107 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
         }
       }
 
-      .text-center {
-        text-align: center;
-      }
-
-      .header {
-        background: #2c3e50;
+      .debug-banner {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #f39c12;
         color: white;
-        padding: 20px 0;
-      }
-
-      .header-container {
+        padding: 10px 15px;
+        border-radius: 5px;
+        z-index: 9999;
+        font-size: 14px;
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 0 20px;
+        gap: 8px;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
       }
 
-      .logo {
+      .debug-banner i {
+        font-size: 16px;
+      }
+
+      .api-error-banner {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #e74c3c;
         color: white;
-        text-decoration: none;
-        font-size: 1.5rem;
-        font-weight: bold;
+        padding: 10px 20px;
+        border-radius: 8px;
+        z-index: 9999;
+        font-size: 14px;
         display: flex;
         align-items: center;
         gap: 10px;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+        max-width: 80%;
+        text-align: center;
       }
 
-      .logo i {
-        color: #e74c3c;
+      /* Badges de stock */
+      .stock-badge {
+        position: absolute;
+        top: 15px;
+        left: 15px;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        z-index: 2;
       }
 
-      .nav-main ul {
-        display: flex;
-        list-style: none;
-        gap: 25px;
-      }
-
-      .nav-main a {
+      .stock-faible {
+        background: #f39c12;
         color: white;
-        text-decoration: none;
-        font-weight: 500;
-        transition: color 0.3s ease;
       }
 
-      .nav-main a:hover {
-        color: #e74c3c;
+      .stock-rupture {
+        background: #e74c3c;
+        color: white;
       }
 
-      .cart-link {
-        position: relative;
+      /* Styles pour les messages d'erreur */
+      .products-empty,
+      .products-api-error,
+      .products-network-error {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        padding: 40px;
+        text-align: center;
+        grid-column: 1 / -1;
+      }
+
+      .products-empty i,
+      .products-api-error i,
+      .products-network-error i {
+        margin-bottom: 20px;
+        font-size: 3rem;
+      }
+
+      /* Bouton de test */
+      .btn-test-api {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 8px 15px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        margin-left: 10px;
+      }
+
+      .btn-test-api:hover {
+        background: #2980b9;
+      }
+
+      .debug-section {
+        background: #f8f9fa;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
       }
     </style>
   </head>
@@ -570,21 +664,24 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
     <!-- Header -->
     <header class="header">
       <div class="container header-container">
-        <a href="index.php" class="logo">
+        <!-- Logo -->
+        <a href="index.html" class="logo">
           <i class="fas fa-gift logo-icon"></i>
           <span class="logo-text"
             >HEURE<span class="logo-highlight"> DU CADEAU</span></span
           >
         </a>
+
+        <!-- Navigation principale -->
         <nav class="nav-main">
           <ul class="nav-list">
             <li>
-              <a href="index.php" class="nav-link active"
+              <a href="index.html" class="nav-link active"
                 ><i class="fas fa-home"></i> Accueil</a
               >
             </li>
             <li>
-              <a href="catalogue.php" class="nav-link"
+              <a href="index.php" class="nav-link"
                 ><i class="fas fa-box-open"></i> Cadeaux</a
               >
             </li>
@@ -601,14 +698,48 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
             <li>
               <a href="panier.html" class="nav-link cart-link">
                 <i class="fas fa-shopping-cart"></i> Panier
-                <span class="cart-count" id="cartCount" style="display: none"
-                  >0</span
-                >
+                <span class="cart-count">0</span>
               </a>
             </li>
           </ul>
         </nav>
+
+        <!-- Menu mobile -->
+        <button class="menu-toggle" id="menuToggle">
+          <i class="fas fa-bars"></i>
+        </button>
       </div>
+
+      <!-- Navigation mobile -->
+      <nav class="nav-mobile" id="navMobile">
+        <ul class="nav-mobile-list">
+          <li>
+            <a href="index.html" class="nav-mobile-link"
+              ><i class="fas fa-home"></i> Accueil</a
+            >
+          </li>
+          <li>
+            <a href="index.php" class="nav-mobile-link"
+              ><i class="fas fa-box-open"></i> Cadeaux</a
+            >
+          </li>
+          <li>
+            <a href="apropos.html" class="nav-mobile-link"
+              ><i class="fas fa-info-circle"></i> À propos</a
+            >
+          </li>
+          <li>
+            <a href="contact.html" class="nav-mobile-link"
+              ><i class="fas fa-envelope"></i> Contact</a
+            >
+          </li>
+          <li>
+            <a href="panier.html" class="nav-mobile-link"
+              ><i class="fas fa-shopping-cart"></i> Panier</a
+            >
+          </li>
+        </ul>
+      </nav>
     </header>
 
     <!-- Hero Section -->
@@ -621,7 +752,7 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
             les occasions
           </p>
           <div class="hero-buttons">
-            <a href="catalogue.php" class="btn btn-primary"
+            <a href="index.php" class="btn btn-primary"
               >Explorer la collection</a
             >
             <a href="#categories" class="btn btn-secondary"
@@ -642,6 +773,7 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
         <p class="section-subtitle">
           Trouvez le cadeau parfait selon l'occasion
         </p>
+
         <div class="categories-grid">
           <div class="category-card">
             <div class="category-icon">
@@ -649,7 +781,7 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
             </div>
             <h3>Anniversaires</h3>
             <p>Cadeaux uniques pour célébrer les anniversaires</p>
-            <a href="catalogue.php?categorie=2" class="category-link"
+            <a href="index.php?categorie=1" class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -657,7 +789,7 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
             <div class="category-icon"><i class="fas fa-heart"></i></div>
             <h3>Saint-Valentin</h3>
             <p>Romantique et mémorable</p>
-            <a href="catalogue.php?categorie=3" class="category-link"
+            <a href="index.php?categorie=2" class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -665,7 +797,7 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
             <div class="category-icon"><i class="fas fa-glass-cheers"></i></div>
             <h3>Mariage</h3>
             <p>Cadeaux de mariage élégants</p>
-            <a href="catalogue.php?categorie=4" class="category-link"
+            <a href="index.php?categorie=3" class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -673,7 +805,7 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
             <div class="category-icon"><i class="fas fa-baby"></i></div>
             <h3>Naissance</h3>
             <p>Pour accueillir bébé</p>
-            <a href="catalogue.php?categorie=5" class="category-link"
+            <a href="index.php?categorie=4" class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -683,7 +815,7 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
             </div>
             <h3>Diplômés</h3>
             <p>Pour célébrer la réussite</p>
-            <a href="catalogue.php?categorie=6" class="category-link"
+            <a href="index.php?categorie=5" class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -693,7 +825,7 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
             </div>
             <h3>Noël</h3>
             <p>Magie des fêtes de fin d'année</p>
-            <a href="catalogue.php?categorie=7" class="category-link"
+            <a href="index.php?categorie=6" class="category-link"
               >Voir les produits →</a
             >
           </div>
@@ -708,51 +840,14 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
         <p class="section-subtitle">Découvrez les cadeaux les plus appréciés</p>
 
         <div class="products-grid" id="featuredProducts">
-          <?php foreach ($produits_phares as $produit): $prix =
-          number_format($produit['prix_ttc'], 2, ',', ' '); $image =
-          !empty($produit['image']) ? htmlspecialchars($produit['image']) :
-          'img/default-product.jpg'; ?>
-          <div class="product-card" data-id="<?= $produit['id_produit'] ?>">
-            <div class="product-image">
-              <img
-                src="<?= $image ?>"
-                alt="<?= htmlspecialchars($produit['nom']) ?>"
-                onerror="this.src = 'img/default-product.jpg'"
-              />
-              <div class="product-overlay">
-                <i class="fas fa-eye"></i>
-              </div>
-            </div>
-            <div class="product-info">
-              <span class="product-category"
-                ><?= htmlspecialchars($produit['categorie_nom'] ?? 'Cadeau') ?></span
-              >
-              <h3><?= htmlspecialchars($produit['nom']) ?></h3>
-              <p class="product-price"><?= $prix ?> €</p>
-              <div class="product-actions">
-                <button
-                  class="btn-add-to-cart"
-                  data-id="<?= $produit['id_produit'] ?>"
-                  title="Ajouter au panier"
-                >
-                  <i class="fas fa-cart-plus"></i> Ajouter
-                </button>
-                <a
-                  href="catalogue.php?id=<?= $produit['id_produit'] ?>"
-                  class="btn-view"
-                >
-                  <i class="fas fa-eye"></i> Voir
-                </a>
-              </div>
-            </div>
+          <div class="products-loading">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Chargement des produits...</p>
           </div>
-          <?php endforeach; ?>
         </div>
 
         <div class="text-center">
-          <a href="catalogue.php" class="btn btn-primary"
-            >Voir tous les produits</a
-          >
+          <a href="index.php" class="btn btn-primary">Voir tous les produits</a>
         </div>
       </div>
     </section>
@@ -786,11 +881,91 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
       </div>
     </section>
 
+    <!-- Témoignages -->
+    <section class="testimonials">
+      <div class="container">
+        <h2 class="section-title">Ce que disent nos clients</h2>
+        <div class="testimonials-grid">
+          <div class="testimonial-card">
+            <div class="testimonial-rating">
+              <i class="fas fa-star"></i><i class="fas fa-star"></i
+              ><i class="fas fa-star"></i><i class="fas fa-star"></i
+              ><i class="fas fa-star"></i>
+            </div>
+            <p class="testimonial-text">
+              "Le cadeau pour l'anniversaire de ma femme était parfait !
+              L'emballage était magnifique et la livraison ultra-rapide."
+            </p>
+            <div class="testimonial-author">
+              <div class="author-avatar">PD</div>
+              <div class="author-info">
+                <h4>Pierre D.</h4>
+                <p>Paris</p>
+              </div>
+            </div>
+          </div>
+          <div class="testimonial-card">
+            <div class="testimonial-rating">
+              <i class="fas fa-star"></i><i class="fas fa-star"></i
+              ><i class="fas fa-star"></i><i class="fas fa-star"></i
+              ><i class="fas fa-star-half-alt"></i>
+            </div>
+            <p class="testimonial-text">
+              "J'ai trouvé exactement ce qu'il me fallait pour le mariage de mes
+              amis. Service client très réactif !"
+            </p>
+            <div class="testimonial-author">
+              <div class="author-avatar">MS</div>
+              <div class="author-info">
+                <h4>Marie S.</h4>
+                <p>Lyon</p>
+              </div>
+            </div>
+          </div>
+          <div class="testimonial-card">
+            <div class="testimonial-rating">
+              <i class="fas fa-star"></i><i class="fas fa-star"></i
+              ><i class="fas fa-star"></i><i class="fas fa-star"></i
+              ><i class="fas fa-star"></i>
+            </div>
+            <p class="testimonial-text">
+              "La qualité des produits est exceptionnelle. Je recommande
+              vivement pour tous vos cadeaux !"
+            </p>
+            <div class="testimonial-author">
+              <div class="author-avatar">TL</div>
+              <div class="author-info">
+                <h4>Thomas L.</h4>
+                <p>Bordeaux</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Newsletter -->
+    <section class="newsletter">
+      <div class="container newsletter-container">
+        <div class="newsletter-content">
+          <h2>Restez informé</h2>
+          <p>
+            Inscrivez-vous à notre newsletter pour recevoir nos nouveautés et
+            offres spéciales
+          </p>
+        </div>
+        <form class="newsletter-form" id="newsletterForm">
+          <input type="email" placeholder="Votre adresse email" required />
+          <button type="submit" class="btn btn-primary">S'inscrire</button>
+        </form>
+      </div>
+    </section>
+
     <!-- Footer -->
     <footer class="footer">
       <div class="container footer-container">
         <div class="footer-col">
-          <h3>HEURE DU CADEAU</h3>
+          <h3>Cadeaux Élégance</h3>
           <p>
             Votre boutique de cadeaux en ligne pour toutes les occasions.
             Qualité, élégance et originalité.
@@ -805,8 +980,8 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
         <div class="footer-col">
           <h3>Liens rapides</h3>
           <ul class="footer-links">
-            <li><a href="index.php">Accueil</a></li>
-            <li><a href="catalogue.php">Tous les cadeaux</a></li>
+            <li><a href="index.html">Accueil</a></li>
+            <li><a href="index.php">Tous les cadeaux</a></li>
             <li><a href="apropos.html">À propos</a></li>
             <li><a href="contact.html">Contact</a></li>
             <li><a href="panier.html">Mon panier</a></li>
@@ -830,14 +1005,14 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
               Paris
             </li>
             <li><i class="fas fa-phone"></i> 01 23 45 67 89</li>
-            <li><i class="fas fa-envelope"></i> contact@heureducadeau.fr</li>
+            <li><i class="fas fa-envelope"></i> contact@cadeauxelegance.fr</li>
             <li><i class="fas fa-clock"></i> Lun-Ven: 9h-18h</li>
           </ul>
         </div>
       </div>
       <div class="footer-bottom">
         <div class="container">
-          <p>&copy; 2025 HEURE DU CADEAU. Tous droits réservés.</p>
+          <p>&copy; 2023 HEURE DU CADEAU. Tous droits réservés.</p>
           <p>
             Paiements sécurisés: <i class="fab fa-cc-visa"></i>
             <i class="fab fa-cc-mastercard"></i>
@@ -864,13 +1039,20 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
       </div>
     </div>
 
+    <!-- Scripts -->
     <script>
       // ==============================================
       // GESTIONNAIRE DE PANIER - VERSION CORRIGÉE
       // ==============================================
 
-      const API_PANIER_URL = "panier.php";
+      // Configuration
+      const API_PRODUITS_URL = "api/produits.php?action=featured&limit=4";
+      const API_PANIER_URL = "cart-api.php";
 
+      console.log("=== INITIALISATION DU PANIER ===");
+      console.log("URL API Panier:", API_PANIER_URL);
+
+      // Classe PanierManager corrigée
       class PanierManager {
         constructor() {
           this.apiUrl = API_PANIER_URL;
@@ -879,10 +1061,11 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
           this.cartCountElements = document.querySelectorAll(".cart-count");
           this.initEvents();
           this.updateCartCount();
-          console.log("PanierManager initialisé avec URL:", this.apiUrl);
+          console.log("PanierManager initialisé");
         }
 
         initEvents() {
+          // Fermer la modal
           document
             .getElementById("closeCartModal")
             ?.addEventListener("click", () => {
@@ -900,26 +1083,14 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
               this.cartModal.classList.remove("show");
             }
           });
-
-          // Gérer les clics sur les boutons d'ajout au panier
-          document.addEventListener("click", async (e) => {
-            const addToCartBtn = e.target.closest(".btn-add-to-cart");
-            if (addToCartBtn && !addToCartBtn.disabled) {
-              e.preventDefault();
-              e.stopPropagation();
-
-              const id_produit = addToCartBtn.dataset.id
-                ? parseInt(addToCartBtn.dataset.id)
-                : null;
-
-              if (id_produit) {
-                await this.ajouterAuPanier(id_produit, 1, addToCartBtn);
-              }
-            }
-          });
         }
 
+        // Méthode pour ajouter au panier - VERSION FIABLE
         async ajouterAuPanier(id_produit, quantite = 1, button = null) {
+          console.log(
+            `[PanierManager] Ajout panier: ID=${id_produit}, Qty=${quantite}`,
+          );
+
           if (!id_produit || id_produit <= 0) {
             this.showNotification("Erreur: Produit invalide", "error");
             return false;
@@ -939,9 +1110,12 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
           }
 
           try {
+            // Envoyer la requête
             const response = await fetch(this.apiUrl, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+              },
               body: JSON.stringify({
                 action: "ajouter",
                 id_produit: parseInt(id_produit),
@@ -949,30 +1123,24 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
               }),
             });
 
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
             const data = await response.json();
             console.log("Réponse API:", data);
 
             if (data.success) {
+              // Succès
               await this.updateCartCount();
 
-              // Récupérer les infos du produit depuis la réponse
-              const productInfo = {
-                nom: data.produit_nom || `Produit #${id_produit}`,
-                prix_ttc: data.produit?.prix || 19.99,
-                image: "img/default-product.jpg",
-                reference: `REF${id_produit}`,
-                id_produit: id_produit,
-              };
-
+              // Afficher la modal
+              const productInfo = await this.getProductInfo(id_produit);
               this.showCartModal(productInfo);
-              this.showNotification(`"${productInfo.nom}" ajouté au panier !`);
+
+              this.showNotification(
+                `"${data.produit_nom || productInfo.nom}" ajouté au panier !`,
+              );
 
               return true;
             } else {
+              // Échec API
               this.showNotification(
                 data.message || "Erreur lors de l'ajout",
                 "error",
@@ -981,9 +1149,17 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
             }
           } catch (error) {
             console.error("Erreur ajout panier:", error);
-            this.showNotification("Erreur de connexion au serveur", "error");
-            return false;
+
+            // Fallback: utiliser localStorage comme solution temporaire
+            this.showNotification(
+              "Erreur de connexion. Utilisation du panier local...",
+              "error",
+            );
+
+            // Utiliser localStorage comme fallback
+            return this.addToLocalStorage(id_produit, quantite, button);
           } finally {
+            // Restaurer l'état du bouton
             if (button) {
               setTimeout(() => {
                 button.disabled = originalDisabled;
@@ -994,6 +1170,119 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
           }
         }
 
+        // Fallback: localStorage
+        async addToLocalStorage(id_produit, quantite, button) {
+          try {
+            let panier = JSON.parse(localStorage.getItem("panier") || "[]");
+
+            // Chercher si le produit existe déjà
+            const index = panier.findIndex(
+              (item) => item.id_produit == id_produit,
+            );
+
+            if (index !== -1) {
+              panier[index].quantite += quantite;
+            } else {
+              // Récupérer les infos produit
+              const productInfo = await this.getProductInfo(id_produit);
+              panier.push({
+                id_produit: id_produit,
+                quantite: quantite,
+                nom: productInfo.nom,
+                prix: productInfo.prix_ttc,
+                image: productInfo.image,
+                date_ajout: new Date().toISOString(),
+              });
+            }
+
+            // Sauvegarder dans localStorage
+            localStorage.setItem("panier", JSON.stringify(panier));
+
+            // Mettre à jour l'affichage
+            this.updateCartCount();
+
+            // Afficher la modal
+            const productInfo = await this.getProductInfo(id_produit);
+            this.showCartModal(productInfo);
+
+            this.showNotification(`${productInfo.nom} ajouté au panier local`);
+
+            return true;
+          } catch (error) {
+            console.error("Erreur localStorage:", error);
+            this.showNotification("Erreur d'ajout au panier", "error");
+            return false;
+          }
+        }
+
+        // Récupérer les infos produit
+        async getProductInfo(id_produit) {
+          try {
+            // Essayer l'API produits
+            const response = await fetch(
+              `api/produits.php?action=get&id=${id_produit}&_=${Date.now()}`,
+            );
+            if (response.ok) {
+              const data = await response.json();
+              if (data.success && data.produit) {
+                return data.produit;
+              }
+            }
+
+            // Fallback: chercher dans le DOM
+            const productCard = document.querySelector(
+              `.product-card[data-id="${id_produit}"]`,
+            );
+            if (productCard) {
+              const nom =
+                productCard.querySelector("h3")?.textContent ||
+                `Produit #${id_produit}`;
+              const prixElement = productCard.querySelector(".product-price");
+              let prix = "19,99";
+
+              if (prixElement) {
+                const priceText =
+                  prixElement.textContent || prixElement.innerHTML;
+                const priceMatch = priceText.match(/(\d+[\.,]\d+)/);
+                if (priceMatch) {
+                  prix = priceMatch[1];
+                }
+              }
+
+              const image =
+                productCard.querySelector("img")?.src ||
+                "img/default-product.jpg";
+
+              return {
+                nom: nom,
+                prix_ttc: prix.replace(",", "."),
+                image: image,
+                reference: `REF${id_produit}`,
+                id_produit: id_produit,
+              };
+            }
+
+            // Dernier recours
+            return {
+              nom: `Produit #${id_produit}`,
+              prix_ttc: "19.99",
+              image: "img/default-product.jpg",
+              reference: `REF${id_produit}`,
+              id_produit: id_produit,
+            };
+          } catch (error) {
+            console.error("Erreur récupération produit:", error);
+            return {
+              nom: `Produit #${id_produit}`,
+              prix_ttc: "19.99",
+              image: "img/default-product.jpg",
+              reference: `REF${id_produit}`,
+              id_produit: id_produit,
+            };
+          }
+        }
+
+        // Afficher la modal
         showCartModal(product) {
           if (!product || !this.cartModalBody) return;
 
@@ -1002,47 +1291,60 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
             : "0,00";
 
           this.cartModalBody.innerHTML = `
-                    <div class="cart-modal-product">
-                        <div class="modal-product-image">
-                            <img src="${product.image}" 
-                                 alt="${product.nom}"
-                                 onerror="this.src='img/default-product.jpg'">
-                        </div>
-                        <div class="modal-product-info">
-                            <h4>${product.nom}</h4>
-                            <p class="modal-product-ref">Réf: ${product.reference || product.id_produit}</p>
-                            <p class="modal-product-price">${prix} €</p>
-                            <p class="modal-success-message">
-                                <i class="fas fa-check-circle"></i>
-                                Article ajouté avec succès !
-                            </p>
-                        </div>
-                    </div>
-                `;
+                  <div class="cart-modal-product">
+                      <div class="modal-product-image">
+                          <img src="${product.image}" 
+                               alt="${product.nom}"
+                               onerror="this.src='img/default-product.jpg'">
+                      </div>
+                      <div class="modal-product-info">
+                          <h4>${product.nom}</h4>
+                          <p class="modal-product-ref">Réf: ${
+                            product.reference || product.id_produit
+                          }</p>
+                          <p class="modal-product-price">${prix} €</p>
+                          <p class="modal-success-message">
+                              <i class="fas fa-check-circle"></i>
+                              Article ajouté avec succès !
+                          </p>
+                      </div>
+                  </div>
+              `;
 
           this.cartModal.classList.add("show");
         }
 
+        // Mettre à jour le compteur - VERSION AMÉLIORÉE
         async updateCartCount() {
           try {
+            console.log("[PanierManager] Mise à jour compteur...");
+
+            // Essayer l'API d'abord
             const response = await fetch(
               `${this.apiUrl}?action=compter&_=${Date.now()}`,
             );
 
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
+            if (response.ok) {
+              const data = await response.json();
+
+              if (data.success) {
+                const count = data.total || 0;
+                this.updateCartCountDisplay(count);
+                return count;
+              }
             }
 
-            const data = await response.json();
+            // Fallback: vérifier localStorage
+            const localPanier = JSON.parse(
+              localStorage.getItem("panier") || "[]",
+            );
+            const localCount = localPanier.reduce(
+              (total, item) => total + (item.quantite || 0),
+              0,
+            );
 
-            if (data.success) {
-              const count = data.total || 0;
-              this.updateCartCountDisplay(count);
-              return count;
-            } else {
-              this.updateCartCountDisplay(0);
-              return 0;
-            }
+            this.updateCartCountDisplay(localCount);
+            return localCount;
           } catch (error) {
             console.error("Erreur mise à jour compteur:", error);
             this.updateCartCountDisplay(0);
@@ -1050,10 +1352,11 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
           }
         }
 
+        // Mettre à jour l'affichage du compteur
         updateCartCountDisplay(count) {
           this.cartCountElements.forEach((element) => {
             if (count > 0) {
-              element.textContent = count > 99 ? "99+" : count;
+              element.textContent = count;
               element.style.display = "inline-flex";
               element.classList.add("pulse");
               setTimeout(() => element.classList.remove("pulse"), 600);
@@ -1062,9 +1365,13 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
               element.style.display = "none";
             }
           });
+
+          console.log(`Compteur panier mis à jour: ${count}`);
         }
 
+        // Afficher une notification
         showNotification(message, type = "success") {
+          // Supprimer les notifications existantes
           document.querySelectorAll(".toast-notification").forEach((toast) => {
             toast.remove();
           });
@@ -1072,26 +1379,291 @@ si aucun produit if (empty($produits_phares)) { $produits_phares = [
           const toast = document.createElement("div");
           toast.className = `toast-notification toast-${type}`;
           toast.innerHTML = `
-                    <div class="toast-icon"><i class="fas fa-${type === "success" ? "check-circle" : "exclamation-triangle"}"></i></div>
-                    <div class="toast-message">${message}</div>
-                    <button class="toast-close"><i class="fas fa-times"></i></button>
-                `;
+                  <div class="toast-icon"><i class="fas fa-${
+                    type === "success" ? "check-circle" : "exclamation-triangle"
+                  }"></i></div>
+                  <div class="toast-message">${message}</div>
+                  <button class="toast-close"><i class="fas fa-times"></i></button>
+              `;
           document.body.appendChild(toast);
 
+          // Fermer au clic
           toast
             .querySelector(".toast-close")
             .addEventListener("click", () => toast.remove());
 
+          // Fermer automatiquement après 5 secondes
           setTimeout(() => {
             if (toast.parentElement) toast.remove();
           }, 5000);
         }
       }
 
-      // Initialisation
-      document.addEventListener("DOMContentLoaded", () => {
+      // ==============================================
+      // FONCTIONS DE GESTION DES PRODUITS
+      // ==============================================
+
+      // Fonction pour générer les étoiles de notation
+      function generateRatingStars(rating) {
+        if (!rating || rating == 0) return "";
+        let stars = "";
+        const fullStars = Math.floor(rating);
+        const hasHalfStar = rating % 1 >= 0.5;
+        for (let i = 1; i <= 5; i++) {
+          if (i <= fullStars) {
+            stars += '<i class="fas fa-star"></i>';
+          } else if (hasHalfStar && i === fullStars + 1) {
+            stars += '<i class="fas fa-star-half-alt"></i>';
+          } else {
+            stars += '<i class="far fa-star"></i>';
+          }
+        }
+        return stars;
+      }
+
+      // Fonction pour charger les produits phares
+      async function loadFeaturedProducts() {
+        try {
+          const container = document.getElementById("featuredProducts");
+          container.innerHTML = `
+                  <div class="products-loading">
+                      <i class="fas fa-spinner fa-spin"></i>
+                      <p>Chargement des produits...</p>
+                  </div>
+              `;
+
+          const response = await fetch(API_PRODUITS_URL + "&_=" + Date.now());
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          if (data.success && data.products && data.products.length > 0) {
+            displayProductsFromDatabase(data.products);
+          } else {
+            displayNoProductsMessage();
+          }
+        } catch (error) {
+          console.error("Erreur chargement produits:", error);
+          displayNetworkError(error);
+        }
+      }
+
+      // Fonction pour afficher les produits
+      function displayProductsFromDatabase(products) {
+        const container = document.getElementById("featuredProducts");
+        let html = "";
+
+        products.forEach((product) => {
+          const prix = product.prix_ttc
+            ? parseFloat(product.prix_ttc).toFixed(2).replace(".", ",")
+            : "0,00";
+
+          const ratingStars = generateRatingStars(
+            parseFloat(product.note_moyenne || 0),
+          );
+          const productImage = product.image || "img/default-product.jpg";
+          const stockQuantity = product.quantite_stock || 0;
+
+          let stockBadge = "";
+          let isDisabled = false;
+
+          if (stockQuantity <= 0) {
+            stockBadge =
+              '<span class="stock-badge stock-rupture">Épuisé</span>';
+            isDisabled = true;
+          } else if (stockQuantity <= 5) {
+            stockBadge =
+              '<span class="stock-badge stock-faible">Stock faible</span>';
+          }
+
+          html += `
+                  <div class="product-card" data-id="${product.id_produit}">
+                      ${stockBadge}
+                      <div class="product-image">
+                          <img src="${productImage}"
+                               alt="${product.nom}"
+                               onerror="this.onerror=null;this.src='img/default-product.jpg'">
+                          <div class="product-overlay">
+                              <i class="fas fa-eye"></i>
+                          </div>
+                      </div>
+                      <div class="product-info">
+                          <span class="product-category">${
+                            product.categorie_nom || "Cadeau"
+                          }</span>
+                          <h3>${product.nom}</h3>
+                          <p class="product-price">${prix} €</p>
+                          
+                          ${
+                            product.description_courte
+                              ? `
+                          <p style="color: #666; font-size: 0.9rem; margin: 8px 0;">
+                              ${product.description_courte}
+                          </p>
+                          `
+                              : ""
+                          }
+                          
+                          ${
+                            product.note_moyenne &&
+                            parseFloat(product.note_moyenne) > 0
+                              ? `
+                          <div class="product-rating">
+                              ${ratingStars}
+                              <span class="rating-count">(${
+                                product.nombre_avis || 0
+                              })</span>
+                          </div>
+                          `
+                              : ""
+                          }
+                          
+                          <div class="product-actions">
+                              <button class="btn-add-to-cart"
+                                      data-id="${product.id_produit}"
+                                      title="Ajouter au panier"
+                                      ${isDisabled ? "disabled" : ""}>
+                                  <i class="fas fa-cart-plus"></i> 
+                                  ${isDisabled ? "Épuisé" : "Ajouter"}
+                              </button>
+                              <a href="index.php?categorie=${
+                                product.id_categorie || ""
+                              }" 
+                                 class="btn-view">
+                                  <i class="fas fa-eye"></i> Voir
+                              </a>
+                          </div>
+                      </div>
+                  </div>
+              `;
+        });
+
+        container.innerHTML = html;
+      }
+
+      // Fonctions d'affichage d'erreur
+      function displayNoProductsMessage() {
+        const container = document.getElementById("featuredProducts");
+        container.innerHTML = `
+              <div class="products-empty">
+                  <i class="fas fa-gift fa-3x" style="color: #ddd; margin-bottom: 20px;"></i>
+                  <h3>Aucun produit disponible</h3>
+                  <p>La boutique est actuellement en cours de configuration.</p>
+                  <button onclick="loadFeaturedProducts()" class="btn btn-secondary" style="margin-top: 20px;">
+                      <i class="fas fa-redo"></i> Actualiser
+                  </button>
+              </div>
+          `;
+      }
+
+      function displayNetworkError(error) {
+        const container = document.getElementById("featuredProducts");
+        container.innerHTML = `
+              <div class="products-network-error">
+                  <i class="fas fa-wifi fa-3x" style="color: #f39c12; margin-bottom: 20px;"></i>
+                  <h3>Problème de connexion</h3>
+                  <p>Impossible de contacter le serveur.</p>
+                  <p><small>${error.message}</small></p>
+                  <button onclick="loadFeaturedProducts()" class="btn btn-secondary" style="margin-top: 20px;">
+                      <i class="fas fa-redo"></i> Réessayer
+                  </button>
+              </div>
+          `;
+      }
+
+      // ==============================================
+      // INITIALISATION ET ÉVÉNEMENTS
+      // ==============================================
+
+      document.addEventListener("DOMContentLoaded", async () => {
+        console.log("=== DÉMARRAGE DE L'APPLICATION ===");
+
+        // Initialiser le gestionnaire de panier
         window.panierManager = new PanierManager();
+
+        // Gestion des clics sur boutons "Ajouter au panier"
+        document.addEventListener("click", async (e) => {
+          const addToCartBtn = e.target.closest(".btn-add-to-cart");
+          if (addToCartBtn && !addToCartBtn.disabled) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const id_produit = addToCartBtn.dataset.id
+              ? parseInt(addToCartBtn.dataset.id)
+              : null;
+            console.log("Clic bouton Ajouter - ID:", id_produit);
+
+            if (id_produit) {
+              await window.panierManager.ajouterAuPanier(
+                id_produit,
+                1,
+                addToCartBtn,
+              );
+            }
+          }
+        });
+
+        // Charger les produits phares
+        await loadFeaturedProducts();
+
+        console.log("=== APPLICATION PRÊTE ===");
       });
+
+      // ==============================================
+      // FONCTIONS GLOBALES (pour debug)
+      // ==============================================
+
+      // Fonctions globales exposées
+      window.ajouterAuPanier = function (
+        id_produit,
+        quantite = 1,
+        button = null,
+      ) {
+        if (!window.panierManager) {
+          window.panierManager = new PanierManager();
+        }
+        return window.panierManager.ajouterAuPanier(
+          id_produit,
+          quantite,
+          button,
+        );
+      };
+
+      window.loadFeaturedProducts = loadFeaturedProducts;
+
+      // Fonction de test API
+      async function testAPI() {
+        try {
+          const response = await fetch(API_PRODUITS_URL + "&_=" + Date.now());
+          const text = await response.text();
+
+          alert(
+            `Statut: ${response.status}\nRéponse: ${text.substring(0, 200)}...`,
+          );
+        } catch (error) {
+          alert("Erreur: " + error.message);
+        }
+      }
+
+      // Vérification de la base de données
+      window.checkDatabase = async function () {
+        try {
+          const response = await fetch(API_PRODUITS_URL + "&_=" + Date.now());
+          const data = await response.json();
+
+          if (data.success && data.products) {
+            console.log(`${data.products.length} produits trouvés`);
+            data.products.forEach((p, i) => {
+              console.log(`${i + 1}. ${p.nom} - ${p.prix_ttc}€`);
+            });
+          }
+        } catch (error) {
+          console.log("Erreur:", error.message);
+        }
+      };
     </script>
   </body>
 </html>

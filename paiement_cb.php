@@ -1,6 +1,6 @@
 <?php
 // ============================================
-// PAIEMENT PAR CARTE BANCAIRE - VERSION CORRIGÉE
+// PAIEMENT PAR CARTE BANCAIRE VIA PAYPAL - VERSION CORRIGÉE
 // ============================================
 
 error_reporting(E_ALL);
@@ -23,168 +23,247 @@ if (!$pdo) {
 synchroniserPanierSessionBDD($pdo, session_id());
 
 // ============================================
-// CRÉATION DE LA COMMANDE SI NÉCESSAIRE
+// CONFIGURATION PAYPAL
 // ============================================
-if (!isset($_SESSION[SESSION_KEY_COMMANDE])) {
-    try {
-        $pdo->beginTransaction();
-        
-        // Récupérer les données du checkout
-        $checkout = $_SESSION[SESSION_KEY_CHECKOUT];
-        $client_id = $checkout['client_id'];
-        $adresse_livraison_id = $checkout['adresse_livraison']['id'] ?? null;
-        $adresse_facturation_id = $checkout['adresse_facturation']['id'] ?? $adresse_livraison_id;
-        
-        // Calculer le total avec les vrais prix des produits
-        $sous_total = 0;
-        $items_data = [];
-        $verification_stock = true;
-        
-        foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
-            $produit = getProductDetails($item['id_produit'], $pdo);
-            $prix_unitaire = floatval($produit['prix_ttc']);
-            $quantite = intval($item['quantite']);
-            
-            // Vérifier le stock
-            if ($produit['quantite_stock'] < $quantite) {
-                $verification_stock = false;
-                throw new Exception("Stock insuffisant pour le produit: " . $produit['nom']);
-            }
-            
-            $sous_total += $prix_unitaire * $quantite;
-            
-            $items_data[] = [
-                'id_produit' => $item['id_produit'],
-                'reference' => $produit['reference'],
-                'nom' => $produit['nom'],
-                'quantite' => $quantite,
-                'prix_unitaire_ttc' => $prix_unitaire,
-                'prix_unitaire_ht' => round($prix_unitaire / 1.2, 2)
-            ];
-        }
-        
-        // Calculer les frais de livraison
-        $frais_livraison = 0;
-        if ($checkout['mode_livraison'] === 'express') {
-            $frais_livraison = 9.90;
-        } elseif ($checkout['mode_livraison'] === 'relais') {
-            $frais_livraison = 4.90;
-        } elseif ($sous_total < 50.00) {
-            $frais_livraison = 4.90;
-        }
-        
-        // Emballage cadeau
-        $frais_emballage = $checkout['emballage_cadeau'] ? 3.90 : 0;
-        
-        // Total final
-        $total = $sous_total + $frais_livraison + $frais_emballage;
-        
-        // Insérer la commande
-        $stmt = $pdo->prepare("
-            INSERT INTO commandes (
-                id_client, id_adresse_livraison, id_adresse_facturation,
-                sous_total, frais_livraison, total_ttc, statut, statut_paiement,
-                mode_paiement, date_commande, client_type, instructions
-            ) VALUES (?, ?, ?, ?, ?, ?, 'en_attente', 'en_attente', 'carte', NOW(), 'registered', ?)
-        ");
-        
-        $stmt->execute([
-            $client_id,
-            $adresse_livraison_id,
-            $adresse_facturation_id,
-            $sous_total,
-            $frais_livraison + $frais_emballage,
-            $total,
-            $checkout['instructions']
-        ]);
-        
-        $id_commande = $pdo->lastInsertId();
-        
-        if (!$id_commande) {
-            throw new Exception("Échec de la création de la commande - ID non généré");
-        }
-        
-        // Récupérer le numéro de commande généré par le trigger
-        $stmt = $pdo->prepare("SELECT numero_commande FROM commandes WHERE id_commande = ?");
-        $stmt->execute([$id_commande]);
-        $commande_numero = $stmt->fetchColumn();
-        
-        // Insérer les articles de la commande
-        $stmt_item = $pdo->prepare("
-            INSERT INTO commande_items (
-                id_commande, id_produit, reference_produit, nom_produit,
-                quantite, prix_unitaire_ht, prix_unitaire_ttc, tva
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-        
-        foreach ($items_data as $item) {
-            $result = $stmt_item->execute([
-                $id_commande,
-                $item['id_produit'],
-                $item['reference'],
-                $item['nom'],
-                $item['quantite'],
-                $item['prix_unitaire_ht'],
-                $item['prix_unitaire_ttc'],
-                20.00
-            ]);
-            
-            if (!$result) {
-                throw new Exception("Échec insertion article: " . $item['nom']);
-            }
-        }
-        
-        // Mettre à jour le statut du panier en BDD
-        if (isset($_SESSION[SESSION_KEY_PANIER_ID]) && strpos($_SESSION[SESSION_KEY_PANIER_ID], 'session_') === false) {
-            $stmt = $pdo->prepare("UPDATE panier SET statut = 'valide' WHERE id_panier = ?");
-            $stmt->execute([$_SESSION[SESSION_KEY_PANIER_ID]]);
-        }
-        
-        $pdo->commit();
-        
-        $_SESSION[SESSION_KEY_COMMANDE] = [
-            'id' => $id_commande,
-            'numero' => $commande_numero,
-            'montant' => $total
-        ];
-        
-        // Logger la création de commande
-        $stmt = $pdo->prepare("
-            INSERT INTO logs (type_log, niveau, message, utilisateur_id, ip_address, metadata)
-            VALUES ('info', 'info', ?, ?, ?, ?)
-        ");
-        $stmt->execute([
-            'Commande créée avec succès (en attente de paiement)',
-            $client_id,
-            $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
-            json_encode(['commande_id' => $id_commande, 'montant' => $total])
-        ]);
-        
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        error_log("Erreur création commande CB: " . $e->getMessage());
-        
-        // Logger l'erreur
-        try {
-            $stmt = $pdo->prepare("
-                INSERT INTO logs (type_log, niveau, message, ip_address, metadata)
-                VALUES ('erreur', 'error', ?, ?, ?)
-            ");
-            $stmt->execute([
-                'Erreur création commande CB: ' . $e->getMessage(),
-                $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
-                json_encode(['error' => $e->getMessage()])
-            ]);
-        } catch (Exception $logError) {}
-        
-        die("Erreur lors de la création de la commande. Veuillez réessayer.");
+define('PAYPAL_CLIENT_ID', 'AUe7uZH9uo6MpEhUD5qUL0B6kqE69b9OZi4XMaR-3RJGtklCXfgnSBmaNMUo1uyMmznhoBG-U0bmynR_');
+define('PAYPAL_CLIENT_SECRET', 'EDTCzIliUZi-_Jqxb3MUsTKjaS5Dkl0YKGQrCKy6LN7Gqde6CEmQhMBWtGEo4tbiUVerejXZ06rLP-2S');
+define('PAYPAL_MODE', 'sandbox'); // 'sandbox' ou 'live'
+
+// URLs de redirection
+$protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://';
+$host = $_SERVER['HTTP_HOST'];
+$base_url = $protocol . $host . '/';
+$return_url = $base_url . 'paiement-reussi.php';
+$cancel_url = $base_url . 'paiement-annule.php';
+
+// ============================================
+// FONCTIONS PAYPAL CORRIGÉES
+// ============================================
+
+/**
+ * Obtient un token d'accès PayPal
+ */
+function getPayPalAccessToken() {
+    $ch = curl_init();
+    
+    $url = (PAYPAL_MODE === 'sandbox') 
+        ? 'https://api-m.sandbox.paypal.com/v1/oauth2/token'
+        : 'https://api-m.paypal.com/v1/oauth2/token';
+    
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_HEADER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_USERPWD, PAYPAL_CLIENT_ID . ":" . PAYPAL_CLIENT_SECRET);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, "grant_type=client_credentials");
+    
+    $result = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
+    if (curl_errno($ch)) {
+        $error = curl_error($ch);
+        curl_close($ch);
+        error_log("Erreur cURL PayPal token: " . $error);
+        return ['error' => "Erreur de communication avec PayPal: $error"];
     }
-} else {
-    $id_commande = $_SESSION[SESSION_KEY_COMMANDE]['id'];
-    $total = $_SESSION[SESSION_KEY_COMMANDE]['montant'];
+    
+    curl_close($ch);
+    
+    if ($http_code !== 200) {
+        error_log("Erreur PayPal token HTTP $http_code: $result");
+        return ['error' => "Erreur PayPal: HTTP $http_code"];
+    }
+    
+    $data = json_decode($result, true);
+    
+    if (!isset($data['access_token'])) {
+        return ['error' => 'Token d\'accès non reçu'];
+    }
+    
+    return $data['access_token'];
 }
 
-// Récupérer les informations de la commande
+/**
+ * Crée une commande PayPal avec paiement par carte
+ */
+function createPayPalCardOrder($montant, $commande_id, $return_url, $cancel_url) {
+    $access_token = getPayPalAccessToken();
+    
+    if (is_array($access_token) && isset($access_token['error'])) {
+        return $access_token;
+    }
+    
+    // Formatage du montant
+    $montant_total = number_format(floatval($montant), 2, '.', '');
+    
+    // Générer un ID de requête unique
+    $request_id = uniqid('ORDER_' . $commande_id . '_', true);
+    
+    // Construction de la requête
+    $order_data = [
+        'intent' => 'CAPTURE',
+        'purchase_units' => [
+            [
+                'reference_id' => 'ORDER_' . $commande_id,
+                'description' => 'Commande #' . $commande_id . ' - HEURE DU CADEAU',
+                'custom_id' => (string)$commande_id,
+                'amount' => [
+                    'currency_code' => 'EUR',
+                    'value' => $montant_total
+                ]
+            ]
+        ],
+        'application_context' => [
+            'brand_name' => 'HEURE DU CADEAU',
+            'landing_page' => 'BILLING',
+            'shipping_preference' => 'NO_SHIPPING',
+            'user_action' => 'PAY_NOW',
+            'return_url' => $return_url,
+            'cancel_url' => $cancel_url
+        ]
+    ];
+    
+    error_log("PayPal Card Order Data: " . json_encode($order_data));
+    
+    $url = (PAYPAL_MODE === 'sandbox')
+        ? 'https://api-m.sandbox.paypal.com/v2/checkout/orders'
+        : 'https://api-m.paypal.com/v2/checkout/orders';
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'Authorization: Bearer ' . $access_token,
+        'PayPal-Request-Id: ' . $request_id,
+        'Prefer: return=representation'
+    ]);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($order_data));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    
+    $result = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
+    if (curl_errno($ch)) {
+        $error = curl_error($ch);
+        curl_close($ch);
+        error_log("Erreur cURL création commande PayPal carte: " . $error);
+        return ['error' => "Erreur de communication avec PayPal: $error"];
+    }
+    
+    curl_close($ch);
+    
+    error_log("PayPal Card Response (HTTP $http_code): " . $result);
+    
+    if ($http_code >= 400) {
+        $response_data = json_decode($result, true);
+        $error_message = $response_data['message'] ?? $response_data['error_description'] ?? 'Erreur inconnue';
+        $error_details = $response_data['details'][0]['description'] ?? '';
+        
+        error_log("Erreur PayPal création commande carte: $error_message - $error_details");
+        
+        return [
+            'error' => "Erreur PayPal: " . $error_message . ($error_details ? " - $error_details" : ""),
+            'details' => $response_data,
+            'http_code' => $http_code
+        ];
+    }
+    
+    return json_decode($result, true);
+}
+
+/**
+ * Capture un paiement PayPal
+ */
+function capturePayPalOrder($order_id) {
+    $access_token = getPayPalAccessToken();
+    
+    if (is_array($access_token) && isset($access_token['error'])) {
+        return $access_token;
+    }
+    
+    $url = (PAYPAL_MODE === 'sandbox')
+        ? "https://api-m.sandbox.paypal.com/v2/checkout/orders/$order_id/capture"
+        : "https://api-m.paypal.com/v2/checkout/orders/$order_id/capture";
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'Authorization: Bearer ' . $access_token,
+        'Prefer: return=representation'
+    ]);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    
+    $result = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
+    if (curl_errno($ch)) {
+        $error = curl_error($ch);
+        curl_close($ch);
+        error_log("Erreur cURL capture PayPal: " . $error);
+        return ['error' => "Erreur de communication avec PayPal: $error"];
+    }
+    
+    curl_close($ch);
+    
+    if ($http_code >= 400) {
+        error_log("Erreur capture PayPal HTTP $http_code: " . $result);
+        return ['error' => "Erreur capture PayPal: $http_code"];
+    }
+    
+    return json_decode($result, true);
+}
+
+// ============================================
+// RÉCUPÉRATION DE L'ID COMMANDE
+// ============================================
+
+// Récupérer l'ID commande depuis l'URL d'abord
+$id_commande = isset($_GET['commande']) && is_numeric($_GET['commande']) ? intval($_GET['commande']) : null;
+
+// Si pas dans l'URL, essayer la session
+if (!$id_commande && isset($_SESSION[SESSION_KEY_COMMANDE]['id'])) {
+    $id_commande = $_SESSION[SESSION_KEY_COMMANDE]['id'];
+}
+
+// Si toujours pas d'ID, essayer de récupérer la dernière commande en attente
+if (!$id_commande && isset($_SESSION['client_id'])) {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT id_commande 
+            FROM commandes 
+            WHERE id_client = ? AND statut_paiement = 'en_attente' 
+            ORDER BY date_commande DESC 
+            LIMIT 1
+        ");
+        $stmt->execute([$_SESSION['client_id']]);
+        $id_commande = $stmt->fetchColumn();
+    } catch (Exception $e) {
+        error_log("Erreur récupération dernière commande: " . $e->getMessage());
+    }
+}
+
+// Si toujours pas d'ID, afficher une erreur
+if (!$id_commande) {
+    error_log("ID commande non trouvé - URL: " . $_SERVER['REQUEST_URI'] . ", Session: " . print_r($_SESSION, true));
+    
+    // Rediriger vers le panier avec un message
+    $_SESSION['messages'][] = [
+        'type' => 'error',
+        'message' => 'Aucune commande en cours. Veuillez recommencer votre achat.'
+    ];
+    header('Location: panier.html');
+    exit;
+}
+
+// ============================================
+// RÉCUPÉRATION DES INFORMATIONS DE LA COMMANDE
+// ============================================
 try {
     $stmt = $pdo->prepare("
         SELECT 
@@ -192,148 +271,191 @@ try {
             c.numero_commande,
             c.total_ttc as montant_total,
             c.statut,
+            c.statut_paiement,
             cl.id_client,
             cl.email,
             cl.prenom,
             cl.nom,
             a.adresse as adresse_livraison,
+            a.complement,
             a.code_postal,
-            a.ville
+            a.ville,
+            a.pays,
+            a.telephone
         FROM commandes c
         JOIN clients cl ON c.id_client = cl.id_client
-        JOIN adresses a ON c.id_adresse_livraison = a.id_adresse
+        LEFT JOIN adresses a ON c.id_adresse_livraison = a.id_adresse
         WHERE c.id_commande = ?
     ");
     $stmt->execute([$id_commande]);
-    $commande = $stmt->fetch();
+    $commande = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$commande) {
-        throw new Exception("Commande non trouvée");
+        throw new Exception("Commande #$id_commande non trouvée dans la base de données");
     }
+    
+    // Vérifier que la commande est bien en attente de paiement
+    if ($commande['statut_paiement'] !== 'en_attente') {
+        // Si déjà payée, rediriger vers la page de succès
+        if ($commande['statut_paiement'] === 'paye') {
+            header('Location: paiement-reussi.php?commande=' . $id_commande);
+            exit;
+        }
+        
+        // Sinon, permettre le paiement quand même
+        error_log("Attention: Commande #$id_commande avec statut_paiement = " . $commande['statut_paiement']);
+    }
+    
+    $total = floatval($commande['montant_total']);
+    
 } catch (Exception $e) {
-    error_log("Erreur récupération commande CB: " . $e->getMessage());
-    die("Erreur lors de la récupération de la commande");
+    error_log("Erreur récupération commande CB: " . $e->getMessage() . " - ID commande: " . $id_commande);
+    
+    // Afficher une page d'erreur plus informative
+    ?>
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Erreur - HEURE DU CADEAU</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            }
+            .container { 
+                max-width: 600px; 
+                width: 100%;
+                background: white; 
+                padding: 40px; 
+                border-radius: 20px; 
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                text-align: center;
+            }
+            h1 { color: #e74c3c; margin-bottom: 20px; }
+            .error-icon {
+                font-size: 64px;
+                color: #e74c3c;
+                margin-bottom: 20px;
+            }
+            .btn { 
+                background: #5a67d8; 
+                color: white; 
+                padding: 15px 30px; 
+                border: none; 
+                border-radius: 12px; 
+                cursor: pointer; 
+                text-decoration: none;
+                display: inline-block;
+                margin-top: 20px;
+            }
+            .btn:hover { background: #4c51bf; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="error-icon">❌</div>
+            <h1>Erreur lors de la récupération de la commande</h1>
+            <p>Nous n'avons pas pu trouver votre commande. Voici les détails techniques :</p>
+            <p style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0; text-align: left;">
+                <strong>Message :</strong> <?= htmlspecialchars($e->getMessage()) ?><br>
+                <strong>ID commande :</strong> <?= htmlspecialchars($id_commande ?? 'Non défini') ?>
+            </p>
+            <p>Veuillez réessayer ou contacter notre service client.</p>
+            <a href="panier.html" class="btn">Retour au panier</a>
+        </div>
+    </body>
+    </html>
+    <?php
+    exit;
 }
 
-// Traitement du formulaire de paiement
+// ============================================
+// TRAITEMENT DU FORMULAIRE DE PAIEMENT
+// ============================================
 $erreurs = [];
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'traiter_paiement_cb') {
     
     $numero_carte = str_replace(' ', '', $_POST['numero_carte'] ?? '');
-    $date_expiration = $_POST['date_expiration'] ?? '';
+    $expiration_mois = $_POST['expiration_mois'] ?? '';
+    $expiration_annee = $_POST['expiration_annee'] ?? '';
     $cryptogramme = $_POST['cryptogramme'] ?? '';
     $titulaire = $_POST['titulaire_carte'] ?? '';
     
-    if (strlen($numero_carte) < 16 || !ctype_digit($numero_carte)) {
+    $date_expiration = $expiration_mois . '/' . $expiration_annee;
+    
+    // Validation des données carte
+    if (strlen($numero_carte) < 15 || !ctype_digit($numero_carte)) {
         $erreurs[] = "Numéro de carte invalide";
     }
     
-    if (!preg_match('/^(0[1-9]|1[0-2])\/([0-9]{2})$/', $date_expiration)) {
-        $erreurs[] = "Date d'expiration invalide";
+    if (!preg_match('/^(0[1-9]|1[0-2])$/', $expiration_mois)) {
+        $erreurs[] = "Mois d'expiration invalide";
     }
     
-    if (strlen($cryptogramme) !== 3 || !ctype_digit($cryptogramme)) {
+    if (!preg_match('/^[0-9]{2}$/', $expiration_annee)) {
+        $erreurs[] = "Année d'expiration invalide";
+    }
+    
+    if (strlen($cryptogramme) < 3 || !ctype_digit($cryptogramme)) {
         $erreurs[] = "Cryptogramme invalide";
     }
     
+    if (empty($titulaire)) {
+        $erreurs[] = "Nom du titulaire requis";
+    }
+    
+    // Si pas d'erreurs, procéder au paiement via PayPal
     if (empty($erreurs)) {
-        // SIMULATION POUR TEST - En production, appeler l'API bancaire
-        sleep(1);
         
-        $reference = 'CARD_' . time() . '_' . uniqid();
+        // Sauvegarder l'ID commande en session pour le retour
+        $_SESSION[SESSION_KEY_COMMANDE]['id'] = $id_commande;
         
-        try {
-            $pdo->beginTransaction();
+        // Créer la commande PayPal
+        $paypal_order = createPayPalCardOrder(
+            $total,
+            $id_commande,
+            $return_url . '?commande=' . $id_commande,
+            $cancel_url . '?commande=' . $id_commande
+        );
+        
+        if (isset($paypal_order['error'])) {
+            $erreurs[] = "Erreur PayPal: " . $paypal_order['error'];
+            error_log("Erreur PayPal Card: " . json_encode($paypal_order));
+        } else {
+            // Rediriger vers l'URL d'approbation PayPal
+            $approval_url = null;
+            foreach ($paypal_order['links'] as $link) {
+                if ($link['rel'] === 'approve') {
+                    $approval_url = $link['href'];
+                    break;
+                }
+            }
             
-            // Mettre à jour la commande
-            $stmt = $pdo->prepare("
-                UPDATE commandes 
-                SET statut = 'confirmee',
-                    statut_paiement = 'paye',
-                    mode_paiement = 'carte',
-                    reference_paiement = ?,
-                    date_paiement = NOW()
-                WHERE id_commande = ?
-            ");
-            $stmt->execute([$reference, $id_commande]);
-            
-            // Créer la transaction
-            $stmt = $pdo->prepare("
-                INSERT INTO transactions 
-                (numero_transaction, id_commande, id_client, montant, methode_paiement, 
-                 reference_paiement, statut, date_creation, ip_client) 
-                VALUES (?, ?, ?, ?, 'carte', ?, 'paye', NOW(), ?)
-            ");
-            
-            $numero_transaction = 'TRX_' . date('Ymd') . '_' . uniqid();
-            $client_id = $_SESSION[SESSION_KEY_CLIENT_ID] ?? $commande['id_client'];
-            $ip_client = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-            
-            $stmt->execute([
-                $numero_transaction,
-                $id_commande,
-                $client_id,
-                $commande['montant_total'],
-                $reference,
-                $ip_client
-            ]);
-            
-            // Mettre à jour les ventes et le stock des produits
-            $stmt = $pdo->prepare("
-                UPDATE produits p
-                JOIN commande_items ci ON p.id_produit = ci.id_produit
-                SET p.ventes = p.ventes + ci.quantite,
-                    p.quantite_stock = p.quantite_stock - ci.quantite
-                WHERE ci.id_commande = ?
-            ");
-            $stmt->execute([$id_commande]);
-            
-            // Logger le succès
-            $stmt = $pdo->prepare("
-                INSERT INTO logs (type_log, niveau, message, utilisateur_id, ip_address)
-                VALUES ('paiement', 'info', ?, ?, ?)
-            ");
-            $stmt->execute([
-                'Paiement CB réussi pour commande #' . $id_commande,
-                $client_id,
-                $ip_client
-            ]);
-            
-            $pdo->commit();
-            
-            // ============================================
-            // VIDER LE PANIER - ÉTAPE CRITIQUE
-            // ============================================
-            cleanUserSession();
-            
-            // Rediriger vers confirmation
-            header('Location: confirmation.php?commande=' . $id_commande);
-            exit;
-            
-        } catch (Exception $e) {
-            $pdo->rollBack();
-            error_log("Erreur paiement CB: " . $e->getMessage());
-            
-            // Logger l'erreur
-            try {
-                $stmt = $pdo->prepare("
-                    INSERT INTO logs (type_log, niveau, message, ip_address, metadata)
-                    VALUES ('paiement', 'error', ?, ?, ?)
-                ");
-                $stmt->execute([
-                    'Erreur paiement CB: ' . $e->getMessage(),
-                    $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
-                    json_encode(['error' => $e->getMessage(), 'commande' => $id_commande])
-                ]);
-            } catch (Exception $logError) {}
-            
-            $erreurs[] = "Erreur lors de l'enregistrement du paiement";
+            if ($approval_url) {
+                // Sauvegarder l'ID PayPal pour le retour
+                $_SESSION['paypal_order_id'] = $paypal_order['id'];
+                
+                // Rediriger vers PayPal pour la saisie de la carte
+                header('Location: ' . $approval_url);
+                exit;
+            } else {
+                $erreurs[] = "URL d'approbation PayPal non trouvée";
+            }
         }
     }
 }
 
 // ============================================
-// AFFICHAGE HTML
+// AFFICHAGE HTML - FORMULAIRE SIMPLIFIÉ
 // ============================================
 ?>
 <!DOCTYPE html>
@@ -341,44 +463,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Paiement Carte Bancaire - HEURE DU CADEAU</title>
+    <title>Paiement par Carte Bancaire - HEURE DU CADEAU</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* STYLES CSS COMPLETS */
-        body { 
-            font-family: Arial, sans-serif; 
-            background: #f9f9f9; 
+        * { 
             margin: 0; 
-            padding: 40px 20px; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            min-height: 100vh; 
+            padding: 0; 
+            box-sizing: border-box; 
+        }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
         }
         .container { 
-            max-width: 500px; 
+            max-width: 600px; 
+            width: 100%;
             background: white; 
             padding: 40px; 
-            border-radius: 12px; 
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1); 
-            width: 100%;
+            border-radius: 20px; 
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            animation: slideUp 0.5s ease;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         h1 { 
-            color: #5a67d8; 
+            color: #2d3748; 
             margin-bottom: 30px; 
             text-align: center;
             font-size: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        h1 i { color: #5a67d8; }
+        .badge {
+            background: #5a67d8;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            margin-left: 10px;
         }
         .details { 
-            background: #f8f9fa; 
-            padding: 20px; 
-            border-radius: 8px; 
-            margin-bottom: 25px;
-            border-left: 4px solid #5a67d8;
+            background: #f7fafc; 
+            padding: 25px; 
+            border-radius: 15px; 
+            margin-bottom: 30px;
+            border-left: 5px solid #5a67d8;
         }
         .details p {
             margin: 8px 0;
-            color: #2d3748;
+            color: #4a5568;
+        }
+        .montant {
+            font-size: 28px;
+            color: #5a67d8;
+            font-weight: 800;
+            margin: 10px 0;
         }
         .form-group { 
             margin-bottom: 25px; 
@@ -389,16 +538,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             font-weight: 600;
             color: #4a5568;
         }
-        input { 
+        input, select { 
             width: 100%; 
-            padding: 12px 15px; 
+            padding: 14px 18px; 
             border: 2px solid #e2e8f0; 
-            border-radius: 8px; 
+            border-radius: 12px; 
             box-sizing: border-box;
             font-size: 16px;
             transition: all 0.3s ease;
         }
-        input:focus {
+        input:focus, select:focus {
             outline: none;
             border-color: #5a67d8;
             box-shadow: 0 0 0 3px rgba(90,103,216,0.1);
@@ -406,42 +555,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         .form-row { 
             display: flex; 
             gap: 15px; 
+            margin-bottom: 0;
         }
         .form-row .form-group { 
             flex: 1; 
-        }
-        .btn { 
-            background: #5a67d8; 
-            color: white; 
-            padding: 16px 30px; 
-            border: none; 
-            border-radius: 8px; 
-            cursor: pointer; 
-            width: 100%; 
-            font-size: 18px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            margin-top: 15px;
-        }
-        .btn:hover { 
-            background: #4c51bf; 
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(90,103,216,0.3);
-        }
-        .btn:disabled {
-            opacity: 0.7;
-            cursor: not-allowed;
-        }
-        .error { 
-            color: #c53030; 
-            margin-bottom: 20px; 
-            padding: 15px; 
-            background: #fff5f5; 
-            border-radius: 8px;
-            border-left: 4px solid #c53030;
-        }
-        .error p {
-            margin: 5px 0;
+            margin-bottom: 0;
         }
         .card-icons {
             display: flex;
@@ -450,6 +568,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             font-size: 32px;
             color: #718096;
         }
+        .card-icons i {
+            transition: all 0.3s ease;
+        }
+        .btn { 
+            background: linear-gradient(135deg, #5a67d8, #4c51bf);
+            color: white; 
+            padding: 16px 30px; 
+            border: none; 
+            border-radius: 12px; 
+            cursor: pointer; 
+            width: 100%; 
+            font-size: 18px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .btn:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(90,103,216,0.4);
+        }
+        .btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .error { 
+            color: #c53030; 
+            margin-bottom: 25px; 
+            padding: 15px; 
+            background: #fff5f5; 
+            border-radius: 12px;
+            border-left: 5px solid #c53030;
+        }
+        .error p {
+            margin: 5px 0;
+        }
         .secure-badge {
             display: flex;
             align-items: center;
@@ -457,25 +615,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             gap: 10px;
             margin-top: 25px;
             padding-top: 20px;
-            border-top: 1px solid #e2e8f0;
+            border-top: 2px solid #edf2f7;
             color: #718096;
             font-size: 14px;
         }
         .secure-badge i {
             color: #38a169;
         }
+        .paypal-note {
+            background: #ebf8ff;
+            border-left: 5px solid #3182ce;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-size: 14px;
+            color: #2c5282;
+        }
+        .paypal-note i {
+            color: #3182ce;
+            margin-right: 10px;
+        }
+        .expiry-select {
+            display: flex;
+            gap: 10px;
+        }
+        .expiry-select select {
+            flex: 1;
+        }
+        .commande-numero {
+            font-size: 16px;
+            color: #4a5568;
+            margin-bottom: 5px;
+        }
+        @media (max-width: 768px) {
+            .container { padding: 25px; }
+            .form-row { flex-direction: column; gap: 0; }
+            .form-row .form-group { margin-bottom: 25px; }
+            .form-row .form-group:last-child { margin-bottom: 0; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1><i class="fas fa-credit-card" style="margin-right: 10px;"></i> Paiement sécurisé</h1>
+        <h1>
+            <i class="fas fa-credit-card"></i> 
+            Paiement sécurisé
+            <span class="badge">via PayPal</span>
+        </h1>
+        
+        <div class="paypal-note">
+            <i class="fab fa-paypal"></i>
+            <strong>Paiement par carte traité via PayPal</strong> - 
+            Après avoir saisi vos informations, vous serez redirigé vers 
+            PayPal pour finaliser le paiement en toute sécurité.
+        </div>
         
         <div class="details">
-            <p><strong><i class="fas fa-file-invoice"></i> Commande #<?= htmlspecialchars($commande['numero_commande'] ?? $id_commande) ?></strong></p>
-            <p style="font-size: 20px; color: #5a67d8;">
-                <strong>Montant : <?= number_format($commande['montant_total'] ?? $total, 2, ',', ' ') ?> €</strong>
+            <p class="commande-numero">
+                <strong><i class="fas fa-file-invoice"></i> Commande #<?= htmlspecialchars($commande['numero_commande'] ?? $id_commande) ?></strong>
             </p>
-            <p><i class="fas fa-user"></i> <?= htmlspecialchars($commande['prenom'] . ' ' . $commande['nom']) ?></p>
+            <p><i class="fas fa-user"></i> <?= htmlspecialchars(($commande['prenom'] ?? '') . ' ' . ($commande['nom'] ?? '')) ?></p>
+            <?php if (!empty($commande['adresse_livraison'])): ?>
+            <p><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($commande['adresse_livraison']) ?><?= !empty($commande['complement']) ? ', ' . htmlspecialchars($commande['complement']) : '' ?>, <?= htmlspecialchars($commande['code_postal'] ?? '') ?> <?= htmlspecialchars($commande['ville'] ?? '') ?></p>
+            <?php endif; ?>
+            <div class="montant">
+                <?= number_format($commande['montant_total'] ?? $total, 2, ',', ' ') ?> €
+            </div>
         </div>
 
         <?php if (!empty($erreurs)): ?>
@@ -486,81 +691,184 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             </div>
         <?php endif; ?>
 
-        <form method="POST" id="paymentForm">
+        <form method="POST" id="paymentForm" autocomplete="off">
             <input type="hidden" name="action" value="traiter_paiement_cb">
             <input type="hidden" name="id_commande" value="<?= htmlspecialchars($id_commande) ?>">
             
             <div class="form-group">
                 <label><i class="fas fa-credit-card"></i> Numéro de carte</label>
-                <input type="text" name="numero_carte" id="numero_carte" placeholder="1234 5678 9012 3456" maxlength="19" required>
+                <input type="text" name="numero_carte" id="numero_carte" 
+                       placeholder="1234 5678 9012 3456" maxlength="19" required 
+                       autocomplete="off" inputmode="numeric">
                 <div class="card-icons">
-                    <i class="fab fa-cc-visa"></i>
-                    <i class="fab fa-cc-mastercard"></i>
-                    <i class="fab fa-cc-amex"></i>
+                    <i class="fab fa-cc-visa" id="icon-visa"></i>
+                    <i class="fab fa-cc-mastercard" id="icon-mastercard"></i>
+                    <i class="fab fa-cc-amex" id="icon-amex"></i>
                 </div>
             </div>
             
             <div class="form-row">
                 <div class="form-group">
                     <label><i class="fas fa-calendar"></i> Date d'expiration</label>
-                    <input type="text" name="date_expiration" id="date_expiration" placeholder="MM/AA" maxlength="5" required>
+                    <div class="expiry-select">
+                        <select name="expiration_mois" id="expiration_mois" required>
+                            <option value="">Mois</option>
+                            <option value="01">01 - Janvier</option>
+                            <option value="02">02 - Février</option>
+                            <option value="03">03 - Mars</option>
+                            <option value="04">04 - Avril</option>
+                            <option value="05">05 - Mai</option>
+                            <option value="06">06 - Juin</option>
+                            <option value="07">07 - Juillet</option>
+                            <option value="08">08 - Août</option>
+                            <option value="09">09 - Septembre</option>
+                            <option value="10">10 - Octobre</option>
+                            <option value="11">11 - Novembre</option>
+                            <option value="12">12 - Décembre</option>
+                        </select>
+                        <select name="expiration_annee" id="expiration_annee" required>
+                            <option value="">Année</option>
+                            <?php
+                            $currentYear = date('Y');
+                            for ($i = 0; $i < 10; $i++) {
+                                $year = $currentYear + $i;
+                                $yearShort = substr($year, -2);
+                                echo "<option value=\"$yearShort\">$year</option>";
+                            }
+                            ?>
+                        </select>
+                    </div>
                 </div>
                 <div class="form-group">
-                    <label><i class="fas fa-lock"></i> Cryptogramme</label>
-                    <input type="text" name="cryptogramme" id="cryptogramme" placeholder="123" maxlength="3" required>
+                    <label><i class="fas fa-lock"></i> Cryptogramme (CVV)</label>
+                    <input type="text" name="cryptogramme" id="cryptogramme" 
+                           placeholder="123" maxlength="3" required 
+                           autocomplete="off" inputmode="numeric">
                 </div>
             </div>
             
             <div class="form-group">
                 <label><i class="fas fa-user"></i> Nom du titulaire</label>
-                <input type="text" name="titulaire_carte" id="titulaire_carte" value="<?= htmlspecialchars($commande['prenom'] . ' ' . $commande['nom']) ?>" required>
+                <input type="text" name="titulaire_carte" id="titulaire_carte" 
+                       value="<?= htmlspecialchars(trim(($commande['prenom'] ?? '') . ' ' . ($commande['nom'] ?? ''))) ?>" required 
+                       autocomplete="off">
             </div>
             
             <button type="submit" class="btn" id="submitBtn">
-                <i class="fas fa-lock"></i> Payer <?= number_format($commande['montant_total'] ?? $total, 2, ',', ' ') ?> €
+                <i class="fab fa-paypal"></i>
+                Payer <?= number_format($commande['montant_total'] ?? $total, 2, ',', ' ') ?> €
             </button>
         </form>
         
         <div class="secure-badge">
             <i class="fas fa-shield-alt"></i>
-            <span>Paiement 100% sécurisé - Cryptage SSL 256-bit</span>
+            <span>Paiement 100% sécurisé - Traité par PayPal</span>
+            <i class="fas fa-lock"></i>
         </div>
     </div>
 
     <script>
-        // Formatage numéro de carte
-        document.getElementById('numero_carte').addEventListener('input', function(e) {
-            let v = e.target.value.replace(/\s/g, '').replace(/\D/g, '');
-            if (v.length > 16) v = v.substr(0, 16);
-            let f = '';
-            for (let i = 0; i < v.length; i++) {
-                if (i > 0 && i % 4 === 0) f += ' ';
-                f += v[i];
-            }
-            e.target.value = f;
-        });
+        (function() {
+            'use strict';
+            
+            // Éléments du DOM
+            const numeroCarte = document.getElementById('numero_carte');
+            const expirationMois = document.getElementById('expiration_mois');
+            const expirationAnnee = document.getElementById('expiration_annee');
+            const cryptogramme = document.getElementById('cryptogramme');
+            const submitBtn = document.getElementById('submitBtn');
+            const paymentForm = document.getElementById('paymentForm');
+            
+            // Icônes des cartes
+            const iconVisa = document.getElementById('icon-visa');
+            const iconMastercard = document.getElementById('icon-mastercard');
+            const iconAmex = document.getElementById('icon-amex');
 
-        // Formatage date expiration
-        document.getElementById('date_expiration').addEventListener('input', function(e) {
-            let v = e.target.value.replace(/\D/g, '');
-            if (v.length >= 2) {
-                let month = v.substr(0, 2);
-                if (parseInt(month) > 12) month = '12';
-                e.target.value = month + '/' + v.substr(2, 2);
+            // Formatage du numéro de carte
+            if (numeroCarte) {
+                numeroCarte.addEventListener('input', function(e) {
+                    let value = e.target.value.replace(/\s/g, '').replace(/\D/g, '');
+                    if (value.length > 16) value = value.substr(0, 16);
+                    
+                    let formatted = '';
+                    for (let i = 0; i < value.length; i++) {
+                        if (i > 0 && i % 4 === 0) formatted += ' ';
+                        formatted += value[i];
+                    }
+                    e.target.value = formatted;
+                    
+                    // Détection du type de carte
+                    detectCardType(value);
+                });
             }
-        });
 
-        // Formatage cryptogramme
-        document.getElementById('cryptogramme').addEventListener('input', function(e) {
-            e.target.value = e.target.value.replace(/\D/g, '').substr(0, 3);
-        });
-        
-        // Empêcher la soumission multiple
-        document.getElementById('paymentForm').addEventListener('submit', function(e) {
-            const btn = document.getElementById('submitBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement en cours...';
-        });
+            // Détection du type de carte
+            function detectCardType(cardNumber) {
+                // Reset des couleurs
+                if (iconVisa) iconVisa.style.color = '#718096';
+                if (iconMastercard) iconMastercard.style.color = '#718096';
+                if (iconAmex) iconAmex.style.color = '#718096';
+                
+                if (cardNumber.startsWith('4')) {
+                    if (iconVisa) iconVisa.style.color = '#1434cb';
+                } else if (cardNumber.startsWith('5')) {
+                    if (iconMastercard) iconMastercard.style.color = '#eb001b';
+                } else if (cardNumber.startsWith('3')) {
+                    if (iconAmex) iconAmex.style.color = '#2e77bc';
+                }
+            }
+
+            // Formatage du cryptogramme
+            if (cryptogramme) {
+                cryptogramme.addEventListener('input', function(e) {
+                    e.target.value = e.target.value.replace(/\D/g, '').substr(0, 3);
+                });
+            }
+
+            // Validation du formulaire avant soumission
+            if (paymentForm) {
+                paymentForm.addEventListener('submit', function(e) {
+                    // Vérifier que tous les champs sont remplis
+                    if (!numeroCarte || !numeroCarte.value.trim()) {
+                        e.preventDefault();
+                        alert('Veuillez saisir le numéro de carte');
+                        return false;
+                    }
+                    
+                    if (!expirationMois || !expirationMois.value) {
+                        e.preventDefault();
+                        alert('Veuillez sélectionner le mois d\'expiration');
+                        return false;
+                    }
+                    
+                    if (!expirationAnnee || !expirationAnnee.value) {
+                        e.preventDefault();
+                        alert('Veuillez sélectionner l\'année d\'expiration');
+                        return false;
+                    }
+                    
+                    if (!cryptogramme || !cryptogramme.value.trim()) {
+                        e.preventDefault();
+                        alert('Veuillez saisir le cryptogramme (CVV)');
+                        return false;
+                    }
+                    
+                    if (!document.getElementById('titulaire_carte') || !document.getElementById('titulaire_carte').value.trim()) {
+                        e.preventDefault();
+                        alert('Veuillez saisir le nom du titulaire');
+                        return false;
+                    }
+                    
+                    // Désactiver le bouton pour éviter la double soumission
+                    if (submitBtn) {
+                        submitBtn.disabled = true;
+                        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Redirection vers PayPal...';
+                    }
+                    
+                    return true;
+                });
+            }
+        })();
     </script>
 </body>
 </html>
