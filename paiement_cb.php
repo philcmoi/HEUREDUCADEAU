@@ -19,7 +19,33 @@ define('PAYPAL_BASE_URL', (PAYPAL_MODE === 'sandbox')
     : 'https://api-m.paypal.com');
 
 // ============================================
-// VÉRIFICATIONS D'ACCÈS
+// TRAITEMENT DES RETOURS PAYPAL UNIQUEMENT
+// ============================================
+// On vérifie la présence de token OU PayerID OU success/cancel pour identifier un retour PayPal
+if (isset($_GET['token']) || isset($_GET['PayerID']) || isset($_GET['success']) || isset($_GET['cancel'])) {
+    
+    if (isset($_GET['success']) && $_GET['success'] == '1' && isset($_GET['commande'])) {
+        $commande_id = intval($_GET['commande']);
+        $token = $_GET['token'] ?? '';
+        
+        header('Location: paiement-reussi.php?commande=' . $commande_id . '&token=' . $token);
+        exit;
+    }
+    
+    if (isset($_GET['cancel']) && $_GET['cancel'] == '1') {
+        addSessionMessage('Paiement annulé.', 'info');
+        header('Location: paiement.php');
+        exit;
+    }
+    
+    // Si on arrive ici mais qu'on n'a pas success/cancel, c'est probablement un retour inattendu
+    // On redirige vers paiement.php pour éviter les problèmes
+    header('Location: paiement.php');
+    exit;
+}
+
+// ============================================
+// VÉRIFICATIONS D'ACCÈS (UNIQUEMENT POUR L'AFFICHAGE DU FORMULAIRE)
 // ============================================
 if (!hasShippingAddress()) {
     addSessionMessage('Veuillez d\'abord renseigner votre adresse de livraison.', 'error');
@@ -800,23 +826,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $erreurs[] = "Erreur lors du paiement: " . $e->getMessage();
         }
     }
-}
-
-// ============================================
-// TRAITEMENT DES RETOURS PAYPAL
-// ============================================
-if (isset($_GET['success']) && $_GET['success'] == '1' && isset($_GET['commande'])) {
-    $commande_id = intval($_GET['commande']);
-    $token = $_GET['token'] ?? '';
-    
-    header('Location: paiement-reussi.php?commande=' . $commande_id . '&token=' . $token);
-    exit;
-}
-
-if (isset($_GET['cancel']) && $_GET['cancel'] == '1') {
-    addSessionMessage('Paiement annulé.', 'info');
-    header('Location: paiement.php');
-    exit;
 }
 
 // ============================================
