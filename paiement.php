@@ -1,6 +1,6 @@
 <?php
 // ============================================
-// PAGE DE PAIEMENT - VERSION CORRIGÉE
+// PAGE DE PAIEMENT - VERSION CORRIGÉE FINALE
 // ============================================
 
 error_reporting(E_ALL);
@@ -34,9 +34,6 @@ if ($pdo) {
 if ($is_api_request) {
     ob_clean();
     header("Content-Type: application/json; charset=UTF-8");
-    header("Access-Control-Allow-Origin: *");
-    header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
-    header("Access-Control-Allow-Headers: Content-Type");
     
     if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
         http_response_code(200);
@@ -44,39 +41,49 @@ if ($is_api_request) {
     }
     
     $action = $_GET['action'] ?? '';
-    $inputData = [];
     
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $input = file_get_contents('php://input');
-        if (!empty($input)) {
-            $inputData = json_decode($input, true) ?: [];
-        }
-        if (empty($inputData)) {
-            $inputData = $_POST;
-        }
-        if (empty($action) && isset($inputData['action'])) {
-            $action = $inputData['action'];
-        }
-    }
-
     switch ($action) {
-        case 'get_recap':
-            if (!hasValidCart()) {
-                echo json_encode(['success' => false, 'message' => 'Panier vide']);
-                exit;
-            }
+        case 'redirect_paypal':
+            $montant = $_GET['montant'] ?? 0;
+            $commande_id = $_GET['commande'] ?? 0;
             
+            // Nettoyer tout ancien flag PayPal
+            cleanPayPalFlags();
+            
+            echo json_encode([
+                'success' => true,
+                'redirect_url' => "paiement_paypal.php?commande=$commande_id&montant=$montant&from=paiement&t=" . time()
+            ]);
+            break;
+            
+        case 'redirect_cb':
+            $montant = $_GET['montant'] ?? 0;
+            $commande_id = $_GET['commande'] ?? 0;
+            
+            echo json_encode([
+                'success' => true,
+                'redirect_url' => "paiement_cb.php?commande=$commande_id&montant=$montant&from=paiement&t=" . time()
+            ]);
+            break;
+            
+        case 'get_commande':
+            // Récupérer les données de la commande en cours
             $panier_details = [];
+            $sous_total = 0;
+            
             foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
                 $produit = getProductDetails($item['id_produit'], $pdo);
                 $prix_unitaire = floatval($produit['prix_ttc'] ?? $item['prix'] ?? 0);
-                $quantite = intval($item['quantite']);
+                $quantite = intval($item['quantite'] ?? 1);
+                $prix_total = $quantite * $prix_unitaire;
+                $sous_total += $prix_total;
+                
                 $panier_details[] = [
                     'id_produit' => $item['id_produit'],
                     'quantite' => $quantite,
                     'nom' => $produit['nom'] ?? 'Produit',
                     'prix_unitaire' => $prix_unitaire,
-                    'prix_total' => $quantite * $prix_unitaire,
+                    'prix_total' => $prix_total,
                     'reference' => $produit['reference'] ?? '',
                     'image' => $produit['image'] ?? 'img/default-product.jpg'
                 ];
@@ -87,57 +94,23 @@ if ($is_api_request) {
             
             echo json_encode([
                 'success' => true,
-                'panier' => $panier_details,
-                'totaux' => $totaux,
-                'adresse' => $adresse,
-                'livraison' => [
-                    'mode' => $_SESSION[SESSION_KEY_CHECKOUT]['mode_livraison'] ?? 'standard',
+                'commande' => [
+                    'adresse_livraison' => $adresse,
+                    'livraison' => [
+                        'mode' => $_SESSION[SESSION_KEY_CHECKOUT]['mode_livraison'] ?? 'standard',
+                        'frais' => $totaux['frais_livraison']
+                    ],
                     'emballage_cadeau' => $_SESSION[SESSION_KEY_CHECKOUT]['emballage_cadeau'] ?? false,
-                    'instructions' => $_SESSION[SESSION_KEY_CHECKOUT]['instructions'] ?? null
+                    'frais_emballage' => $totaux['frais_emballage']
                 ],
-                'panier_vide' => empty($panier_details),
-                'nb_articles' => countCartItems()
+                'panier' => [
+                    'items_count' => $totaux['total_items'],
+                    'sous_total' => $totaux['sous_total']
+                ],
+                'totaux' => $totaux
             ]);
             break;
-
-        case 'valider_paiement':
-            if (!hasValidCart()) {
-                echo json_encode(['success' => false, 'message' => 'Panier vide']);
-                exit;
-            }
             
-            echo json_encode([
-                'success' => true,
-                'message' => 'Paiement validé',
-                'redirect' => 'confirmation.php'
-            ]);
-            break;
-
-        case 'redirect_paypal':
-            $montant = $_GET['montant'] ?? 0;
-            $commande_id = $_GET['commande'] ?? 0;
-            echo json_encode([
-                'success' => true,
-                'redirect_url' => "paiement_paypal.php?commande=$commande_id&montant=$montant&from=paiement"
-            ]);
-            break;
-
-        case 'redirect_cb':
-            $montant = $_GET['montant'] ?? 0;
-            $commande_id = $_GET['commande'] ?? 0;
-            echo json_encode([
-                'success' => true,
-                'redirect_url' => "paiement_cb.php?commande=$commande_id&montant=$montant&from=paiement"
-            ]);
-            break;
-
-        case 'check_adresse':
-            echo json_encode([
-                'success' => hasShippingAddress(),
-                'commande_id' => $_SESSION[SESSION_KEY_CHECKOUT]['client_id'] ?? null
-            ]);
-            break;
-
         default:
             echo json_encode(['success' => false, 'message' => 'Action API non reconnue']);
     }
@@ -148,6 +121,9 @@ if ($is_api_request) {
 // VÉRIFICATION D'ACCÈS STANDARDISÉE
 // ============================================
 checkPaiementAccess();
+
+// Nettoyer tout ancien flag PayPal avant d'afficher la page
+cleanPayPalFlags();
 
 // ============================================
 // RÉCUPÉRATION DES DONNÉES POUR AFFICHAGE
@@ -160,7 +136,7 @@ $panier_details = [];
 foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
     $produit = getProductDetails($item['id_produit'], $pdo);
     $prix_unitaire = floatval($produit['prix_ttc'] ?? $item['prix'] ?? 0);
-    $quantite = intval($item['quantite']);
+    $quantite = intval($item['quantite'] ?? 1);
     $panier_details[] = [
         'id_produit' => $item['id_produit'],
         'quantite' => $quantite,
@@ -174,6 +150,8 @@ foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
 
 $totaux = calculerTotauxPanier($panier_details, $_SESSION[SESSION_KEY_CHECKOUT] ?? []);
 $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
+
+// Le reste du HTML...
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -183,7 +161,6 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
     <title>Paiement - HEURE DU CADEAU</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* STYLES CSS COMPLETS - Identiques à l'original */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -286,6 +263,7 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
             margin-bottom: 30px;
             border-left: 5px solid #3498db;
         }
+        .adresse-line { margin-bottom: 5px; color: #4a5568; }
         .paiement-options {
             display: flex;
             flex-direction: column;
@@ -362,9 +340,7 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
             height: 100%;
             object-fit: cover;
         }
-        .mini-details {
-            flex: 1;
-        }
+        .mini-details { flex: 1; }
         .mini-details h4 {
             font-size: 1rem;
             margin-bottom: 5px;
@@ -490,7 +466,6 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
                         <?php echo htmlspecialchars($msg['message']); ?>
                     </div>
                 <?php endforeach; ?>
-                <?php clearSessionMessages(); ?>
             <?php endif; ?>
 
             <div id="paiementContent">
@@ -510,7 +485,7 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
 
     <script>
     // ============================================
-    // JAVASCRIPT COMPLET - GESTIONNAIRE DE PAIEMENT
+    // JAVASCRIPT - GESTIONNAIRE DE PAIEMENT
     // ============================================
     const API_BASE_URL = window.location.href.split('?')[0];
     let paiementManager = null;
@@ -671,23 +646,50 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
         }
 
         procederPaiement() {
-    if (!this.adresse || Object.keys(this.adresse).length === 0) {
-        this.showNotification("Veuillez renseigner une adresse de livraison", "error");
-        return;
-    }
-    
-    const btn = document.getElementById('btnPayer');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Redirection...';
-    btn.disabled = true;
+            if (!this.adresse || Object.keys(this.adresse).length === 0) {
+                this.showNotification("Veuillez renseigner une adresse de livraison", "error");
+                return;
+            }
+            
+            const btn = document.getElementById('btnPayer');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Redirection...';
+            btn.disabled = true;
 
-    if (this.paiementMethod === 'paypal') {
-        // Redirection directe au lieu de fetch pour éviter les problèmes CORS
-        window.location.href = `paiement_paypal.php?commande=1&montant=${this.totaux.total}&from=paiement&_=${Date.now()}`;
-    } else {
-        window.location.href = `paiement_cb.php?commande=1&montant=${this.totaux.total}&from=paiement&_=${Date.now()}`;
-    }
-}
+            if (this.paiementMethod === 'paypal') {
+                // Ajouter un timestamp pour éviter le cache
+                const url = `${this.apiUrl}?action=redirect_paypal&commande=1&montant=${this.totaux.total}&_=${Date.now()}`;
+                
+                fetch(url)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.redirect_url) {
+                            window.location.href = data.redirect_url;
+                        } else {
+                            window.location.href = `paiement_paypal.php?commande=1&montant=${this.totaux.total}&from=paiement&t=${Date.now()}`;
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Erreur redirection:", error);
+                        window.location.href = `paiement_paypal.php?commande=1&montant=${this.totaux.total}&from=paiement&t=${Date.now()}`;
+                    });
+            } else {
+                // Paiement par carte
+                fetch(`${this.apiUrl}?action=redirect_cb&commande=1&montant=${this.totaux.total}&_=${Date.now()}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.redirect_url) {
+                            window.location.href = data.redirect_url;
+                        } else {
+                            window.location.href = `paiement_cb.php?commande=1&montant=${this.totaux.total}&from=paiement&t=${Date.now()}`;
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Erreur redirection:", error);
+                        window.location.href = `paiement_cb.php?commande=1&montant=${this.totaux.total}&from=paiement&t=${Date.now()}`;
+                    });
+            }
+        }
 
         initEvents() {
             setInterval(() => this.updateCartCounter(), 30000);

@@ -406,4 +406,33 @@ function cleanUserSession() {
     // On garde SESSION_KEY_PANIER_ID et SESSION_KEY_CLIENT_ID pour l'historique
 }
 
+/**
+ * Nettoie les flags de session PayPal
+ */
+function cleanPayPalFlags() {
+    unset($_SESSION['paypal_processing']);
+    unset($_SESSION['paypal_order_id']);
+}
+
+/**
+ * Validation Luhn (algorithme de validation des cartes bancaires)
+ * Fonction unique centralisée pour éviter les doubles déclarations
+ */
+/*function validateLuhn($number) {
+    $number = preg_replace('/[^0-9]/', '', $number);
+    $sum = 0;
+    $alt = false;
+    for ($i = strlen($number) - 1; $i >= 0; $i--) {
+        $n = $number[$i];
+        if ($alt) {
+            $n *= 2;
+            if ($n > 9) {
+                $n = ($n % 10) + 1;
+            }
+        }
+        $sum += $n;
+        $alt = !$alt;
+    }
+    return ($sum % 10 == 0);
+}*/
 ?>
