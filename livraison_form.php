@@ -494,11 +494,11 @@ if (isset($_SESSION[SESSION_KEY_CHECKOUT])) {
 
             <h2>Options de livraison</h2>
 
-            <div class="radio-group" id="livraisonOptions">
+            <!--<div class="radio-group" id="livraisonOptions">
                 <?php 
-                $mode_livraison = $_SESSION[SESSION_KEY_CHECKOUT]['mode_livraison'] ?? 'standard';
+                //$mode_livraison = $_SESSION[SESSION_KEY_CHECKOUT]['mode_livraison'] ?? 'standard';
                 ?>
-                <div class="radio-option <?php echo ($mode_livraison == 'standard') ? 'selected' : ''; ?>" data-value="standard">
+                <div class="radio-option <?php// echo ($mode_livraison == 'standard') ? 'selected' : ''; ?>" data-value="standard">
                     <input type="radio" name="mode_livraison" value="standard" <?php echo ($mode_livraison == 'standard') ? 'checked' : ''; ?> />
                     <div class="radio-details">
                         <strong>Livraison Standard</strong>
@@ -507,7 +507,7 @@ if (isset($_SESSION[SESSION_KEY_CHECKOUT])) {
                     <div class="radio-price">Gratuite</div>
                 </div>
 
-                <div class="radio-option <?php echo ($mode_livraison == 'express') ? 'selected' : ''; ?>" data-value="express">
+                <div class="radio-option <?php // echo ($mode_livraison == 'express') ? 'selected' : ''; ?>" data-value="express">
                     <input type="radio" name="mode_livraison" value="express" <?php echo ($mode_livraison == 'express') ? 'checked' : ''; ?> />
                     <div class="radio-details">
                         <strong>Livraison Express</strong>
@@ -516,7 +516,7 @@ if (isset($_SESSION[SESSION_KEY_CHECKOUT])) {
                     <div class="radio-price">9,90 €</div>
                 </div>
 
-                <div class="radio-option <?php echo ($mode_livraison == 'relais') ? 'selected' : ''; ?>" data-value="relais">
+                <div class="radio-option <?php // echo ($mode_livraison == 'relais') ? 'selected' : ''; ?>" data-value="relais">
                     <input type="radio" name="mode_livraison" value="relais" <?php echo ($mode_livraison == 'relais') ? 'checked' : ''; ?> />
                     <div class="radio-details">
                         <strong>Point Relais</strong>
@@ -530,7 +530,7 @@ if (isset($_SESSION[SESSION_KEY_CHECKOUT])) {
 
             <div class="checkbox-group">
                 <input type="checkbox" id="emballage_cadeau" name="emballage_cadeau" value="1"
-                       <?php echo ($_SESSION[SESSION_KEY_CHECKOUT]['emballage_cadeau'] ?? false) ? 'checked' : ''; ?> />
+                       <?//php echo ($_SESSION[SESSION_KEY_CHECKOUT]['emballage_cadeau'] ?? false) ? 'checked' : ''; ?> />
                 <div>
                     <label for="emballage_cadeau" style="font-weight: bold">
                         <i class="fas fa-gift"></i> Emballage cadeau
@@ -539,7 +539,7 @@ if (isset($_SESSION[SESSION_KEY_CHECKOUT])) {
                         Emballage élégant avec carte personnalisée - <strong>+3,90 €</strong>
                     </p>
                 </div>
-            </div>
+            </div>-->
 
             <div class="form-group">
                 <label for="instructions">Instructions de livraison (optionnel)</label>

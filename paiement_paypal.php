@@ -8,25 +8,31 @@ ini_set('display_errors', 1);
 
 require_once __DIR__ . '/session_verification.php';
 
-// Configuration PayPal
+// ============================================
+// CONFIGURATION PAYPAL
+// ============================================
 define('PAYPAL_CLIENT_ID', 'AUe7uZH9uo6MpEhUD5qUL0B6kqE69b9OZi4XMaR-3RJGtklCXfgnSBmaNMUo1uyMmznhoBG-U0bmynR_');
 define('PAYPAL_CLIENT_SECRET', 'EDTCzIliUZi-_Jqxb3MUsTKjaS5Dkl0YKGQrCKy6LN7Gqde6CEmQhMBWtGEo4tbiUVerejXZ06rLP-2S');
 define('PAYPAL_MODE', 'sandbox'); // 'sandbox' ou 'live'
 
-// Vérifications
+// ============================================
+// VÉRIFICATIONS D'ACCÈS
+// ============================================
 if (!hasShippingAddress()) {
-    $_SESSION['messages'][] = ['type' => 'error', 'message' => 'Veuillez d\'abord renseigner votre adresse de livraison.'];
+    addSessionMessage('Veuillez d\'abord renseigner votre adresse de livraison.', 'error');
     header('Location: livraison_form.php');
     exit;
 }
 
 if (!hasValidCart()) {
-    $_SESSION['messages'][] = ['type' => 'error', 'message' => 'Votre panier est vide.'];
+    addSessionMessage('Votre panier est vide.', 'error');
     header('Location: panier.html');
     exit;
 }
 
-// Connexion BDD
+// ============================================
+// CONNEXION BDD
+// ============================================
 $pdo = getPDOConnection();
 if (!$pdo) {
     die("Erreur de connexion à la base de données");
@@ -35,7 +41,7 @@ if (!$pdo) {
 synchroniserPanierSessionBDD($pdo, session_id());
 
 // ============================================
-// FONCTIONS PAYPAL API CORRIGÉES
+// FONCTIONS PAYPAL API
 // ============================================
 
 /**
@@ -83,9 +89,9 @@ function getPayPalAccessToken() {
 }
 
 /**
- * Crée une commande PayPal - VERSION CORRIGÉE
+ * Crée une commande PayPal
  */
-function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $cancel_url) {
+function createPayPalOrder($commande_id, $montant, $return_url, $cancel_url) {
     $access_token = getPayPalAccessToken();
     
     if (is_array($access_token) && isset($access_token['error'])) {
@@ -95,35 +101,7 @@ function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $ca
     // Formatage correct du montant total
     $montant_total = number_format(floatval($montant), 2, '.', '');
     
-    // Construction des items avec validation
-    $items = [];
-    $total_items_calc = 0;
-    
-    if (!empty($items_data)) {
-        foreach ($items_data as $item) {
-            // Vérifier que les données essentielles existent
-            if (!isset($item['prix_unitaire_ttc']) || !isset($item['quantite'])) {
-                continue;
-            }
-            
-            $prix_unitaire = number_format(floatval($item['prix_unitaire_ttc']), 2, '.', '');
-            $quantite = intval($item['quantite']);
-            $total_ligne = floatval($prix_unitaire) * $quantite;
-            $total_items_calc += $total_ligne;
-            
-            $items[] = [
-                'name' => mb_substr($item['nom'] ?? 'Produit', 0, 120),
-                'unit_amount' => [
-                    'currency_code' => 'EUR',
-                    'value' => $prix_unitaire
-                ],
-                'quantity' => $quantite,
-                'category' => 'PHYSICAL_GOODS'
-            ];
-        }
-    }
-    
-    // Construction de la requête - Version simplifiée mais robuste
+    // Construction de la requête
     $order_data = [
         'intent' => 'CAPTURE',
         'purchase_units' => [
@@ -147,19 +125,6 @@ function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $ca
         ]
     ];
     
-    // Ajouter le breakdown uniquement si on a des items et que le total correspond
-    if (!empty($items) && abs($total_items_calc - floatval($montant_total)) < 0.01) {
-        $total_items_formatted = number_format($total_items_calc, 2, '.', '');
-        $order_data['purchase_units'][0]['amount']['breakdown'] = [
-            'item_total' => [
-                'currency_code' => 'EUR',
-                'value' => $total_items_formatted
-            ]
-        ];
-        $order_data['purchase_units'][0]['items'] = $items;
-    }
-    
-    // LOG pour déboguer
     error_log("PayPal Order Data: " . json_encode($order_data));
     
     $url = (PAYPAL_MODE === 'sandbox')
@@ -190,7 +155,6 @@ function createPayPalOrder($commande_id, $montant, $items_data, $return_url, $ca
     
     curl_close($ch);
     
-    // LOG de la réponse
     error_log("PayPal Response (HTTP $http_code): " . $result);
     
     if ($http_code >= 400) {
@@ -362,6 +326,7 @@ if (isset($_GET['token']) && isset($_GET['PayerID'])) {
         
         // Vider le panier et la session checkout
         cleanUserSession();
+        cleanPayPalFlags();
         
         header('Location: paiement-reussi.php?commande=' . $commande_id . '&token=' . $paypal_order_id);
         exit;
@@ -376,10 +341,8 @@ if (isset($_GET['token']) && isset($_GET['PayerID'])) {
 }
 
 // ============================================
-// CRÉATION DE LA COMMANDE
+// VÉRIFICATION SI DÉJÀ EN COURS
 // ============================================
-
-// Vérifier si on a déjà une commande PayPal en cours
 if (isset($_SESSION['paypal_processing']) && $_SESSION['paypal_processing'] === true) {
     afficherPageAttente();
     exit;
@@ -387,6 +350,10 @@ if (isset($_SESSION['paypal_processing']) && $_SESSION['paypal_processing'] === 
 
 // Marquer qu'on est en train de traiter PayPal
 $_SESSION['paypal_processing'] = true;
+
+// ============================================
+// CRÉATION DE LA COMMANDE
+// ============================================
 
 try {
     $pdo->beginTransaction();
@@ -588,13 +555,13 @@ try {
     // ========== CRÉATION DE LA COMMANDE PAYPAL ==========
     $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://';
     $host = $_SERVER['HTTP_HOST'];
-    $return_url = $protocol . $host . '/paiement_paypal.php';
-    $cancel_url = $protocol . $host . '/paiement-annule.php';
+    $base_url = $protocol . $host . '/';
+    $return_url = $base_url . 'paiement_paypal.php';
+    $cancel_url = $base_url . 'paiement-annule.php';
     
     $paypal_order = createPayPalOrder(
         $id_commande,
         $total,
-        $items_data,
         $return_url,
         $cancel_url
     );
@@ -629,25 +596,75 @@ try {
     }
     
     // Nettoyer le flag de traitement
-    unset($_SESSION['paypal_processing']);
+    cleanPayPalFlags();
     
     error_log("ERREUR CRITIQUE création commande PayPal: " . $e->getMessage());
     
-    // Afficher l'erreur de façon plus détaillée
-    echo "<!DOCTYPE html>";
-    echo "<html><head><title>Erreur PayPal</title>";
-    echo "<style>body{font-family:Arial;padding:40px;background:#f5f5f5;}.error{background:#fff;padding:30px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);max-width:600px;margin:0 auto;border-left:5px solid #e74c3c;}</style>";
-    echo "</head><body>";
-    echo "<div class='error'>";
-    echo "<h2 style='color:#e74c3c;'><i class='fas fa-exclamation-triangle'></i> Erreur de paiement</h2>";
-    echo "<p><strong>Message :</strong> " . htmlspecialchars($e->getMessage()) . "</p>";
-    echo "<p><a href='panier.html' style='background:#3498db;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;display:inline-block;margin-top:15px;'><i class='fas fa-shopping-cart'></i> Retour au panier</a></p>";
-    echo "</div>";
-    echo "</body></html>";
+    // Afficher l'erreur
+    ?>
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Erreur PayPal - HEURE DU CADEAU</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            }
+            .container { 
+                max-width: 600px; 
+                width: 100%;
+                background: white; 
+                padding: 40px; 
+                border-radius: 20px; 
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                text-align: center;
+            }
+            h1 { color: #e74c3c; margin-bottom: 20px; }
+            .error-icon {
+                font-size: 64px;
+                color: #e74c3c;
+                margin-bottom: 20px;
+            }
+            .btn { 
+                background: #5a67d8; 
+                color: white; 
+                padding: 15px 30px; 
+                border: none; 
+                border-radius: 12px; 
+                cursor: pointer; 
+                text-decoration: none;
+                display: inline-block;
+                margin-top: 20px;
+            }
+            .btn:hover { background: #4c51bf; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="error-icon">❌</div>
+            <h1>Erreur lors du paiement</h1>
+            <p><?= htmlspecialchars($e->getMessage()) ?></p>
+            <p>Veuillez réessayer ou contacter notre service client.</p>
+            <a href="panier.html" class="btn">Retour au panier</a>
+        </div>
+    </body>
+    </html>
+    <?php
     exit;
 }
 
-// Fonction pour afficher la page d'attente
+// ============================================
+// FONCTION D'AFFICHAGE DE LA PAGE D'ATTENTE
+// ============================================
 function afficherPageAttente() {
     $commande = $_SESSION[SESSION_KEY_COMMANDE] ?? [];
     $total = $commande['montant'] ?? 0;
