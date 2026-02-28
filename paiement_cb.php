@@ -1,6 +1,6 @@
 <?php
 // ============================================
-// PAIEMENT PAR CARTE BANCAIRE VIA API PAYPAL - VERSION CORRIGÉE
+// PAIEMENT PAR CARTE BANCAIRE VIA API PAYPAL - VERSION CORRIGÉE FINALE
 // ============================================
 
 error_reporting(E_ALL);
@@ -21,7 +21,6 @@ define('PAYPAL_BASE_URL', (PAYPAL_MODE === 'sandbox')
 // ============================================
 // TRAITEMENT DES RETOURS PAYPAL UNIQUEMENT
 // ============================================
-// On vérifie la présence de token OU PayerID OU success/cancel pour identifier un retour PayPal
 if (isset($_GET['token']) || isset($_GET['PayerID']) || isset($_GET['success']) || isset($_GET['cancel'])) {
     
     if (isset($_GET['success']) && $_GET['success'] == '1' && isset($_GET['commande'])) {
@@ -38,14 +37,12 @@ if (isset($_GET['token']) || isset($_GET['PayerID']) || isset($_GET['success']) 
         exit;
     }
     
-    // Si on arrive ici mais qu'on n'a pas success/cancel, c'est probablement un retour inattendu
-    // On redirige vers paiement.php pour éviter les problèmes
     header('Location: paiement.php');
     exit;
 }
 
 // ============================================
-// VÉRIFICATIONS D'ACCÈS (UNIQUEMENT POUR L'AFFICHAGE DU FORMULAIRE)
+// VÉRIFICATIONS D'ACCÈS
 // ============================================
 if (!hasShippingAddress()) {
     addSessionMessage('Veuillez d\'abord renseigner votre adresse de livraison.', 'error');
@@ -70,6 +67,26 @@ if (!$pdo) {
 synchroniserPanierSessionBDD($pdo, session_id());
 
 // ============================================
+// VÉRIFICATION DES COMMANDES EN COURS / DOUBLONS
+// ============================================
+if (isset($_SESSION[SESSION_KEY_COMMANDE]['id'])) {
+    $commande_en_cours = $_SESSION[SESSION_KEY_COMMANDE]['id'];
+    
+    $stmt_check = $pdo->prepare("SELECT statut_paiement, reference_paypal FROM commandes WHERE id_commande = ?");
+    $stmt_check->execute([$commande_en_cours]);
+    $commande_existante = $stmt_check->fetch();
+    
+    if ($commande_existante && $commande_existante['statut_paiement'] === 'paye') {
+        // Déjà payée, rediriger vers la confirmation
+        header('Location: paiement-reussi.php?commande=' . $commande_en_cours);
+        exit;
+    }
+}
+
+// Nettoyer les anciens flags de session
+cleanPayPalFlags();
+
+// ============================================
 // FONCTIONS PAYPAL API
 // ============================================
 
@@ -88,6 +105,7 @@ function getPayPalAccessToken() {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_USERPWD, PAYPAL_CLIENT_ID . ":" . PAYPAL_CLIENT_SECRET);
     curl_setopt($ch, CURLOPT_POSTFIELDS, "grant_type=client_credentials");
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     
     $result = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -119,23 +137,19 @@ function getPayPalAccessToken() {
  * Valide le format de la date d'expiration
  */
 function validateExpiryDate($month, $year) {
-    // Nettoyer les valeurs
     $month = preg_replace('/[^0-9]/', '', $month);
     $year = preg_replace('/[^0-9]/', '', $year);
     
-    // Format du mois: doit être 01-12
     if (strlen($month) !== 2 || $month < '01' || $month > '12') {
         return ['valid' => false, 'error' => 'Mois d\'expiration invalide'];
     }
     
-    // Année: accepter YY ou YYYY, convertir en YYYY
     if (strlen($year) === 2) {
         $year = '20' . $year;
     } elseif (strlen($year) !== 4) {
         return ['valid' => false, 'error' => 'Année d\'expiration invalide'];
     }
     
-    // Vérifier que la date n'est pas expirée
     $current_year = intval(date('Y'));
     $current_month = intval(date('m'));
     $exp_year = intval($year);
@@ -149,7 +163,7 @@ function validateExpiryDate($month, $year) {
         'valid' => true,
         'month' => $month,
         'year' => $year,
-        'expiry_formatted' => $year . '-' . $month // Format YYYY-MM exigé par PayPal
+        'expiry_formatted' => $year . '-' . $month
     ];
 }
 
@@ -174,6 +188,34 @@ function validateLuhn($number) {
 }
 
 /**
+ * Vérifie si une commande a déjà été payée
+ */
+function checkCommandeDejaPayee($pdo, $commande_id) {
+    $stmt = $pdo->prepare("SELECT statut_paiement, reference_paypal FROM commandes WHERE id_commande = ?");
+    $stmt->execute([$commande_id]);
+    $commande = $stmt->fetch();
+    
+    if ($commande && $commande['statut_paiement'] === 'paye') {
+        return true;
+    }
+    
+    // Vérifier aussi dans les transactions
+    $stmt_trans = $pdo->prepare("SELECT id_transaction FROM transactions WHERE id_commande = ? AND statut = 'paye'");
+    $stmt_trans->execute([$commande_id]);
+    
+    return $stmt_trans->fetch() ? true : false;
+}
+
+/**
+ * Vérifie si un ID PayPal a déjà été utilisé
+ */
+function checkPayPalIdDejaUtilise($pdo, $paypal_order_id) {
+    $stmt = $pdo->prepare("SELECT id_commande FROM commandes WHERE reference_paypal = ? AND statut_paiement = 'paye'");
+    $stmt->execute([$paypal_order_id]);
+    return $stmt->fetch() ? true : false;
+}
+
+/**
  * Crée une commande PayPal avec paiement par carte
  */
 function createPayPalOrderWithCard($commande_id, $montant, $card_details, $return_url, $cancel_url) {
@@ -183,44 +225,38 @@ function createPayPalOrderWithCard($commande_id, $montant, $card_details, $retur
         return $access_token;
     }
     
-    // Formatage du montant
     $montant_total = number_format(floatval($montant), 2, '.', '');
     
-    // NETTOYAGE ET VALIDATION DES DONNÉES DE CARTE
+    // NETTOYAGE DES DONNÉES DE CARTE
     $card_number = preg_replace('/\s+/', '', $card_details['number']);
     $card_number = preg_replace('/[^0-9]/', '', $card_number);
     
-    // Validation longueur carte
     if (strlen($card_number) < 13 || strlen($card_number) > 19) {
-        return ['error' => 'Numéro de carte invalide (doit contenir entre 13 et 19 chiffres)'];
+        return ['error' => 'Numéro de carte invalide'];
     }
     
-    // Validation CVV
     $cvv = preg_replace('/[^0-9]/', '', $card_details['cvv']);
     if (strlen($cvv) < 3 || strlen($cvv) > 4) {
         return ['error' => 'Cryptogramme (CVV) invalide'];
     }
     
-    // Validation nom titulaire
     $cardholder_name = trim($card_details['name']);
     if (empty($cardholder_name)) {
         return ['error' => 'Nom du titulaire requis'];
     }
     
-    // Adresse de facturation
     $billing_address = $card_details['billing_address'];
+    $expiry = $card_details['expiry'];
     
-    // FORMAT CORRECT POUR L'API PAYPAL V2
-    // La date d'expiration doit être au format YYYY-MM
-    $expiry = $card_details['expiry']; // Déjà formaté YYYY-MM par validateExpiryDate
+    // GÉNÉRER UN INVOICE_ID VRAIMENT UNIQUE
+    $invoice_id = 'INV-' . date('Ymd') . '-' . $commande_id . '-' . uniqid() . '-' . rand(1000, 9999);
     
-    // CONSTRUCTION DE L'OBJET DE PAIEMENT POUR PAYPAL
     $payment_source = [
         'card' => [
             'name' => $cardholder_name,
             'number' => $card_number,
             'security_code' => $cvv,
-            'expiry' => $expiry, // Format: YYYY-MM
+            'expiry' => $expiry,
             'billing_address' => [
                 'address_line_1' => $billing_address['line1'],
                 'admin_area_2' => $billing_address['city'],
@@ -230,12 +266,10 @@ function createPayPalOrderWithCard($commande_id, $montant, $card_details, $retur
         ]
     ];
     
-    // Ajouter address_line_2 si présent
     if (!empty($billing_address['line2'])) {
         $payment_source['card']['billing_address']['address_line_2'] = $billing_address['line2'];
     }
     
-    // Construction de la requête
     $order_data = [
         'intent' => 'CAPTURE',
         'purchase_units' => [
@@ -243,7 +277,7 @@ function createPayPalOrderWithCard($commande_id, $montant, $card_details, $retur
                 'reference_id' => 'COMMANDE_' . $commande_id,
                 'description' => 'Commande #' . $commande_id . ' - HEURE DU CADEAU',
                 'custom_id' => (string)$commande_id,
-                'invoice_id' => 'INV-' . date('Ymd') . '-' . $commande_id,
+                'invoice_id' => $invoice_id,
                 'amount' => [
                     'currency_code' => 'EUR',
                     'value' => $montant_total
@@ -253,7 +287,6 @@ function createPayPalOrderWithCard($commande_id, $montant, $card_details, $retur
         'payment_source' => $payment_source
     ];
     
-    // Log pour déboguer (masquer les données sensibles)
     $log_data = $order_data;
     $log_data['payment_source']['card']['number'] = substr($card_number, 0, 4) . '********' . substr($card_number, -4);
     $log_data['payment_source']['card']['security_code'] = '***';
@@ -263,7 +296,6 @@ function createPayPalOrderWithCard($commande_id, $montant, $card_details, $retur
     
     $ch = curl_init();
     
-    // Générer un ID unique pour PayPal-Request-Id
     $request_id = uniqid('paypal_cb_' . $commande_id . '_', true);
     
     curl_setopt($ch, CURLOPT_URL, $url);
@@ -297,7 +329,6 @@ function createPayPalOrderWithCard($commande_id, $montant, $card_details, $retur
         $response_data = json_decode($result, true);
         $error_message = $response_data['message'] ?? $response_data['error_description'] ?? 'Erreur inconnue';
         
-        // Extraire les détails d'erreur spécifiques
         $error_details = '';
         if (isset($response_data['details']) && is_array($response_data['details'])) {
             foreach ($response_data['details'] as $detail) {
@@ -319,9 +350,18 @@ function createPayPalOrderWithCard($commande_id, $montant, $card_details, $retur
 }
 
 /**
- * Capture un paiement PayPal
+ * Capture un paiement PayPal avec gestion d'erreur "already captured"
  */
-function capturePayPalOrder($order_id) {
+function capturePayPalOrder($pdo, $commande_id, $order_id) {
+    // Vérifier d'abord si la commande a déjà été capturée
+    if (checkPayPalIdDejaUtilise($pdo, $order_id)) {
+        return [
+            'success' => true,
+            'already_captured' => true,
+            'message' => 'Order already captured'
+        ];
+    }
+    
     $access_token = getPayPalAccessToken();
     
     if (is_array($access_token) && isset($access_token['error'])) {
@@ -369,6 +409,16 @@ function capturePayPalOrder($order_id) {
         
         error_log("Erreur capture PayPal: $error_message - $error_details");
         
+        // Vérifier spécifiquement l'erreur "already captured"
+        if (strpos($error_message, 'already captured') !== false || 
+            strpos($error_details, 'already captured') !== false) {
+            return [
+                'success' => true,
+                'already_captured' => true,
+                'message' => 'Order already captured'
+            ];
+        }
+        
         return [
             'error' => $error_message,
             'details' => $error_details,
@@ -393,7 +443,6 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
         $client_id = $checkout['client_id'] ?? null;
         $adresse_livraison_id = $checkout['adresse_livraison']['id'] ?? null;
         
-        // DÉMARRER UNE TRANSACTION
         $pdo->beginTransaction();
         
         // Création du client temporaire si nécessaire
@@ -414,7 +463,6 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
                 throw new Exception("Impossible de créer le client temporaire");
             }
             
-            // Créer l'adresse associée
             if (!empty($adresse)) {
                 $stmt_addr = $pdo->prepare("
                     INSERT INTO adresses 
@@ -437,7 +485,6 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
             }
         }
         
-        // Vérifications
         if (!$client_id) {
             throw new Exception("Client ID manquant");
         }
@@ -526,7 +573,6 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
         
         $id_commande = $pdo->lastInsertId();
         
-        // VÉRIFICATION CRITIQUE
         if (!$id_commande || $id_commande == 0) {
             throw new Exception("Échec de la récupération de l'ID de la commande après insertion.");
         }
@@ -557,16 +603,13 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
             }
         }
         
-        // VALIDER LA TRANSACTION
         $pdo->commit();
         
-        // Mettre à jour le panier en BDD
         if (isset($_SESSION[SESSION_KEY_PANIER_ID]) && is_numeric($_SESSION[SESSION_KEY_PANIER_ID])) {
             $stmt_panier = $pdo->prepare("UPDATE panier SET statut = 'valide' WHERE id_panier = ?");
             $stmt_panier->execute([$_SESSION[SESSION_KEY_PANIER_ID]]);
         }
         
-        // Récupérer le numéro de commande
         $stmt_num = $pdo->prepare("SELECT numero_commande FROM commandes WHERE id_commande = ?");
         $stmt_num->execute([$id_commande]);
         $commande_numero = $stmt_num->fetchColumn();
@@ -586,7 +629,6 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
         ];
         
     } catch (Exception $e) {
-        // EN CAS D'ERREUR, ANNULER LA TRANSACTION
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
@@ -679,7 +721,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $erreurs[] = "Année d'expiration invalide (format accepté: YY ou YYYY)";
     }
     
-    // Valider et formater la date d'expiration
     $expiry_validation = validateExpiryDate($expiration_mois, $expiration_annee);
     if (!$expiry_validation['valid']) {
         $erreurs[] = $expiry_validation['error'];
@@ -693,9 +734,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $erreurs[] = "Nom du titulaire requis";
     }
     
-    // Si pas d'erreurs, procéder au paiement via PayPal
+    // Si pas d'erreurs, procéder au paiement
     if (empty($erreurs) && $expiry_validation['valid']) {
         try {
+            // Vérifier si une commande existe déjà dans la session
+            if (isset($_SESSION[SESSION_KEY_COMMANDE]['id'])) {
+                $commande_existante_id = $_SESSION[SESSION_KEY_COMMANDE]['id'];
+                
+                // Vérifier si cette commande est déjà payée
+                if (checkCommandeDejaPayee($pdo, $commande_existante_id)) {
+                    // Déjà payée, rediriger
+                    header('Location: paiement-reussi.php?commande=' . $commande_existante_id);
+                    exit;
+                }
+            }
+            
             // Étape 1: Créer la commande en base de données
             $commande = creerCommandeDepuisPanier($pdo, 'carte');
             $commande_id = $commande['id'];
@@ -707,7 +760,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'name' => $titulaire,
                 'number' => $numero_carte,
                 'cvv' => $cryptogramme,
-                'expiry' => $expiry_validation['expiry_formatted'], // Format YYYY-MM
+                'expiry' => $expiry_validation['expiry_formatted'],
                 'billing_address' => [
                     'line1' => $adresse['adresse'] ?? '123 Rue Example',
                     'line2' => $adresse['complement'] ?? '',
@@ -737,18 +790,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception($paypal_order['error'] . ($paypal_order['details'] ?? ''));
             }
             
-            // Étape 5: Capturer le paiement
-            $capture_result = capturePayPalOrder($paypal_order['id']);
+            // Étape 5: Capturer le paiement avec gestion "already captured"
+            $capture_result = capturePayPalOrder($pdo, $commande_id, $paypal_order['id']);
             
             if (isset($capture_result['error'])) {
                 throw new Exception("Erreur capture: " . $capture_result['error'] . ($capture_result['details'] ?? ''));
+            }
+            
+            // Si déjà capturé, rediriger vers succès
+            if (isset($capture_result['already_captured']) && $capture_result['already_captured']) {
+                header('Location: paiement-reussi.php?commande=' . $commande_id);
+                exit;
             }
             
             // Vérifier le statut de la capture
             $capture_status = $capture_result['status'] ?? '';
             $capture_completed = false;
             
-            // Vérifier si le paiement a été capturé avec succès
             if ($capture_status === 'COMPLETED') {
                 $capture_completed = true;
             } elseif (isset($capture_result['purchase_units'][0]['payments']['captures'][0]['status'])) {
@@ -764,7 +822,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->beginTransaction();
                 
                 try {
-                    // Récupérer les identifiants de capture
                     $capture_id = $capture_result['purchase_units'][0]['payments']['captures'][0]['id'] ?? null;
                     
                     // Mettre à jour la commande
@@ -779,7 +836,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ");
                     $stmt->execute([
                         $paypal_order['id'],
-                        $capture_id,
+                        $paypal_order['id'],
                         $commande_id
                     ]);
                     
@@ -1148,7 +1205,7 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
                             $currentYear = date('Y');
                             for ($i = 0; $i < 10; $i++):
                                 $yearDisplay = $currentYear + $i;
-                                $yearFormatted = $yearDisplay; // Format YYYY
+                                $yearFormatted = $yearDisplay;
                                 $selected = (isset($_POST['expiration_annee']) && $_POST['expiration_annee'] == $yearFormatted) ? 'selected' : '';
                             ?>
                             <option value="<?= $yearFormatted ?>" <?= $selected ?>><?= $yearDisplay ?></option>
@@ -1198,12 +1255,10 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
             const submitBtn = document.getElementById('submitBtn');
             const paymentForm = document.getElementById('paymentForm');
             
-            // Icônes des cartes
             const iconVisa = document.getElementById('icon-visa');
             const iconMastercard = document.getElementById('icon-mastercard');
             const iconAmex = document.getElementById('icon-amex');
 
-            // Formatage du numéro de carte
             if (numeroCarte) {
                 numeroCarte.addEventListener('input', function(e) {
                     let value = e.target.value.replace(/\s/g, '').replace(/\D/g, '');
@@ -1216,14 +1271,11 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
                     }
                     e.target.value = formatted;
                     
-                    // Détection du type de carte
                     detectCardType(value);
                 });
             }
 
-            // Détection du type de carte
             function detectCardType(cardNumber) {
-                // Reset des couleurs
                 if (iconVisa) iconVisa.style.color = '#718096';
                 if (iconMastercard) iconMastercard.style.color = '#718096';
                 if (iconAmex) iconAmex.style.color = '#718096';
@@ -1237,17 +1289,14 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
                 }
             }
 
-            // Formatage du cryptogramme
             if (cryptogramme) {
                 cryptogramme.addEventListener('input', function(e) {
                     e.target.value = e.target.value.replace(/\D/g, '').substr(0, 4);
                 });
             }
 
-            // Validation du formulaire avant soumission
             if (paymentForm) {
                 paymentForm.addEventListener('submit', function(e) {
-                    // Validation numéro de carte
                     if (!numeroCarte || !numeroCarte.value.trim()) {
                         e.preventDefault();
                         alert('Veuillez saisir le numéro de carte');
@@ -1261,7 +1310,6 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
                         return false;
                     }
                     
-                    // Validation date expiration
                     const mois = document.getElementById('expiration_mois').value;
                     const annee = document.getElementById('expiration_annee').value;
                     
@@ -1277,7 +1325,6 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
                         return false;
                     }
                     
-                    // Vérifier que la carte n'est pas expirée
                     const currentDate = new Date();
                     const currentYear = currentDate.getFullYear();
                     const currentMonth = currentDate.getMonth() + 1;
@@ -1289,21 +1336,18 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
                         return false;
                     }
                     
-                    // Validation CVV
                     if (!cryptogramme || !cryptogramme.value.trim() || cryptogramme.value.length < 3) {
                         e.preventDefault();
                         alert('Veuillez saisir le cryptogramme (CVV)');
                         return false;
                     }
                     
-                    // Validation titulaire
                     if (!document.getElementById('titulaire_carte').value.trim()) {
                         e.preventDefault();
                         alert('Veuillez saisir le nom du titulaire');
                         return false;
                     }
                     
-                    // Désactiver le bouton
                     if (submitBtn) {
                         submitBtn.disabled = true;
                         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement PayPal...';
