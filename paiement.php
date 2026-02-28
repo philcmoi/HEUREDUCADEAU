@@ -1,6 +1,6 @@
 <?php
 // ============================================
-// PAGE DE PAIEMENT - VERSION CORRIGÉE
+// PAGE DE PAIEMENT - VERSION CORRIGÉE FINALE
 // ============================================
 
 error_reporting(E_ALL);
@@ -48,7 +48,7 @@ if ($is_api_request) {
             $commande_id = $_GET['commande'] ?? 0;
             
             // Nettoyer tout ancien flag PayPal
-            unset($_SESSION['paypal_processing']);
+            cleanPayPalFlags();
             
             echo json_encode([
                 'success' => true,
@@ -66,6 +66,51 @@ if ($is_api_request) {
             ]);
             break;
             
+        case 'get_commande':
+            // Récupérer les données de la commande en cours
+            $panier_details = [];
+            $sous_total = 0;
+            
+            foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
+                $produit = getProductDetails($item['id_produit'], $pdo);
+                $prix_unitaire = floatval($produit['prix_ttc'] ?? $item['prix'] ?? 0);
+                $quantite = intval($item['quantite'] ?? 1);
+                $prix_total = $quantite * $prix_unitaire;
+                $sous_total += $prix_total;
+                
+                $panier_details[] = [
+                    'id_produit' => $item['id_produit'],
+                    'quantite' => $quantite,
+                    'nom' => $produit['nom'] ?? 'Produit',
+                    'prix_unitaire' => $prix_unitaire,
+                    'prix_total' => $prix_total,
+                    'reference' => $produit['reference'] ?? '',
+                    'image' => $produit['image'] ?? 'img/default-product.jpg'
+                ];
+            }
+            
+            $totaux = calculerTotauxPanier($panier_details, $_SESSION[SESSION_KEY_CHECKOUT] ?? []);
+            $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
+            
+            echo json_encode([
+                'success' => true,
+                'commande' => [
+                    'adresse_livraison' => $adresse,
+                    'livraison' => [
+                        'mode' => $_SESSION[SESSION_KEY_CHECKOUT]['mode_livraison'] ?? 'standard',
+                        'frais' => $totaux['frais_livraison']
+                    ],
+                    'emballage_cadeau' => $_SESSION[SESSION_KEY_CHECKOUT]['emballage_cadeau'] ?? false,
+                    'frais_emballage' => $totaux['frais_emballage']
+                ],
+                'panier' => [
+                    'items_count' => $totaux['total_items'],
+                    'sous_total' => $totaux['sous_total']
+                ],
+                'totaux' => $totaux
+            ]);
+            break;
+            
         default:
             echo json_encode(['success' => false, 'message' => 'Action API non reconnue']);
     }
@@ -78,7 +123,7 @@ if ($is_api_request) {
 checkPaiementAccess();
 
 // Nettoyer tout ancien flag PayPal avant d'afficher la page
-unset($_SESSION['paypal_processing']);
+cleanPayPalFlags();
 
 // ============================================
 // RÉCUPÉRATION DES DONNÉES POUR AFFICHAGE
@@ -91,7 +136,7 @@ $panier_details = [];
 foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
     $produit = getProductDetails($item['id_produit'], $pdo);
     $prix_unitaire = floatval($produit['prix_ttc'] ?? $item['prix'] ?? 0);
-    $quantite = intval($item['quantite']);
+    $quantite = intval($item['quantite'] ?? 1);
     $panier_details[] = [
         'id_produit' => $item['id_produit'],
         'quantite' => $quantite,
@@ -106,7 +151,7 @@ foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
 $totaux = calculerTotauxPanier($panier_details, $_SESSION[SESSION_KEY_CHECKOUT] ?? []);
 $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
 
-// Le reste du HTML reste identique...
+// Le reste du HTML...
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -116,7 +161,6 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
     <title>Paiement - HEURE DU CADEAU</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* Tous les styles identiques à l'original */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -219,6 +263,7 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
             margin-bottom: 30px;
             border-left: 5px solid #3498db;
         }
+        .adresse-line { margin-bottom: 5px; color: #4a5568; }
         .paiement-options {
             display: flex;
             flex-direction: column;
@@ -295,9 +340,7 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
             height: 100%;
             object-fit: cover;
         }
-        .mini-details {
-            flex: 1;
-        }
+        .mini-details { flex: 1; }
         .mini-details h4 {
             font-size: 1rem;
             margin-bottom: 5px;
@@ -423,7 +466,6 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
                         <?php echo htmlspecialchars($msg['message']); ?>
                     </div>
                 <?php endforeach; ?>
-                <?php clearSessionMessages(); ?>
             <?php endif; ?>
 
             <div id="paiementContent">
@@ -443,7 +485,7 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
 
     <script>
     // ============================================
-    // JAVASCRIPT COMPLET - GESTIONNAIRE DE PAIEMENT
+    // JAVASCRIPT - GESTIONNAIRE DE PAIEMENT
     // ============================================
     const API_BASE_URL = window.location.href.split('?')[0];
     let paiementManager = null;
@@ -622,16 +664,13 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
                     .then(response => response.json())
                     .then(data => {
                         if (data.success && data.redirect_url) {
-                            // Redirection vers PayPal
                             window.location.href = data.redirect_url;
                         } else {
-                            // Fallback
                             window.location.href = `paiement_paypal.php?commande=1&montant=${this.totaux.total}&from=paiement&t=${Date.now()}`;
                         }
                     })
                     .catch(error => {
                         console.error("Erreur redirection:", error);
-                        // Fallback en cas d'erreur
                         window.location.href = `paiement_paypal.php?commande=1&montant=${this.totaux.total}&from=paiement&t=${Date.now()}`;
                     });
             } else {
