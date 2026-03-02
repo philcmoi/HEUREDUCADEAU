@@ -1,75 +1,79 @@
 <?php
-// test_simple.php - Version CORRIGÉE
+// ============================================
+// TEST SIMPLE - À EXÉCUTER D'ABORD
+// ============================================
+echo "<pre>";
+echo "=== DIAGNOSTIC SYSTÈME ===\n\n";
 
-// Utiliser le même nom que panier.php
-session_name('heure_du_cadeau');
+// 1. Vérifier le dossier actuel
+echo "1. Dossier actuel : " . __DIR__ . "\n";
 
-// Désactiver cookies
-ini_set('session.use_cookies', 0);
-ini_set('session.use_only_cookies', 0);
-
-// Récupérer l'ID de session
-if (isset($_GET['heure_du_cadeau'])) {
-    session_id($_GET['heure_du_cadeau']);
-} elseif (isset($_GET['sid'])) {
-    // Support alternatif pour 'sid='
-    session_id($_GET['sid']);
+// 2. Vérifier si Composer est installé
+echo "2. Vérification Composer :\n";
+if (file_exists(__DIR__ . '/composer.json')) {
+    echo "   - composer.json présent\n";
+} else {
+    echo "   - composer.json manquant\n";
 }
 
-session_start();
-
-// Initialiser compteur
-if (!isset($_SESSION['count'])) {
-    $_SESSION['count'] = 0;
+if (file_exists(__DIR__ . '/composer.lock')) {
+    echo "   - composer.lock présent\n";
+} else {
+    echo "   - composer.lock manquant\n";
 }
-$_SESSION['count']++;
 
-// Générer les URLs avec le bon paramètre
-$sid = session_id();
-$param_name = session_name(); // 'heure_du_cadeau'
-$session_param = $param_name . '=' . $sid;
+// 3. Vérifier le dossier vendor
+echo "\n3. Vérification vendor :\n";
+if (is_dir(__DIR__ . '/vendor')) {
+    echo "   - Dossier vendor présent\n";
+    
+    if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+        echo "   - autoload.php présent\n";
+        
+        // Tester le chargement
+        require_once __DIR__ . '/vendor/autoload.php';
+        echo "   - ✓ autoload.php chargé avec succès\n";
+        
+        // Vérifier PHPMailer
+        if (class_exists('\\PHPMailer\\PHPMailer\\PHPMailer')) {
+            echo "   - ✓ PHPMailer trouvé\n";
+        } else {
+            echo "   - ✗ PHPMailer non trouvé\n";
+        }
+        
+        // Vérifier TCPDF
+        if (class_exists('\\TCPDF')) {
+            echo "   - ✓ TCPDF trouvé\n";
+        } else {
+            echo "   - ✗ TCPDF non trouvé\n";
+        }
+    } else {
+        echo "   - ✗ autoload.php manquant\n";
+    }
+} else {
+    echo "   - ✗ Dossier vendor manquant\n";
+}
+
+// 4. Vérifier les permissions
+echo "\n4. Permissions :\n";
+$logs_dir = __DIR__ . '/logs/emails';
+if (!is_dir($logs_dir)) {
+    mkdir($logs_dir, 0755, true);
+    echo "   - Dossier logs créé\n";
+}
+echo "   - Dossier logs : " . (is_writable($logs_dir) ? "accessible en écriture" : "non accessible") . "\n";
+
+// 5. Vérifier smtp_config.php
+echo "\n5. Configuration SMTP :\n";
+if (file_exists(__DIR__ . '/smtp_config.php')) {
+    echo "   - smtp_config.php présent\n";
+    require_once __DIR__ . '/smtp_config.php';
+    echo "   - SMTP_HOST : " . (defined('SMTP_HOST') ? SMTP_HOST : 'non défini') . "\n";
+    echo "   - SMTP_USERNAME : " . (defined('SMTP_USERNAME') ? SMTP_USERNAME : 'non défini') . "\n";
+} else {
+    echo "   - ✗ smtp_config.php manquant\n";
+}
+
+echo "\n=== FIN DIAGNOSTIC ===\n";
+echo "</pre>";
 ?>
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Test Simple Session</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        .info { background: #f0f0f0; padding: 15px; margin: 10px 0; }
-        .test-links a { display: block; margin: 5px 0; padding: 10px; background: #4CAF50; color: white; text-decoration: none; }
-        .test-links a:hover { background: #45a049; }
-    </style>
-</head>
-<body>
-    <div class="info">
-        <h2>Informations Session</h2>
-        <p><strong>Session Name:</strong> <?php echo session_name(); ?></p>
-        <p><strong>Session ID:</strong> <?php echo session_id(); ?></p>
-        <p><strong>Compteur:</strong> <?php echo $_SESSION['count']; ?></p>
-        <p><strong>Panier items:</strong> <?php echo isset($_SESSION['panier']) ? count($_SESSION['panier']) : 0; ?></p>
-    </div>
-    
-    <p><a href="test_simple.php?<?php echo $session_param; ?>">🔁 Incrémenter le compteur</a></p>
-    
-    <div class="test-links">
-        <h2>📦 Tester Panier API</h2>
-        <a href="panier.php?action=test&<?php echo $session_param; ?>">🧪 Test API</a>
-        <a href="panier.php?action=ajouter&<?php echo $session_param; ?>&id_produit=1&quantite=1">➕ Ajouter produit 1</a>
-        <a href="panier.php?action=ajouter&<?php echo $session_param; ?>&id_produit=2&quantite=2">➕ Ajouter produit 2 (x2)</a>
-        <a href="panier.php?action=get&<?php echo $session_param; ?>">👁️ Voir panier</a>
-        <a href="panier.php?action=init_checkout&<?php echo $session_param; ?>">🚀 Init Checkout</a>
-        <a href="panier.php?action=vider&<?php echo $session_param; ?>">🗑️ Vider panier</a>
-    </div>
-    
-    <div class="test-links">
-        <h2>🚚 Tester Livraison</h2>
-        <a href="livraison.php?<?php echo $session_param; ?>">📦 Page Livraison</a>
-    </div>
-    
-    <div class="info">
-        <h3>URL de votre session :</h3>
-        <input type="text" value="?<?php echo $session_param; ?>" style="width: 100%; padding: 10px; margin: 10px 0;">
-        <p><em>Copiez ce paramètre pour vos tests</em></p>
-    </div>
-</body>
-</html>

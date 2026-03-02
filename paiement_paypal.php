@@ -1,6 +1,6 @@
 <?php
 // ============================================
-// PAIEMENT PAYPAL - VERSION CORRIGÉE FINALE
+// PAIEMENT PAYPAL - VERSION CORRIGÉE AVEC ENVOI FACTURE
 // ============================================
 
 error_reporting(E_ALL);
@@ -14,6 +14,9 @@ require_once __DIR__ . '/session_verification.php';
 define('PAYPAL_CLIENT_ID', 'AUe7uZH9uo6MpEhUD5qUL0B6kqE69b9OZi4XMaR-3RJGtklCXfgnSBmaNMUo1uyMmznhoBG-U0bmynR_');
 define('PAYPAL_CLIENT_SECRET', 'EDTCzIliUZi-_Jqxb3MUsTKjaS5Dkl0YKGQrCKy6LN7Gqde6CEmQhMBWtGEo4tbiUVerejXZ06rLP-2S');
 define('PAYPAL_MODE', 'sandbox'); // 'sandbox' ou 'live'
+define('PAYPAL_BASE_URL', (PAYPAL_MODE === 'sandbox') 
+    ? 'https://api-m.sandbox.paypal.com' 
+    : 'https://api-m.paypal.com');
 
 // ============================================
 // VÉRIFICATIONS D'ACCÈS
@@ -50,9 +53,7 @@ synchroniserPanierSessionBDD($pdo, session_id());
 function getPayPalAccessToken() {
     $ch = curl_init();
     
-    $url = (PAYPAL_MODE === 'sandbox') 
-        ? 'https://api-m.sandbox.paypal.com/v1/oauth2/token'
-        : 'https://api-m.paypal.com/v1/oauth2/token';
+    $url = PAYPAL_BASE_URL . '/v1/oauth2/token';
     
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_HEADER, false);
@@ -61,6 +62,7 @@ function getPayPalAccessToken() {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_USERPWD, PAYPAL_CLIENT_ID . ":" . PAYPAL_CLIENT_SECRET);
     curl_setopt($ch, CURLOPT_POSTFIELDS, "grant_type=client_credentials");
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     
     $result = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -109,6 +111,7 @@ function createPayPalOrder($commande_id, $montant, $return_url, $cancel_url) {
                 'reference_id' => 'ORDER_' . $commande_id,
                 'description' => 'Commande #' . $commande_id . ' - HEURE DU CADEAU',
                 'custom_id' => (string)$commande_id,
+                'invoice_id' => 'INV-' . date('Ymd') . '-' . $commande_id . '-' . uniqid(),
                 'amount' => [
                     'currency_code' => 'EUR',
                     'value' => $montant_total
@@ -127,21 +130,21 @@ function createPayPalOrder($commande_id, $montant, $return_url, $cancel_url) {
     
     error_log("PayPal Order Data: " . json_encode($order_data));
     
-    $url = (PAYPAL_MODE === 'sandbox')
-        ? 'https://api-m.sandbox.paypal.com/v2/checkout/orders'
-        : 'https://api-m.paypal.com/v2/checkout/orders';
+    $url = PAYPAL_BASE_URL . '/v2/checkout/orders';
     
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'Content-Type: application/json',
         'Authorization: Bearer ' . $access_token,
+        'PayPal-Request-Id: ' . uniqid('order_' . $commande_id . '_'),
         'Prefer: return=representation'
     ]);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($order_data));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     
     $result = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -184,9 +187,7 @@ function capturePayPalOrder($order_id) {
         return $access_token;
     }
     
-    $url = (PAYPAL_MODE === 'sandbox')
-        ? "https://api-m.sandbox.paypal.com/v2/checkout/orders/$order_id/capture"
-        : "https://api-m.paypal.com/v2/checkout/orders/$order_id/capture";
+    $url = PAYPAL_BASE_URL . "/v2/checkout/orders/$order_id/capture";
     
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
@@ -198,6 +199,7 @@ function capturePayPalOrder($order_id) {
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     
     $result = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -217,6 +219,288 @@ function capturePayPalOrder($order_id) {
     }
     
     return json_decode($result, true);
+}
+
+// ============================================
+// FONCTIONS DE CRÉATION DE COMMANDE
+// ============================================
+
+/**
+ * Crée une commande à partir du panier
+ */
+function creerCommandeDepuisPanier($pdo, $mode_paiement = 'paypal') {
+    try {
+        $checkout = $_SESSION[SESSION_KEY_CHECKOUT] ?? [];
+        $client_id = $checkout['client_id'] ?? null;
+        $adresse_livraison_id = $checkout['adresse_livraison']['id'] ?? null;
+        
+        $pdo->beginTransaction();
+        
+        // ========== CRÉATION DU CLIENT TEMPORAIRE SI NÉCESSAIRE ==========
+        if (!$client_id) {
+            $adresse = $checkout['adresse_livraison'] ?? [];
+            $email = $adresse['email'] ?? 'temp_' . uniqid() . '@temp.com';
+            $nom = $adresse['nom'] ?? 'Client';
+            $prenom = $adresse['prenom'] ?? 'Temporaire';
+            
+            $stmt_client = $pdo->prepare("
+                INSERT INTO clients (email, nom, prenom, is_temporary, date_inscription, statut, newsletter)
+                VALUES (?, ?, ?, 1, NOW(), 'actif', 1)
+            ");
+            $stmt_client->execute([$email, $nom, $prenom]);
+            $client_id = $pdo->lastInsertId();
+            
+            if (!$client_id) {
+                throw new \Exception("Impossible de créer le client temporaire");
+            }
+            
+            // Créer l'adresse associée
+            if (!empty($adresse)) {
+                $stmt_addr = $pdo->prepare("
+                    INSERT INTO adresses 
+                    (id_client, nom, prenom, adresse, complement, code_postal, ville, pays, telephone, principale, type_adresse)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'livraison')
+                ");
+                $stmt_addr->execute([
+                    $client_id,
+                    $adresse['nom'] ?? '',
+                    $adresse['prenom'] ?? '',
+                    $adresse['adresse'] ?? '',
+                    $adresse['complement'] ?? null,
+                    $adresse['code_postal'] ?? '',
+                    $adresse['ville'] ?? '',
+                    $adresse['pays'] ?? 'France',
+                    $adresse['telephone'] ?? null
+                ]);
+                
+                $adresse_livraison_id = $pdo->lastInsertId();
+            }
+        }
+        
+        if (!$client_id) {
+            throw new \Exception("Client ID manquant");
+        }
+        if (!$adresse_livraison_id) {
+            throw new \Exception("Adresse de livraison ID manquante");
+        }
+        
+        // ========== PRÉPARATION DES DONNÉES ==========
+        $sous_total = 0;
+        $items_data = [];
+        
+        foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
+            $produit = getProductDetails($item['id_produit'], $pdo);
+            if (!$produit) {
+                throw new \Exception("Produit ID " . $item['id_produit'] . " introuvable");
+            }
+            
+            $prix_unitaire = floatval($produit['prix_ttc'] ?? 0);
+            $quantite = intval($item['quantite'] ?? 1);
+            
+            if (($produit['quantite_stock'] ?? 0) < $quantite) {
+                throw new \Exception("Stock insuffisant pour: " . ($produit['nom'] ?? ''));
+            }
+            
+            $sous_total += $prix_unitaire * $quantite;
+            
+            $items_data[] = [
+                'id_produit' => $item['id_produit'],
+                'reference' => $produit['reference'] ?? 'REF' . $item['id_produit'],
+                'nom' => $produit['nom'] ?? 'Produit',
+                'quantite' => $quantite,
+                'prix_unitaire_ttc' => $prix_unitaire,
+                'prix_unitaire_ht' => round($prix_unitaire / 1.2, 2),
+                'tva' => 20.00
+            ];
+        }
+        
+        if (empty($items_data)) {
+            throw new \Exception("Aucun article dans le panier");
+        }
+        
+        // Frais de livraison
+        $mode_livraison = $checkout['mode_livraison'] ?? 'standard';
+        $frais_livraison = 0;
+        
+        if ($mode_livraison === 'express') {
+            $frais_livraison = 9.90;
+        } elseif ($mode_livraison === 'relais') {
+            $frais_livraison = 4.90;
+        } elseif ($sous_total < 50) {
+            $frais_livraison = 4.90;
+        }
+        
+        $frais_emballage = ($checkout['emballage_cadeau'] ?? false) ? 3.90 : 0;
+        $total = round($sous_total + $frais_livraison + $frais_emballage, 2);
+        
+        // ========== INSERTION DE LA COMMANDE ==========
+        $adresse_facturation_id = $checkout['adresse_facturation']['id'] ?? $adresse_livraison_id;
+        
+        $stmt = $pdo->prepare("
+            INSERT INTO commandes (
+                id_client, 
+                id_adresse_livraison, 
+                id_adresse_facturation,
+                sous_total, 
+                frais_livraison, 
+                total_ttc, 
+                statut, 
+                statut_paiement,
+                mode_paiement, 
+                date_commande, 
+                client_type,
+                instructions
+            ) VALUES (?, ?, ?, ?, ?, ?, 'en_attente', 'en_attente', ?, NOW(), ?, ?)
+        ");
+        
+        $client_type = ($checkout['is_guest'] ?? false) ? 'guest' : 'registered';
+        $instructions = $checkout['instructions'] ?? null;
+        
+        $result = $stmt->execute([
+            $client_id,
+            $adresse_livraison_id,
+            $adresse_facturation_id,
+            round($sous_total, 2),
+            round($frais_livraison + $frais_emballage, 2),
+            $total,
+            $mode_paiement,
+            $client_type,
+            $instructions
+        ]);
+        
+        if (!$result) {
+            $errorInfo = $stmt->errorInfo();
+            throw new \Exception("Échec insertion commande: " . ($errorInfo[2] ?? 'Erreur inconnue'));
+        }
+        
+        $id_commande = $pdo->lastInsertId();
+        
+        if (!$id_commande || $id_commande == 0) {
+            throw new \Exception("ID commande non généré");
+        }
+        
+        // ========== INSERTION DES ARTICLES ==========
+        $stmt_item = $pdo->prepare("
+            INSERT INTO commande_items (
+                id_commande, id_produit, reference_produit, nom_produit,
+                quantite, prix_unitaire_ht, prix_unitaire_ttc, tva
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        
+        foreach ($items_data as $item) {
+            $result_item = $stmt_item->execute([
+                $id_commande,
+                $item['id_produit'],
+                $item['reference'],
+                $item['nom'],
+                $item['quantite'],
+                $item['prix_unitaire_ht'],
+                $item['prix_unitaire_ttc'],
+                $item['tva']
+            ]);
+            
+            if (!$result_item) {
+                $errorInfo = $stmt_item->errorInfo();
+                throw new \Exception("Échec insertion item: " . ($errorInfo[2] ?? 'Erreur inconnue'));
+            }
+        }
+        
+        // ========== MISE À JOUR DU PANIER ==========
+        if (isset($_SESSION[SESSION_KEY_PANIER_ID]) && is_numeric($_SESSION[SESSION_KEY_PANIER_ID])) {
+            $stmt_panier = $pdo->prepare("UPDATE panier SET statut = 'valide' WHERE id_panier = ?");
+            $stmt_panier->execute([$_SESSION[SESSION_KEY_PANIER_ID]]);
+        }
+        
+        // Récupérer le numéro de commande
+        $stmt_num = $pdo->prepare("SELECT numero_commande FROM commandes WHERE id_commande = ?");
+        $stmt_num->execute([$id_commande]);
+        $commande_numero = $stmt_num->fetchColumn();
+        
+        $pdo->commit();
+        
+        $_SESSION[SESSION_KEY_COMMANDE] = [
+            'id' => $id_commande,
+            'numero' => $commande_numero,
+            'montant' => $total
+        ];
+        
+        error_log("Commande PayPal créée: ID $id_commande, N° $commande_numero, Montant: $total €");
+        
+        return [
+            'id' => $id_commande,
+            'numero' => $commande_numero,
+            'total' => $total,
+            'client_id' => $client_id,
+            'items' => $items_data
+        ];
+        
+    } catch (\Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log("ERREUR CRÉATION COMMANDE: " . $e->getMessage());
+        throw $e;
+    }
+}
+
+/**
+ * Ajoute une transaction après paiement réussi
+ */
+function ajouterTransactionPayPal($pdo, $commande_id, $client_id, $montant, $paypal_order_id, $capture_result, $payer_id, $paypal_email) {
+    try {
+        $numero_transaction = 'PP_' . date('Ymd') . '_' . uniqid();
+        $ip_client = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        
+        $capture_id = $capture_result['purchase_units'][0]['payments']['captures'][0]['id'] ?? null;
+        
+        $stmt_trans = $pdo->prepare("
+            INSERT INTO transactions 
+            (numero_transaction, id_commande, id_client, montant, methode_paiement,
+             reference_paiement, statut, date_creation, ip_client, details) 
+            VALUES (?, ?, ?, ?, 'paypal', ?, 'paye', NOW(), ?, ?)
+        ");
+        
+        $details_json = json_encode([
+            'paypal_order_id' => $paypal_order_id,
+            'payer_id' => $payer_id,
+            'capture_id' => $capture_id,
+            'payer_email' => $paypal_email,
+            'full_response' => $capture_result
+        ]);
+        
+        return $stmt_trans->execute([
+            $numero_transaction,
+            $commande_id,
+            $client_id,
+            $montant,
+            $paypal_order_id,
+            $ip_client,
+            $details_json
+        ]);
+        
+    } catch (\Exception $e) {
+        error_log("Erreur ajout transaction PayPal: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Met à jour les stocks après paiement
+ */
+function mettreAJourStocks($pdo, $commande_id) {
+    try {
+        $stmt = $pdo->prepare("
+            UPDATE produits p
+            JOIN commande_items ci ON p.id_produit = ci.id_produit
+            SET p.ventes = p.ventes + ci.quantite,
+                p.quantite_stock = p.quantite_stock - ci.quantite
+            WHERE ci.id_commande = ?
+        ");
+        return $stmt->execute([$commande_id]);
+    } catch (\Exception $e) {
+        error_log("Erreur mise à jour stocks: " . $e->getMessage());
+        return false;
+    }
 }
 
 // ============================================
@@ -254,7 +538,7 @@ if (isset($_GET['token']) && isset($_GET['PayerID'])) {
         $commande = $stmt_check->fetch();
         
         if (!$commande) {
-            throw new Exception("Commande non trouvée: $commande_id");
+            throw new \Exception("Commande non trouvée: $commande_id");
         }
         
         // Extraire les informations PayPal
@@ -285,53 +569,47 @@ if (isset($_GET['token']) && isset($_GET['PayerID'])) {
         ]);
         
         // Créer la transaction
-        $numero_transaction = 'PP_' . date('Ymd') . '_' . uniqid();
-        $ip_client = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        
-        $stmt_trans = $pdo->prepare("
-            INSERT INTO transactions 
-            (numero_transaction, id_commande, id_client, montant, methode_paiement,
-             reference_paiement, statut, date_creation, ip_client, details) 
-            VALUES (?, ?, ?, ?, 'paypal', ?, 'paye', NOW(), ?, ?)
-        ");
-        
-        $details_json = json_encode([
-            'paypal_order_id' => $paypal_order_id,
-            'payer_id' => $payer_id,
-            'capture_id' => $capture_id,
-            'payer_email' => $paypal_email
-        ]);
-        
-        $stmt_trans->execute([
-            $numero_transaction,
-            $commande_id,
-            $commande['id_client'],
-            $montant_paye,
-            $paypal_order_id,
-            $ip_client,
-            $details_json
-        ]);
+        ajouterTransactionPayPal(
+            $pdo, 
+            $commande_id, 
+            $commande['id_client'], 
+            $montant_paye, 
+            $paypal_order_id, 
+            $capture_result,
+            $payer_id,
+            $paypal_email
+        );
         
         // Mettre à jour les stocks
-        $stmt_stock = $pdo->prepare("
-            UPDATE produits p
-            JOIN commande_items ci ON p.id_produit = ci.id_produit
-            SET p.ventes = p.ventes + ci.quantite,
-                p.quantite_stock = p.quantite_stock - ci.quantite
-            WHERE ci.id_commande = ?
-        ");
-        $stmt_stock->execute([$commande_id]);
+        mettreAJourStocks($pdo, $commande_id);
         
         $pdo->commit();
+        
+        // ========== ENVOI DE LA FACTURE PAR EMAIL (NON BLOQUANT) ==========
+        try {
+            if (file_exists(__DIR__ . '/fonctions_email.php')) {
+                require_once __DIR__ . '/fonctions_email.php';
+                if (function_exists('envoyerFactureEmail')) {
+                    $email_envoye = envoyerFactureEmail($pdo, $commande_id);
+                    error_log("Envoi email facture pour commande $commande_id: " . ($email_envoye ? 'OK' : 'ÉCHEC'));
+                } else {
+                    error_log("Fonction envoyerFactureEmail non trouvée");
+                }
+            } else {
+                error_log("Fichier fonctions_email.php non trouvé");
+            }
+        } catch (\Exception $e) {
+            error_log("Erreur envoi email facture (non bloquant): " . $e->getMessage());
+        }
         
         // Vider le panier et la session checkout
         cleanUserSession();
         cleanPayPalFlags();
         
-        header('Location: paiement-reussi.php?commande=' . $commande_id . '&token=' . $paypal_order_id);
+        header('Location: confirmation_commande.php?commande=' . $commande_id . '&token=' . $paypal_order_id);
         exit;
         
-    } catch (Exception $e) {
+    } catch (\Exception $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
@@ -356,201 +634,12 @@ $_SESSION['paypal_processing'] = true;
 // ============================================
 
 try {
-    $pdo->beginTransaction();
+    // Créer la commande en base
+    $commande = creerCommandeDepuisPanier($pdo, 'paypal');
+    $commande_id = $commande['id'];
+    $total = $commande['total'];
     
-    $checkout = $_SESSION[SESSION_KEY_CHECKOUT] ?? [];
-    $client_id = $checkout['client_id'] ?? null;
-    $adresse_livraison_id = $checkout['adresse_livraison']['id'] ?? null;
-    
-    // ========== CRÉATION DU CLIENT TEMPORAIRE SI NÉCESSAIRE ==========
-    if (!$client_id) {
-        $adresse = $checkout['adresse_livraison'] ?? [];
-        $email = $adresse['email'] ?? 'temp_' . uniqid() . '@temp.com';
-        $nom = $adresse['nom'] ?? 'Client';
-        $prenom = $adresse['prenom'] ?? 'Temporaire';
-        
-        $stmt_client = $pdo->prepare("
-            INSERT INTO clients (email, nom, prenom, is_temporary, date_inscription, statut, newsletter)
-            VALUES (?, ?, ?, 1, NOW(), 'actif', 1)
-        ");
-        $stmt_client->execute([$email, $nom, $prenom]);
-        $client_id = $pdo->lastInsertId();
-        
-        if (!$client_id) {
-            throw new Exception("Impossible de créer le client temporaire");
-        }
-        
-        // Créer l'adresse associée
-        if (!empty($adresse)) {
-            $stmt_addr = $pdo->prepare("
-                INSERT INTO adresses 
-                (id_client, nom, prenom, adresse, complement, code_postal, ville, pays, telephone, principale, type_adresse)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'livraison')
-            ");
-            $stmt_addr->execute([
-                $client_id,
-                $adresse['nom'] ?? '',
-                $adresse['prenom'] ?? '',
-                $adresse['adresse'] ?? '',
-                $adresse['complement'] ?? null,
-                $adresse['code_postal'] ?? '',
-                $adresse['ville'] ?? '',
-                $adresse['pays'] ?? 'France',
-                $adresse['telephone'] ?? null
-            ]);
-            
-            $adresse_livraison_id = $pdo->lastInsertId();
-        }
-    }
-    
-    // Vérifications
-    if (!$client_id) {
-        throw new Exception("Client ID manquant");
-    }
-    if (!$adresse_livraison_id) {
-        throw new Exception("Adresse de livraison ID manquante");
-    }
-    
-    // ========== PRÉPARATION DES DONNÉES ==========
-    $sous_total = 0;
-    $items_data = [];
-    
-    foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
-        $produit = getProductDetails($item['id_produit'], $pdo);
-        if (!$produit) {
-            throw new Exception("Produit ID " . $item['id_produit'] . " introuvable");
-        }
-        
-        $prix_unitaire = floatval($produit['prix_ttc'] ?? 0);
-        $quantite = intval($item['quantite'] ?? 1);
-        
-        if (($produit['quantite_stock'] ?? 0) < $quantite) {
-            throw new Exception("Stock insuffisant pour: " . ($produit['nom'] ?? ''));
-        }
-        
-        $sous_total += $prix_unitaire * $quantite;
-        
-        $items_data[] = [
-            'id_produit' => $item['id_produit'],
-            'reference' => $produit['reference'] ?? 'REF' . $item['id_produit'],
-            'nom' => $produit['nom'] ?? 'Produit',
-            'quantite' => $quantite,
-            'prix_unitaire_ttc' => $prix_unitaire,
-            'prix_unitaire_ht' => round($prix_unitaire / 1.2, 2),
-            'tva' => 20.00
-        ];
-    }
-    
-    if (empty($items_data)) {
-        throw new Exception("Aucun article dans le panier");
-    }
-    
-    // Frais de livraison
-    $mode_livraison = $checkout['mode_livraison'] ?? 'standard';
-    $frais_livraison = 0;
-    
-    if ($mode_livraison === 'express') {
-        $frais_livraison = 9.90;
-    } elseif ($mode_livraison === 'relais') {
-        $frais_livraison = 4.90;
-    } elseif ($sous_total < 50) {
-        $frais_livraison = 4.90;
-    }
-    
-    $frais_emballage = ($checkout['emballage_cadeau'] ?? false) ? 3.90 : 0;
-    $total = round($sous_total + $frais_livraison + $frais_emballage, 2);
-    
-    // ========== INSERTION DE LA COMMANDE ==========
-    $adresse_facturation_id = $checkout['adresse_facturation']['id'] ?? $adresse_livraison_id;
-    
-    $stmt = $pdo->prepare("
-        INSERT INTO commandes (
-            id_client, 
-            id_adresse_livraison, 
-            id_adresse_facturation,
-            sous_total, 
-            frais_livraison, 
-            total_ttc, 
-            statut, 
-            statut_paiement,
-            mode_paiement, 
-            date_commande, 
-            client_type,
-            instructions
-        ) VALUES (?, ?, ?, ?, ?, ?, 'en_attente', 'en_attente', 'paypal', NOW(), ?, ?)
-    ");
-    
-    $client_type = ($checkout['is_guest'] ?? false) ? 'guest' : 'registered';
-    $instructions = $checkout['instructions'] ?? null;
-    
-    $result = $stmt->execute([
-        $client_id,
-        $adresse_livraison_id,
-        $adresse_facturation_id,
-        round($sous_total, 2),
-        round($frais_livraison + $frais_emballage, 2),
-        $total,
-        $client_type,
-        $instructions
-    ]);
-    
-    if (!$result) {
-        $errorInfo = $stmt->errorInfo();
-        throw new Exception("Échec insertion commande: " . ($errorInfo[2] ?? 'Erreur inconnue'));
-    }
-    
-    $id_commande = $pdo->lastInsertId();
-    
-    if (!$id_commande || $id_commande == 0) {
-        throw new Exception("ID commande non généré");
-    }
-    
-    // ========== INSERTION DES ARTICLES ==========
-    $stmt_item = $pdo->prepare("
-        INSERT INTO commande_items (
-            id_commande, id_produit, reference_produit, nom_produit,
-            quantite, prix_unitaire_ht, prix_unitaire_ttc, tva
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ");
-    
-    foreach ($items_data as $item) {
-        $result_item = $stmt_item->execute([
-            $id_commande,
-            $item['id_produit'],
-            $item['reference'],
-            $item['nom'],
-            $item['quantite'],
-            $item['prix_unitaire_ht'],
-            $item['prix_unitaire_ttc'],
-            $item['tva']
-        ]);
-        
-        if (!$result_item) {
-            $errorInfo = $stmt_item->errorInfo();
-            throw new Exception("Échec insertion item: " . ($errorInfo[2] ?? 'Erreur inconnue'));
-        }
-    }
-    
-    // ========== MISE À JOUR DU PANIER ==========
-    if (isset($_SESSION[SESSION_KEY_PANIER_ID]) && is_numeric($_SESSION[SESSION_KEY_PANIER_ID])) {
-        $stmt_panier = $pdo->prepare("UPDATE panier SET statut = 'valide' WHERE id_panier = ?");
-        $stmt_panier->execute([$_SESSION[SESSION_KEY_PANIER_ID]]);
-    }
-    
-    // Récupérer le numéro de commande
-    $stmt_num = $pdo->prepare("SELECT numero_commande FROM commandes WHERE id_commande = ?");
-    $stmt_num->execute([$id_commande]);
-    $commande_numero = $stmt_num->fetchColumn();
-    
-    $pdo->commit();
-    
-    $_SESSION[SESSION_KEY_COMMANDE] = [
-        'id' => $id_commande,
-        'numero' => $commande_numero,
-        'montant' => $total
-    ];
-    
-    error_log("Commande PayPal créée: ID $id_commande, N° $commande_numero, Montant: $total €");
+    error_log("Commande PayPal créée: ID $commande_id, Montant: $total €");
     
     // ========== CRÉATION DE LA COMMANDE PAYPAL ==========
     $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://';
@@ -560,14 +649,14 @@ try {
     $cancel_url = $base_url . 'paiement-annule.php';
     
     $paypal_order = createPayPalOrder(
-        $id_commande,
+        $commande_id,
         $total,
         $return_url,
         $cancel_url
     );
     
     if (isset($paypal_order['error'])) {
-        throw new Exception("Erreur création commande PayPal: " . $paypal_order['error']);
+        throw new \Exception("Erreur création commande PayPal: " . $paypal_order['error']);
     }
     
     // Trouver l'URL d'approbation
@@ -580,7 +669,7 @@ try {
     }
     
     if (!$approval_url) {
-        throw new Exception("URL d'approbation PayPal non trouvée");
+        throw new \Exception("URL d'approbation PayPal non trouvée");
     }
     
     // Sauvegarder l'ID PayPal
@@ -590,11 +679,7 @@ try {
     header('Location: ' . $approval_url);
     exit;
     
-} catch (Exception $e) {
-    if ($pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
-    
+} catch (\Exception $e) {
     // Nettoyer le flag de traitement
     cleanPayPalFlags();
     

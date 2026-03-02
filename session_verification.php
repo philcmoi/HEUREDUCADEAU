@@ -393,32 +393,63 @@ function calculerTotauxPanier($panier_details, $checkout = []) {
 }
 
 // ============================================
-// FONCTIONS DE NETTOYAGE
+// FONCTIONS DE NETTOYAGE - VERSION ULTRA-RENFORCÉE
 // ============================================
 
 /**
- * Nettoie la session utilisateur après commande
+ * Nettoie la session utilisateur après commande - VERSION ULTRA-RENFORCÉE
+ * Préserve l'historique client mais vide toutes les données de panier/commande
  */
 function cleanUserSession() {
-    unset($_SESSION[SESSION_KEY_PANIER]);
-    unset($_SESSION[SESSION_KEY_CHECKOUT]);
-    unset($_SESSION[SESSION_KEY_COMMANDE]);
-    // On garde SESSION_KEY_PANIER_ID et SESSION_KEY_CLIENT_ID pour l'historique
+    // 1. Vider explicitement le panier
+    $_SESSION[SESSION_KEY_PANIER] = [];
+    
+    // 2. Supprimer toutes les clés liées au panier/commande
+    $keys_to_remove = [
+        SESSION_KEY_PANIER_ID,
+        SESSION_KEY_CHECKOUT,
+        SESSION_KEY_COMMANDE,
+        'panier_temp',
+        'checkout_data',
+        'commande_data'
+    ];
+    
+    foreach ($keys_to_remove as $key) {
+        if (isset($_SESSION[$key])) {
+            unset($_SESSION[$key]);
+        }
+    }
+    
+    // 3. Régénérer l'ID de session pour éviter toute réutilisation
+    session_regenerate_id(true);
+    
+    // 4. Log pour débogage
+    error_log("SESSION ULTRA-NETTOYÉE - Panier vidé, ID session: " . session_id());
 }
 
 /**
  * Nettoie les flags de session PayPal
  */
 function cleanPayPalFlags() {
-    unset($_SESSION['paypal_processing']);
-    unset($_SESSION['paypal_order_id']);
+    $paypal_keys = [
+        'paypal_processing',
+        'paypal_order_id',
+        'paypal_commande_id',
+        'paypal_token',
+        'paypal_payer_id'
+    ];
+    
+    foreach ($paypal_keys as $key) {
+        if (isset($_SESSION[$key])) {
+            unset($_SESSION[$key]);
+        }
+    }
 }
 
 /**
  * Validation Luhn (algorithme de validation des cartes bancaires)
- * Fonction unique centralisée pour éviter les doubles déclarations
  */
-/*function validateLuhn($number) {
+function validateLuhn($number) {
     $number = preg_replace('/[^0-9]/', '', $number);
     $sum = 0;
     $alt = false;
@@ -434,5 +465,5 @@ function cleanPayPalFlags() {
         $alt = !$alt;
     }
     return ($sum % 10 == 0);
-}*/
+}
 ?>

@@ -3,7 +3,13 @@
 // GÉNÉRATION PDF DE FACTURE AVEC TCPDF
 // ============================================
 
-require_once __DIR__ . '/vendor/autoload.php';
+// Vérifier que TCPDF est disponible
+if (!class_exists('\\TCPDF')) {
+    error_log("ERREUR: TCPDF n'est pas installé. Exécutez 'composer require tecnickcom/tcpdf'");
+    define('TCPDF_AVAILABLE', false);
+} else {
+    define('TCPDF_AVAILABLE', true);
+}
 
 /**
  * Génère un PDF de facture à partir des données de commande
@@ -12,11 +18,16 @@ require_once __DIR__ . '/vendor/autoload.php';
  * @param array $items Articles de la commande
  * @param array|null $transaction Données de transaction
  * @return string Contenu du PDF (binaire)
+ * @throws Exception Si TCPDF n'est pas disponible
  */
 function genererPDFFacture($commande, $items, $transaction = null) {
     
+    if (!defined('TCPDF_AVAILABLE') || !TCPDF_AVAILABLE) {
+        throw new \Exception("TCPDF n'est pas installé. Impossible de générer le PDF.");
+    }
+    
     // Créer une nouvelle instance TCPDF
-    $pdf = new TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
+    $pdf = new \TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
     
     // ============================================
     // CONFIGURATION DU DOCUMENT
@@ -56,7 +67,7 @@ function genererPDFFacture($commande, $items, $transaction = null) {
     } else {
         // Texte du logo
         $pdf->SetFont('helvetica', 'B', 24);
-        $pdf->SetTextColor(44, 62, 80); // #2c3e50
+        $pdf->SetTextColor(44, 62, 80);
         $pdf->Cell(0, 20, 'HEURE DU CADEAU', 0, 1, 'L');
     }
     
@@ -78,7 +89,7 @@ function genererPDFFacture($commande, $items, $transaction = null) {
     // ============================================
     $pdf->SetY(55);
     $pdf->SetFont('helvetica', 'B', 18);
-    $pdf->SetTextColor(41, 128, 185); // #2980b9
+    $pdf->SetTextColor(41, 128, 185);
     $pdf->Cell(0, 10, 'FACTURE', 0, 1, 'C');
     
     // Numéro et date
@@ -102,25 +113,40 @@ function genererPDFFacture($commande, $items, $transaction = null) {
     $pdf->SetTextColor(0, 0, 0);
     
     // Client
-    $pdf->Cell(95, 5, $commande['client_prenom'] . ' ' . $commande['client_nom'], 0, 0, 'L');
-    $pdf->Cell(95, 5, $commande['facturation_prenom'] . ' ' . $commande['facturation_nom'], 0, 1, 'L');
+    $client_nom = $commande['client_prenom'] . ' ' . $commande['client_nom'];
+    $facturation_nom = $commande['facturation_prenom'] . ' ' . $commande['facturation_nom'];
     
-    $pdf->Cell(95, 5, $commande['facturation_adresse'], 0, 0, 'L');
+    $pdf->Cell(95, 5, $client_nom, 0, 0, 'L');
+    $pdf->Cell(95, 5, $facturation_nom, 0, 1, 'L');
+    
+    $pdf->Cell(95, 5, $commande['livraison_adresse'], 0, 0, 'L');
     $pdf->Cell(95, 5, $commande['facturation_adresse'], 0, 1, 'L');
     
-    if (!empty($commande['facturation_complement'])) {
+    if (!empty($commande['livraison_complement'])) {
+        $pdf->Cell(95, 5, $commande['livraison_complement'], 0, 0, 'L');
+    } else {
         $pdf->Cell(95, 5, '', 0, 0, 'L');
-        $pdf->Cell(95, 5, $commande['facturation_complement'], 0, 1, 'L');
     }
     
-    $pdf->Cell(95, 5, $commande['facturation_code_postal'] . ' ' . $commande['facturation_ville'], 0, 0, 'L');
+    if (!empty($commande['facturation_complement'])) {
+        $pdf->Cell(95, 5, $commande['facturation_complement'], 0, 1, 'L');
+    } else {
+        $pdf->Cell(95, 5, '', 0, 1, 'L');
+    }
+    
+    $pdf->Cell(95, 5, $commande['livraison_code_postal'] . ' ' . $commande['livraison_ville'], 0, 0, 'L');
     $pdf->Cell(95, 5, $commande['facturation_code_postal'] . ' ' . $commande['facturation_ville'], 0, 1, 'L');
     
-    $pdf->Cell(95, 5, $commande['facturation_pays'], 0, 0, 'L');
+    $pdf->Cell(95, 5, $commande['livraison_pays'], 0, 0, 'L');
     $pdf->Cell(95, 5, $commande['facturation_pays'], 0, 1, 'L');
     
-    $pdf->Cell(95, 5, 'Email: ' . $commande['email'], 0, 0, 'L');
-    $pdf->Cell(95, 5, '', 0, 1, 'L');
+    if (!empty($commande['livraison_telephone'])) {
+        $pdf->Cell(95, 5, 'Tél: ' . $commande['livraison_telephone'], 0, 0, 'L');
+    } else {
+        $pdf->Cell(95, 5, '', 0, 0, 'L');
+    }
+    
+    $pdf->Cell(95, 5, 'Email: ' . $commande['email'], 0, 1, 'L');
     
     // Ligne de séparation
     $pdf->Line(15, $pdf->GetY() + 5, 195, $pdf->GetY() + 5);
@@ -131,7 +157,7 @@ function genererPDFFacture($commande, $items, $transaction = null) {
     $pdf->SetY($pdf->GetY() + 10);
     
     // En-tête du tableau
-    $pdf->SetFillColor(44, 62, 80); // #2c3e50
+    $pdf->SetFillColor(44, 62, 80);
     $pdf->SetTextColor(255, 255, 255);
     $pdf->SetFont('helvetica', 'B', 10);
     
@@ -189,7 +215,7 @@ function genererPDFFacture($commande, $items, $transaction = null) {
     
     // Total TTC
     $pdf->SetFont('helvetica', 'B', 14);
-    $pdf->SetTextColor(231, 76, 60); // #e74c3c
+    $pdf->SetTextColor(231, 76, 60);
     $pdf->Cell(130, 10, '', 0, 0, 'L');
     $pdf->Cell(30, 10, 'TOTAL TTC:', 0, 0, 'R');
     $pdf->Cell(30, 10, number_format($commande['total_ttc'], 2, ',', ' ') . ' €', 0, 1, 'R');
@@ -209,7 +235,8 @@ function genererPDFFacture($commande, $items, $transaction = null) {
     $pdf->Cell(0, 6, strtoupper($commande['mode_paiement']), 0, 1, 'L');
     
     $pdf->Cell(40, 6, 'Date de paiement:', 0, 0, 'L');
-    $pdf->Cell(0, 6, date('d/m/Y H:i', strtotime($commande['date_paiement'] ?? $commande['date_commande'])), 0, 1, 'L');
+    $date_paiement = !empty($commande['date_paiement']) ? $commande['date_paiement'] : $commande['date_commande'];
+    $pdf->Cell(0, 6, date('d/m/Y H:i', strtotime($date_paiement)), 0, 1, 'L');
     
     if ($transaction && !empty($transaction['reference_paiement'])) {
         $pdf->Cell(40, 6, 'Référence:', 0, 0, 'L');
@@ -230,5 +257,6 @@ function genererPDFFacture($commande, $items, $transaction = null) {
     // ============================================
     // RETOURNER LE PDF
     // ============================================
-    return $pdf->Output('facture_' . $commande['numero_commande'] . '.pdf', 'S'); // 'S' pour retourner comme string
+    return $pdf->Output('facture_' . $commande['numero_commande'] . '.pdf', 'S');
 }
+?>

@@ -40,6 +40,30 @@ if ($pdo && $commande_id > 0) {
             $stmt_items->execute([$commande_id]);
             $items = $stmt_items->fetchAll();
         }
+        
+        // ========== VIDER LE PANIER ICI ==========
+        // Vider complètement le panier en session
+        $_SESSION[SESSION_KEY_PANIER] = [];
+        
+        // Supprimer toutes les clés liées au panier/commande
+        unset($_SESSION[SESSION_KEY_PANIER_ID]);
+        unset($_SESSION[SESSION_KEY_CHECKOUT]);
+        unset($_SESSION[SESSION_KEY_COMMANDE]);
+        
+        // Supprimer les clés temporaires
+        unset($_SESSION['panier_temp']);
+        unset($_SESSION['checkout_data']);
+        unset($_SESSION['commande_data']);
+        
+        // Nettoyer les flags PayPal
+        cleanPayPalFlags();
+        
+        // Régénérer l'ID de session
+        session_regenerate_id(true);
+        
+        // Log de confirmation
+        error_log("PANIER VIDÉ DANS paiement-reussi.php - Commande #" . $commande_id);
+        
     } catch (Exception $e) {
         error_log("Erreur récupération commande: " . $e->getMessage());
     }
@@ -267,6 +291,15 @@ if (!$commande) {
         if (typeof localStorage !== 'undefined') {
             localStorage.removeItem('panier');
         }
+        
+        // Forcer la mise à jour du compteur panier
+        setTimeout(() => {
+            // Mettre à jour tous les compteurs de panier sur la page
+            document.querySelectorAll('.cart-count').forEach(el => {
+                el.textContent = '0';
+                el.style.display = 'none';
+            });
+        }, 500);
         
         // Enregistrer l'événement de succès pour Google Analytics (si utilisé)
         setTimeout(() => {

@@ -1,12 +1,12 @@
 <?php
 // db_config.php - Configuration minimale de la base de données
 
-// db_config.php
-if (!defined('API_CALL') && !defined('SOME_OTHER_CONSTANT') && !defined('INCLUDED')) {
-    die('Accès direct interdit');
+// Permettre l'inclusion depuis n'importe quel fichier
+if (!defined('INCLUDED') && !defined('API_CALL') && !defined('SOME_OTHER_CONSTANT')) {
+    // Définir INCLUDED pour permettre l'accès
+    define('INCLUDED', true);
 }
 
-// Votre configuration de base de données...
 // Configuration de base de données
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'heureducadeau');

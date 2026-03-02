@@ -1,6 +1,6 @@
 <?php
 // ============================================
-// PAIEMENT PAR CARTE BANCAIRE VIA API PAYPAL - VERSION CORRIGÉE FINALE
+// PAIEMENT PAR CARTE BANCAIRE VIA API PAYPAL - VERSION CORRIGÉE AVEC ENVOI FACTURE
 // ============================================
 
 error_reporting(E_ALL);
@@ -27,7 +27,7 @@ if (isset($_GET['token']) || isset($_GET['PayerID']) || isset($_GET['success']) 
         $commande_id = intval($_GET['commande']);
         $token = $_GET['token'] ?? '';
         
-        header('Location: paiement-reussi.php?commande=' . $commande_id . '&token=' . $token);
+        header('Location: confirmation_commande.php?commande=' . $commande_id . '&token=' . $token);
         exit;
     }
     
@@ -78,7 +78,7 @@ if (isset($_SESSION[SESSION_KEY_COMMANDE]['id'])) {
     
     if ($commande_existante && $commande_existante['statut_paiement'] === 'paye') {
         // Déjà payée, rediriger vers la confirmation
-        header('Location: paiement-reussi.php?commande=' . $commande_en_cours);
+        header('Location: confirmation_commande.php?commande=' . $commande_en_cours);
         exit;
     }
 }
@@ -170,11 +170,12 @@ function validateExpiryDate($month, $year) {
 /**
  * Validation Luhn pour numéro de carte
  */
-function validateLuhn($number) {
+/*confirmation_commande.php?function validateLuhn($number) {
+    $number = preg_replace('/[^0-9]/', '', $number);
     $sum = 0;
     $alt = false;
     for ($i = strlen($number) - 1; $i >= 0; $i--) {
-        $n = $number[$i];
+        $n = intval($number[$i]);
         if ($alt) {
             $n *= 2;
             if ($n > 9) {
@@ -185,7 +186,7 @@ function validateLuhn($number) {
         $alt = !$alt;
     }
     return ($sum % 10 == 0);
-}
+}*/
 
 /**
  * Vérifie si une commande a déjà été payée
@@ -460,7 +461,7 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
             $client_id = $pdo->lastInsertId();
             
             if (!$client_id) {
-                throw new Exception("Impossible de créer le client temporaire");
+                throw new \Exception("Impossible de créer le client temporaire");
             }
             
             if (!empty($adresse)) {
@@ -486,10 +487,10 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
         }
         
         if (!$client_id) {
-            throw new Exception("Client ID manquant");
+            throw new \Exception("Client ID manquant");
         }
         if (!$adresse_livraison_id) {
-            throw new Exception("Adresse de livraison ID manquante");
+            throw new \Exception("Adresse de livraison ID manquante");
         }
         
         // Calculer les totaux
@@ -514,7 +515,7 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
         }
         
         if (empty($items_data)) {
-            throw new Exception("Aucun article dans le panier");
+            throw new \Exception("Aucun article dans le panier");
         }
         
         // Frais de livraison
@@ -568,13 +569,13 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
         
         if (!$result) {
             $errorInfo = $stmt->errorInfo();
-            throw new Exception("Échec insertion commande: " . ($errorInfo[2] ?? 'Erreur inconnue'));
+            throw new \Exception("Échec insertion commande: " . ($errorInfo[2] ?? 'Erreur inconnue'));
         }
         
         $id_commande = $pdo->lastInsertId();
         
         if (!$id_commande || $id_commande == 0) {
-            throw new Exception("Échec de la récupération de l'ID de la commande après insertion.");
+            throw new \Exception("Échec de la récupération de l'ID de la commande après insertion.");
         }
         
         // Insérer les articles
@@ -599,7 +600,7 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
             
             if (!$result_item) {
                 $errorInfo = $stmt_item->errorInfo();
-                throw new Exception("Échec de l'insertion de l'article: " . ($errorInfo[2] ?? 'Erreur inconnue'));
+                throw new \Exception("Échec de l'insertion de l'article: " . ($errorInfo[2] ?? 'Erreur inconnue'));
             }
         }
         
@@ -628,7 +629,7 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
             'items' => $items_data
         ];
         
-    } catch (Exception $e) {
+    } catch (\Exception $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
@@ -664,7 +665,7 @@ function ajouterTransaction($pdo, $commande_id, $client_id, $montant, $reference
             $details_json
         ]);
         
-    } catch (Exception $e) {
+    } catch (\Exception $e) {
         error_log("Erreur ajout transaction: " . $e->getMessage());
         return false;
     }
@@ -683,7 +684,7 @@ function mettreAJourStocks($pdo, $commande_id) {
             WHERE ci.id_commande = ?
         ");
         return $stmt->execute([$commande_id]);
-    } catch (Exception $e) {
+    } catch (\Exception $e) {
         error_log("Erreur mise à jour stocks: " . $e->getMessage());
         return false;
     }
@@ -744,7 +745,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Vérifier si cette commande est déjà payée
                 if (checkCommandeDejaPayee($pdo, $commande_existante_id)) {
                     // Déjà payée, rediriger
-                    header('Location: paiement-reussi.php?commande=' . $commande_existante_id);
+                    header('Location: confirmation_commande.php?commande=' . $commande_existante_id);
                     exit;
                 }
             }
@@ -787,19 +788,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             
             if (isset($paypal_order['error'])) {
-                throw new Exception($paypal_order['error'] . ($paypal_order['details'] ?? ''));
+                throw new \Exception($paypal_order['error'] . ($paypal_order['details'] ?? ''));
             }
             
             // Étape 5: Capturer le paiement avec gestion "already captured"
             $capture_result = capturePayPalOrder($pdo, $commande_id, $paypal_order['id']);
             
             if (isset($capture_result['error'])) {
-                throw new Exception("Erreur capture: " . $capture_result['error'] . ($capture_result['details'] ?? ''));
+                throw new \Exception("Erreur capture: " . $capture_result['error'] . ($capture_result['details'] ?? ''));
             }
             
             // Si déjà capturé, rediriger vers succès
             if (isset($capture_result['already_captured']) && $capture_result['already_captured']) {
-                header('Location: paiement-reussi.php?commande=' . $commande_id);
+                header('Location: confirmation_commande.php?commande=' . $commande_id . '&token=' . $paypal_order['id']);
                 exit;
             }
             
@@ -862,23 +863,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $pdo->commit();
                     
-                    // Vider le panier
-                    cleanUserSession();
+                    // ========== ENVOI DE LA FACTURE PAR EMAIL (NON BLOQUANT) ==========
+                    try {
+                        if (file_exists(__DIR__ . '/fonctions_email.php')) {
+                            require_once __DIR__ . '/fonctions_email.php';
+                            if (function_exists('envoyerFactureEmail')) {
+                                $email_envoye = envoyerFactureEmail($pdo, $commande_id);
+                                error_log("Envoi email facture pour commande $commande_id: " . ($email_envoye ? 'OK' : 'ÉCHEC'));
+                            } else {
+                                error_log("Fonction envoyerFactureEmail non trouvée");
+                            }
+                        } else {
+                            error_log("Fichier fonctions_email.php non trouvé");
+                        }
+                    } catch (\Exception $e) {
+                        error_log("Erreur envoi email facture (non bloquant): " . $e->getMessage());
+                    }
                     
-                    // Rediriger vers la page de succès
-                    header('Location: paiement-reussi.php?commande=' . $commande_id . '&token=' . $paypal_order['id']);
+                    // ========== VIDER LE PANIER - VERSION ULTRA-RENFORCÉE ==========
+                    // Récupérer l'ID du panier avant de vider la session
+                    $panier_id_a_vider = $_SESSION[SESSION_KEY_PANIER_ID] ?? null;
+                    
+                    // VIDAGE COMPLET DE LA SESSION
+                    // 1. Vider explicitement le panier
+                    $_SESSION[SESSION_KEY_PANIER] = [];
+                    
+                    // 2. Supprimer toutes les clés de session liées au panier/commande
+                    unset($_SESSION[SESSION_KEY_PANIER_ID]);
+                    unset($_SESSION[SESSION_KEY_CHECKOUT]);
+                    unset($_SESSION[SESSION_KEY_COMMANDE]);
+                    
+                    // 3. Supprimer également d'éventuelles clés temporaires
+                    unset($_SESSION['panier_temp']);
+                    unset($_SESSION['checkout_data']);
+                    unset($_SESSION['commande_data']);
+                    
+                    // 4. Supprimer les items du panier en BDD
+                    if ($panier_id_a_vider && is_numeric($panier_id_a_vider)) {
+                        try {
+                            // Supprimer d'abord les items
+                            $stmt_delete_items = $pdo->prepare("DELETE FROM panier_items WHERE id_panier = ?");
+                            $stmt_delete_items->execute([$panier_id_a_vider]);
+                            
+                            // Mettre à jour le statut du panier
+                            $stmt_update_panier = $pdo->prepare("UPDATE panier SET statut = 'valide' WHERE id_panier = ?");
+                            $stmt_update_panier->execute([$panier_id_a_vider]);
+                            
+                            error_log("Panier BDD vidé avec succès - ID: " . $panier_id_a_vider);
+                        } catch (\Exception $e) {
+                            error_log("Erreur lors du vidage du panier BDD: " . $e->getMessage());
+                        }
+                    }
+                    
+                    // 5. Nettoyer les flags de session PayPal
+                    cleanPayPalFlags();
+                    
+                    // 6. Régénérer l'ID de session pour éviter toute réutilisation
+                    session_regenerate_id(true);
+                    
+                    // 7. Log de confirmation
+                    error_log("Session complètement nettoyée après paiement carte - Nouvel ID: " . session_id());
+                    
+                    // Rediriger vers la page de succès avec envoi email
+                    header('Location: confirmation_commande.php?commande=' . $commande_id . '&token=' . $paypal_order['id']);
                     exit;
                     
-                } catch (Exception $e) {
+                } catch (\Exception $e) {
                     $pdo->rollBack();
                     throw $e;
                 }
                 
             } else {
-                throw new Exception("Statut de paiement inattendu: " . $capture_status);
+                throw new \Exception("Statut de paiement inattendu: " . $capture_status);
             }
             
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             error_log("Erreur paiement carte via PayPal: " . $e->getMessage());
             $erreurs[] = "Erreur lors du paiement: " . $e->getMessage();
         }
