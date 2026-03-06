@@ -1,17 +1,21 @@
 <?php
-// admin_produits.php - CORRIGÉ et adapté à heureducadeau
+// admin_produits.php - CORRIGÉ avec gestion d'upload améliorée
 // NE PAS mettre session_start() ici
 
 // Inclure la protection
 require_once 'admin_protection.php';
+
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
 // ============================================
 // CONFIGURATION DE LA BASE DE DONNÉES heureducadeau
 // ============================================
 $host = 'localhost';
 $dbname = 'heureducadeau';
-$username_db = 'root';
-$password_db = '';
+$username_db = 'Philippe';
+$password_db = 'l@99339R';
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username_db, $password_db);
@@ -154,44 +158,149 @@ function generateReference($pdo) {
     return 'PROD-' . str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
 }
 
-// Fonction pour uploader une image
+// ============================================
+// FONCTION D'UPLOAD CORRIGÉE - VERSION ROBUSTE
+// ============================================
 function uploadImage($file) {
-    $target_dir = "uploads/produits/";
+    // Essayer différents chemins jusqu'à en trouver un qui fonctionne
+    $base_dir = dirname(__DIR__) . '/'; // /var/www/sean/
+    $possible_dirs = [
+        $base_dir . 'uploads/produits/',           // Chemin normal
+        __DIR__ . '/../uploads/produits/',         // Chemin relatif
+        sys_get_temp_dir() . '/heureducadeau_uploads/produits/', // Dossier temporaire
+        '/tmp/heureducadeau_uploads/produits/'     // Dossier /tmp
+    ];
     
-    // Créer le dossier s'il n'existe pas
-    if (!file_exists($target_dir)) {
-        mkdir($target_dir, 0777, true);
+    $target_dir = null;
+    $errors = [];
+    
+    // ÉTAPE 1: Trouver un dossier accessible en écriture
+    foreach ($possible_dirs as $dir) {
+        // Nettoyer le chemin
+        $dir = str_replace('//', '/', $dir);
+        
+        // Vérifier si le dossier existe
+        if (!file_exists($dir)) {
+            // Essayer de créer le dossier avec @ pour éviter les warnings
+            if (@mkdir($dir, 0777, true)) {
+                @chmod($dir, 0755);
+            }
+        }
+        
+        // Vérifier si on peut écrire
+        if (file_exists($dir) && is_writable($dir)) {
+            $target_dir = $dir;
+            break;
+        }
     }
     
-    $target_file = $target_dir . basename($file["name"]);
-    $imageFileType = strtolower(pathinfo($target_file, PATHINFO_EXTENSION));
+    // ÉTAPE 2: Vérifier qu'on a un dossier valide
+    if ($target_dir === null) {
+        // Dernier recours : utiliser le dossier temporaire système
+        $target_dir = sys_get_temp_dir() . '/heureducadeau_uploads/produits/';
+        if (!file_exists($target_dir)) {
+            if (!@mkdir($target_dir, 0777, true)) {
+                return ['error' => 'Impossible de créer un dossier d\'upload. Vérifiez les permissions.'];
+            }
+        }
+    }
     
-    // Vérifier si c'est une vraie image
-    $check = getimagesize($file["tmp_name"]);
+    // ÉTAPE 3: Vérifier les permissions en écriture
+    if (!is_writable($target_dir)) {
+        // Tentative de correction des permissions
+        @chmod($target_dir, 0755);
+        if (!is_writable($target_dir)) {
+            return ['error' => 'Le dossier d\'upload n\'est pas accessible en écriture.'];
+        }
+    }
+    
+    // ÉTAPE 4: Vérifier si un fichier a été uploadé
+    if (!isset($file) || !is_array($file)) {
+        return ['error' => 'Aucun fichier n\'a été envoyé.'];
+    }
+    
+    // ÉTAPE 5: Vérifier les erreurs d'upload
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        $upload_errors = [
+            UPLOAD_ERR_INI_SIZE => 'Le fichier dépasse la taille maximale autorisée (2MB).',
+            UPLOAD_ERR_FORM_SIZE => 'Le fichier dépasse la taille maximale autorisée par le formulaire.',
+            UPLOAD_ERR_PARTIAL => 'Le fichier n\'a été que partiellement uploadé.',
+            UPLOAD_ERR_NO_FILE => 'Aucun fichier n\'a été uploadé.',
+            UPLOAD_ERR_NO_TMP_DIR => 'Dossier temporaire manquant.',
+            UPLOAD_ERR_CANT_WRITE => 'Échec de l\'écriture du fichier sur le disque.',
+            UPLOAD_ERR_EXTENSION => 'Une extension PHP a arrêté l\'upload.'
+        ];
+        $error_code = $file['error'];
+        return ['error' => $upload_errors[$error_code] ?? 'Erreur inconnue (code: ' . $error_code . ')'];
+    }
+    
+    // ÉTAPE 6: Vérifier que le fichier a bien été uploadé
+    if (!is_uploaded_file($file['tmp_name'])) {
+        return ['error' => 'Le fichier n\'a pas été uploadé correctement.'];
+    }
+    
+    // ÉTAPE 7: Vérifier le type MIME
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    if ($finfo === false) {
+        return ['error' => 'Impossible de vérifier le type du fichier.'];
+    }
+    
+    $mime_type = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+    
+    $allowed_mimes = [
+        'image/jpeg', 'image/jpg', 'image/pjpeg',
+        'image/png', 'image/x-png',
+        'image/gif',
+        'image/webp'
+    ];
+    
+    if (!in_array($mime_type, $allowed_mimes)) {
+        return ['error' => 'Le fichier n\'est pas une image valide (type: ' . $mime_type . ')'];
+    }
+    
+    // ÉTAPE 8: Vérifier que c'est une vraie image
+    $check = @getimagesize($file["tmp_name"]);
     if ($check === false) {
-        return ['error' => 'Le fichier n\'est pas une image.'];
+        return ['error' => 'Le fichier n\'est pas une image valide.'];
     }
     
-    // Vérifier la taille (max 2MB)
-    if ($file["size"] > 2000000) {
-        return ['error' => 'L\'image est trop volumineuse (max 2MB).'];
+    // ÉTAPE 9: Vérifier la taille (max 2MB)
+    $max_size = 2 * 1024 * 1024; // 2MB
+    if ($file["size"] > $max_size) {
+        $size_mb = round($file["size"] / 1024 / 1024, 2);
+        return ['error' => "L'image est trop volumineuse (max 2MB - Taille: {$size_mb} MB)"];
     }
     
-    // Autoriser certains formats
+    // ÉTAPE 10: Vérifier l'extension
+    $imageFileType = strtolower(pathinfo($file["name"], PATHINFO_EXTENSION));
     $allowed_types = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
     if (!in_array($imageFileType, $allowed_types)) {
-        return ['error' => 'Seuls JPG, JPEG, PNG, GIF et WebP sont autorisés.'];
+        return ['error' => 'Format non autorisé (jpg, png, gif, webp uniquement)'];
     }
     
-    // Générer un nom unique pour éviter les conflits
-    $new_filename = uniqid() . '.' . $imageFileType;
+    // ÉTAPE 11: Générer un nom unique
+    $new_filename = uniqid() . '_' . date('Ymd_His') . '.' . $imageFileType;
     $target_file = $target_dir . $new_filename;
     
-    // Uploader le fichier
+    // ÉTAPE 12: Uploader le fichier
     if (move_uploaded_file($file["tmp_name"], $target_file)) {
-        return ['success' => $new_filename];
+        @chmod($target_file, 0644);
+        
+        // Déterminer le chemin relatif pour la BDD
+        if (strpos($target_dir, $base_dir) === 0) {
+            // Le dossier est dans l'arborescence du site
+            $relative_path = str_replace($base_dir, '', $target_file);
+            return ['success' => $relative_path];
+        } else {
+            // Le dossier est ailleurs (tmp), on retourne le chemin absolu
+            // Dans ce cas, il faudra servir l'image via un script PHP
+            return ['success' => $target_file];
+        }
     } else {
-        return ['error' => 'Erreur lors de l\'upload.'];
+        $error = error_get_last();
+        $error_msg = $error ? $error['message'] : 'Erreur inconnue';
+        return ['error' => "Erreur lors de l'upload: " . $error_msg];
     }
 }
 
@@ -258,16 +367,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     'url_image' => $upload_result['success'],
                                     'alt_text' => $_POST['nom']
                                 ]);
+                                $message = 'Produit ajouté avec succès! Image uploadée.';
                             } catch(Exception $e) {
                                 // Table images_produits peut ne pas exister
+                                $message = 'Produit ajouté avec succès! (Image enregistrée)';
                             }
                         } else {
                             $error = $upload_result['error'];
                             break;
                         }
+                    } else {
+                        $message = 'Produit ajouté avec succès! (Sans image)';
                     }
                     
-                    $message = 'Produit ajouté avec succès!';
                     header('Location: admin_produits.php?action=list&message=added');
                     exit();
                 } else {
@@ -337,16 +449,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     'url_image' => $upload_result['success'],
                                     'alt_text' => $_POST['nom']
                                 ]);
+                                $message = 'Produit modifié avec succès! Image mise à jour.';
                             } catch(Exception $e) {
                                 // Table images_produits peut ne pas exister
+                                $message = 'Produit modifié avec succès! (Image enregistrée)';
                             }
                         } else {
                             $error = $upload_result['error'];
                             break;
                         }
+                    } else {
+                        $message = 'Produit modifié avec succès!';
                     }
                     
-                    $message = 'Produit modifié avec succès!';
                     header('Location: admin_produits.php?action=list&message=updated');
                     exit();
                 } else {
@@ -430,7 +545,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         }
         .header h1 { font-size: 28px; font-weight: 600; }
         
-        /* Badge de rôle - CORRIGÉ ICI */
+        /* Badge de rôle */
         .role-badge { 
             background-color: #4CAF50; 
             color: white; 
@@ -606,7 +721,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
 </head>
 <body>
     <div class="container">
-        <!-- Header - CORRIGÉ ICI (ligne 723-724) -->
+        <!-- Header -->
         <div class="header">
             <div>
                 <h1><i class="fas fa-boxes"></i> Gestion des Produits</h1>
@@ -947,10 +1062,11 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         
                         <div class="form-group">
                             <label for="image"><i class="fas fa-image"></i> Image du produit</label>
-                            <input type="file" id="image" name="image" class="form-control" accept="image/*">
+                            <input type="file" id="image" name="image" class="form-control" accept="image/jpeg,image/png,image/gif,image/webp">
                             <?php if ($action == 'edit'): ?>
-                                <small>Laissez vide pour conserver l'image actuelle</small>
+                                <small style="color: #666;">Laissez vide pour conserver l'image actuelle</small>
                             <?php endif; ?>
+                            <small style="display: block; color: #999; margin-top: 5px;">Formats acceptés : JPG, PNG, GIF, WebP (max 2MB)</small>
                         </div>
                     </div>
                     
@@ -966,7 +1082,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             </div>
             
         <?php elseif ($action == 'stats'): ?>
-            <!-- STATISTIQUES (simplifié pour éviter les erreurs) -->
+            <!-- STATISTIQUES -->
             <div class="form-container">
                 <h2 style="margin-bottom: 25px; color: #333; display: flex; align-items: center; gap: 10px;">
                     <i class="fas fa-chart-bar"></i> Statistiques produits
@@ -1117,8 +1233,13 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         }
         
         // Calcul automatique du prix TTC
-        document.getElementById('prix_ht')?.addEventListener('input', calculateTTC);
-        document.getElementById('tva')?.addEventListener('input', calculateTTC);
+        const prixHT = document.getElementById('prix_ht');
+        const tva = document.getElementById('tva');
+        
+        if (prixHT && tva) {
+            prixHT.addEventListener('input', calculateTTC);
+            tva.addEventListener('input', calculateTTC);
+        }
         
         function calculateTTC() {
             const prixHT = parseFloat(document.getElementById('prix_ht')?.value) || 0;
@@ -1138,13 +1259,15 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             // Ajouter un aperçu du prix TTC si le champ existe
             const prixHTField = document.getElementById('prix_ht');
             if (prixHTField) {
-                const ttcPreview = document.createElement('small');
-                ttcPreview.id = 'ttc-preview';
-                ttcPreview.style.color = '#666';
-                ttcPreview.style.marginTop = '5px';
-                ttcPreview.style.display = 'block';
-                prixHTField.parentNode.appendChild(ttcPreview);
-                calculateTTC();
+                if (!document.getElementById('ttc-preview')) {
+                    const ttcPreview = document.createElement('small');
+                    ttcPreview.id = 'ttc-preview';
+                    ttcPreview.style.color = '#666';
+                    ttcPreview.style.marginTop = '5px';
+                    ttcPreview.style.display = 'block';
+                    prixHTField.parentNode.appendChild(ttcPreview);
+                    calculateTTC();
+                }
             }
         });
     </script>

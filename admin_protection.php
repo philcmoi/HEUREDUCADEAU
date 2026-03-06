@@ -35,8 +35,8 @@ if (!function_exists('getClientIp')) {
 // ============================================
 $host = 'localhost';
 $dbname = 'heureducadeau';
-$username_db = 'root';
-$password_db = '';
+$username_db = 'Philippe';
+$password_db = 'l@99339R';
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username_db, $password_db);
