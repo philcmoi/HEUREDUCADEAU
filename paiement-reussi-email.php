@@ -1,70 +1,124 @@
 <?php
-// paiement-reussi-email.php - Page de succès de paiement avec envoi automatique de facture
+// paiement-reussi-email.php - Version CORRIGÉE
+// Page de succès de paiement avec envoi automatique de facture
+// Accessible via ?commande=XXX&token=XXX
 
-session_start();
-require_once 'config.php';
-require_once 'fonctions_email.php';
-
-// Récupérer les paramètres PayPal
-$orderId = $_GET['token'] ?? $_GET['paymentId'] ?? '';
-$payerId = $_GET['PayerID'] ?? '';
-
-$pdo = getPDOConnection();
+// Démarrer la session
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // ============================================
-// ENVOI AUTOMATIQUE DE LA FACTURE
+// VÉRIFICATION DES PARAMÈTRES
 // ============================================
+$commande_id = isset($_GET['commande']) ? intval($_GET['commande']) : 0;
+$token = $_GET['token'] ?? '';
+
+// Si pas de commande_id, rediriger vers l'accueil
+if ($commande_id <= 0) {
+    header('Location: index.html');
+    exit;
+}
+
+// ============================================
+// CHARGEMENT DES FICHIERS NÉCESSAIRES
+// ============================================
+require_once __DIR__ . '/db_config.php';
+require_once __DIR__ . '/fonctions_email.php';
+
+// ============================================
+// VÉRIFICATION DE LA COMMANDE EN BDD
+// ============================================
+$pdo = getDB();
+$commande_valide = false;
 $email_envoye = false;
-$commande_id = null;
 $commande_details = [];
 $total = 0;
 
-if ($pdo && $orderId) {
+if ($pdo) {
     try {
-        // 1. Récupérer l'ID de commande à partir de la référence PayPal
+        // Récupérer la commande et vérifier qu'elle existe et est payée
         $stmt = $pdo->prepare("
-            SELECT id_commande 
-            FROM commandes 
-            WHERE reference_paiement = ? 
-               OR reference_paypal = ?
-            ORDER BY date_commande DESC 
-            LIMIT 1
+            SELECT c.*, cl.email, cl.nom, cl.prenom 
+            FROM commandes c
+            JOIN clients cl ON c.id_client = cl.id_client
+            WHERE c.id_commande = ? 
+            AND c.statut_paiement = 'paye'
         ");
-        $stmt->execute([$orderId, $orderId]);
+        $stmt->execute([$commande_id]);
         $commande = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($commande) {
-            $commande_id = $commande['id_commande'];
+            $commande_valide = true;
             
-            // Stocker en session pour téléchargement ultérieur
-            $_SESSION['commande_recente'] = $commande_id;
-            
-            // 2. Envoyer la facture par email
-            $email_envoye = envoyerFactureEmail($pdo, $commande_id);
-            
-            // 3. Journaliser
-            error_log("Tentative d'envoi email pour commande $commande_id: " . ($email_envoye ? 'Succès' : 'Échec'));
-            
-            // 4. Récupérer les détails pour affichage
-            $stmt_details = $pdo->prepare("
-                SELECT c.*, ci.nom_produit, ci.quantite, ci.prix_unitaire_ttc 
-                FROM commandes c
-                LEFT JOIN commande_items ci ON c.id_commande = ci.id_commande
-                WHERE c.id_commande = ?
+            // Récupérer les détails des articles
+            $stmt_items = $pdo->prepare("
+                SELECT * FROM commande_items 
+                WHERE id_commande = ?
             ");
-            $stmt_details->execute([$commande_id]);
-            $commande_details = $stmt_details->fetchAll();
+            $stmt_items->execute([$commande_id]);
+            $commande_details = $stmt_items->fetchAll();
             
-            if ($commande_details) {
-                foreach ($commande_details as $item) {
-                    $total += $item['quantite'] * $item['prix_unitaire_ttc'];
-                }
+            // Calculer le total
+            foreach ($commande_details as $item) {
+                $total += $item['quantite'] * $item['prix_unitaire_ttc'];
             }
+            
+            // ============================================
+            // ENVOI DE L'EMAIL (UNIQUEMENT SI PAS DÉJÀ FAIT)
+            // ============================================
+            // Vérifier si l'email a déjà été envoyé (par exemple dans une table de logs)
+            // Pour simplifier, on vérifie juste si la commande a été créée récemment
+            $date_commande = strtotime($commande['date_commande']);
+            $maintenant = time();
+            $diff_minutes = ($maintenant - $date_commande) / 60;
+            
+            // Si la commande a moins de 10 minutes, on envoie l'email
+            if ($diff_minutes < 10) {
+                $email_envoye = envoyerFactureEmail($pdo, $commande_id);
+                error_log("Email automatique pour commande $commande_id: " . ($email_envoye ? 'Succès' : 'Échec'));
+            }
+            
+            // Stocker en session pour référence
+            $_SESSION['commande_recente'] = $commande_id;
         }
     } catch (Exception $e) {
-        error_log("Erreur lors de l'envoi automatique: " . $e->getMessage());
+        error_log("Erreur dans paiement-reussi-email.php: " . $e->getMessage());
     }
 }
+
+// ============================================
+// SI COMMANDE NON VALIDE, REDIRECTION
+// ============================================
+if (!$commande_valide) {
+    // Essayer de trouver la commande même si elle n'est pas marquée 'paye' (peut-être en attente)
+    try {
+        $stmt = $pdo->prepare("
+            SELECT id_commande FROM commandes WHERE id_commande = ?
+        ");
+        $stmt->execute([$commande_id]);
+        if ($stmt->fetch()) {
+            // La commande existe mais n'est pas payée - on laisse passer avec un warning
+            error_log("Commande #$commande_id affichée mais statut non payé");
+        } else {
+            // Commande vraiment inexistante
+            header('Location: index.html');
+            exit;
+        }
+    } catch (Exception $e) {
+        header('Location: index.html');
+        exit;
+    }
+}
+
+// ============================================
+// VIDER LE PANIER (S'IL EXISTE ENCORE)
+// ============================================
+unset($_SESSION['panier']);
+unset($_SESSION['panier_id']);
+unset($_SESSION['checkout']);
+unset($_SESSION['commande_en_cours']);
+session_regenerate_id(true);
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -72,37 +126,47 @@ if ($pdo && $orderId) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Paiement Réussi - HEURE DU CADEAU</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/paiement.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .confirmation-container {
-            max-width: 800px;
-            margin: 50px auto;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             padding: 20px;
+        }
+        .confirmation-container {
+            max-width: 700px;
+            width: 100%;
         }
         .confirmation-card {
             background: white;
-            border-radius: 10px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-            padding: 40px;
+            border-radius: 30px;
+            padding: 50px 40px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.3);
             text-align: center;
+            animation: slideUp 0.5s ease;
         }
-        .confirmation-card.success {
-            border-top: 5px solid #28a745;
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         .confirmation-icon {
-            font-size: 80px;
-            color: #28a745;
-            margin-bottom: 20px;
+            font-size: 100px;
+            color: #27ae60;
+            margin-bottom: 30px;
         }
-        .confirmation-card h1 {
-            color: #333;
-            margin-bottom: 10px;
+        h1 {
+            color: #2c3e50;
+            font-size: 2.5rem;
+            margin-bottom: 15px;
         }
         .confirmation-message {
-            color: #666;
-            font-size: 18px;
+            color: #7f8c8d;
+            font-size: 1.2rem;
             margin-bottom: 30px;
         }
         .email-status {
@@ -140,81 +204,76 @@ if ($pdo && $orderId) {
         }
         .confirmation-details {
             background: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
+            padding: 30px;
+            border-radius: 20px;
             margin: 30px 0;
             text-align: left;
         }
-        .commande-resume {
-            margin-top: 20px;
-        }
-        .commande-resume h3 {
-            color: #333;
-            border-bottom: 2px solid #dee2e6;
-            padding-bottom: 10px;
-            margin-bottom: 15px;
-        }
-        .commande-item {
+        .detail-row {
             display: flex;
             justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #dee2e6;
+            padding: 12px 0;
+            border-bottom: 1px solid #e0e0e0;
         }
-        .commande-total {
-            display: flex;
-            justify-content: space-between;
-            font-weight: bold;
-            font-size: 18px;
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 2px solid #dee2e6;
+        .detail-row:last-child {
+            border-bottom: none;
         }
-        .confirmation-actions {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-            margin: 30px 0;
+        .detail-label {
+            color: #7f8c8d;
+            font-weight: 500;
+        }
+        .detail-value {
+            color: #2c3e50;
+            font-weight: 700;
         }
         .btn {
-            padding: 12px 25px;
-            border-radius: 5px;
+            display: inline-block;
+            padding: 16px 32px;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
             text-decoration: none;
-            font-weight: 500;
-            transition: all 0.3s;
+            margin: 10px;
         }
         .btn-primary {
-            background: #007bff;
+            background: linear-gradient(135deg, #27ae60, #219653);
             color: white;
+            border: none;
         }
         .btn-primary:hover {
-            background: #0056b3;
+            transform: translateY(-3px);
+            box-shadow: 0 15px 30px rgba(39,174,96,0.3);
         }
         .btn-secondary {
-            background: #6c757d;
-            color: white;
+            background: #f8f9fa;
+            color: #2c3e50;
+            border: 2px solid #e0e0e0;
         }
         .btn-secondary:hover {
-            background: #545b62;
+            background: #e0e0e0;
         }
         .confirmation-info {
-            color: #666;
-            font-size: 14px;
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #dee2e6;
+            margin-top: 40px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            text-align: left;
         }
         .confirmation-info p {
-            margin: 5px 0;
+            margin: 10px 0;
+            color: #7f8c8d;
         }
         .confirmation-info i {
-            margin-right: 8px;
-            color: #007bff;
+            margin-right: 10px;
+            color: #27ae60;
         }
     </style>
 </head>
 <body>
     <div class="confirmation-container">
-        <div class="confirmation-card success">
+        <div class="confirmation-card">
             <div class="confirmation-icon">
                 <i class="fas fa-check-circle"></i>
             </div>
@@ -226,12 +285,12 @@ if ($pdo && $orderId) {
             <!-- Status de l'email -->
             <div class="email-status <?php 
                 echo $email_envoye ? 'email-success' : 
-                    ($commande_id ? 'email-warning' : 'email-error'); 
+                    ($commande_valide ? 'email-warning' : 'email-error'); 
             ?>">
                 <?php if ($email_envoye): ?>
                     <i class="fas fa-envelope"></i> 
-                    Un email de confirmation avec votre facture vous a été envoyé à l'adresse associée à votre commande.
-                <?php elseif ($commande_id): ?>
+                    Un email de confirmation avec votre facture vous a été envoyé.
+                <?php elseif ($commande_valide): ?>
                     <i class="fas fa-exclamation-triangle"></i> 
                     L'email de confirmation n'a pas pu être envoyé, mais votre commande est bien enregistrée.
                     <br>
@@ -245,37 +304,35 @@ if ($pdo && $orderId) {
             </div>
             
             <div class="confirmation-details">
-                <?php if ($orderId): ?>
-                <p><strong>Référence PayPal :</strong> <?php echo htmlspecialchars($orderId); ?></p>
+                <?php if ($token): ?>
+                <div class="detail-row">
+                    <span class="detail-label">Référence transaction</span>
+                    <span class="detail-value"><?php echo htmlspecialchars(substr($token, 0, 20)); ?>...</span>
+                </div>
                 <?php endif; ?>
                 
-                <?php if ($commande_id && !empty($commande_details)): ?>
-                <p><strong>N° de commande :</strong> <?php echo htmlspecialchars($commande_details[0]['numero_commande'] ?? ''); ?></p>
+                <?php if ($commande_valide && isset($commande)): ?>
+                <div class="detail-row">
+                    <span class="detail-label">N° de commande</span>
+                    <span class="detail-value"><?php echo htmlspecialchars($commande['numero_commande'] ?? ''); ?></span>
+                </div>
                 <?php endif; ?>
                 
-                <p><strong>Date :</strong> <?php echo date('d/m/Y H:i'); ?></p>
+                <div class="detail-row">
+                    <span class="detail-label">Date</span>
+                    <span class="detail-value"><?php echo date('d/m/Y H:i'); ?></span>
+                </div>
                 
-                <?php if (!empty($commande_details)): ?>
-                <div class="commande-resume">
-                    <h3><i class="fas fa-box"></i> Résumé de commande</h3>
-                    
-                    <?php foreach ($commande_details as $item): ?>
-                    <div class="commande-item">
-                        <span><?php echo htmlspecialchars($item['nom_produit']); ?></span>
-                        <span><?php echo $item['quantite']; ?> x <?php echo number_format($item['prix_unitaire_ttc'], 2); ?> €</span>
-                    </div>
-                    <?php endforeach; ?>
-                    
-                    <div class="commande-total">
-                        <span>Total TTC</span>
-                        <span><?php echo number_format($total, 2); ?> €</span>
-                    </div>
+                <?php if ($commande_valide && isset($commande)): ?>
+                <div class="detail-row">
+                    <span class="detail-label">Total payé</span>
+                    <span class="detail-value"><?php echo number_format($commande['total_ttc'] ?? $total, 2, ',', ' '); ?> €</span>
                 </div>
                 <?php endif; ?>
             </div>
             
             <div class="confirmation-actions">
-                <a href="index.php" class="btn btn-primary">
+                <a href="index.html" class="btn btn-primary">
                     <i class="fas fa-home"></i> Retour à l'accueil
                 </a>
                 <a href="commandes.php" class="btn btn-secondary">
@@ -304,7 +361,7 @@ if ($pdo && $orderId) {
         setTimeout(() => {
             if (typeof gtag === 'function') {
                 gtag('event', 'purchase', {
-                    transaction_id: '<?php echo $orderId; ?>',
+                    transaction_id: '<?php echo $commande_id; ?>',
                     value: <?php echo $total; ?>,
                     currency: 'EUR'
                 });

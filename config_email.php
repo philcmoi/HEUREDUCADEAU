@@ -1,54 +1,83 @@
 <?php
-// config_email.php - Configuration pour l'envoi d'emails
-// Version corrigée avec gestion d'erreur améliorée
+// ============================================
+// CONFIGURATION EMAIL CORRIGÉE
+// ============================================
 
-// Définir le chemin de base du projet
-define('BASE_PATH', dirname(__FILE__));
-
-// Vérifier si le fichier autoload existe avant de l'inclure
-$autoloadPath = BASE_PATH . '/vendor/autoload.php';
-
-if (!file_exists($autoloadPath)) {
-    die("Erreur : Les dépendances Composer ne sont pas installées. Veuillez exécuter 'composer install' à la racine du projet.");
+// Charger l'autoloader de Composer
+if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+    require_once __DIR__ . '/vendor/autoload.php';
+    define('PHPMailer_AVAILABLE', true);
+    define('TCPDF_AVAILABLE', true);
+    error_log("✓ Autoloader chargé avec succès");
+} else {
+    define('PHPMailer_AVAILABLE', false);
+    define('TCPDF_AVAILABLE', false);
+    error_log("✗ vendor/autoload.php non trouvé - Exécutez 'composer install'");
 }
 
-require_once $autoloadPath;
+// Chemin des logs
+define('EMAIL_LOG_PATH', __DIR__ . '/logs/emails/');
 
-// Configuration pour PHPMailer
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
-use PHPMailer\PHPMailer\SMTP;
+// Créer le dossier de logs s'il n'existe pas
+if (!is_dir(EMAIL_LOG_PATH)) {
+    mkdir(EMAIL_LOG_PATH, 0755, true);
+}
 
-// Fonction pour envoyer un email
-function sendEmail($to, $subject, $body, $altBody = '') {
-    $mail = new PHPMailer(true);
+// Inclure la configuration SMTP
+if (file_exists(__DIR__ . '/smtp_config.php')) {
+    require_once __DIR__ . '/smtp_config.php';
+} else {
+    error_log("✗ smtp_config.php non trouvé");
+}
+
+/**
+ * Retourne une instance de PHPMailer configurée
+ */
+function getPHPMailerInstance() {
+    if (!defined('PHPMailer_AVAILABLE') || !PHPMailer_AVAILABLE) {
+        error_log("PHPMailer non disponible");
+        return null;
+    }
+    
+    if (!class_exists('\\PHPMailer\\PHPMailer\\PHPMailer')) {
+        error_log("Classe PHPMailer non trouvée");
+        return null;
+    }
     
     try {
-        // Configuration du serveur
-        $mail->SMTPDebug = SMTP::DEBUG_OFF; // Mettre à DEBUG_SERVER pour le débogage
+        $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+        
+        // Configuration SMTP
         $mail->isSMTP();
-        $mail->Host       = 'smtp.gmail.com'; // Remplacez par votre serveur SMTP
-        $mail->SMTPAuth   = true;
-        $mail->Username   = 'lhpp.philippe@gmail.com'; // Votre email
-        $mail->Password   = 'lvpk zqjt vuon qyrz'; // Votre mot de passe ou mot de passe d'application
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = 587;
+        $mail->Host = SMTP_HOST;
+        $mail->SMTPAuth = true;
+        $mail->Username = SMTP_USERNAME;
+        $mail->Password = SMTP_PASSWORD;
+        $mail->SMTPSecure = SMTP_SECURE;
+        $mail->Port = SMTP_PORT;
         
-        // Expéditeur et destinataire
-        $mail->setFrom('lhpp.philippe@gmail.com', 'Site Web');
-        $mail->addAddress($to);
+        // Options de sécurité
+        $mail->SMTPOptions = array(
+            'ssl' => array(
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'allow_self_signed' => true
+            )
+        );
         
-        // Contenu
-        $mail->isHTML(true);
-        $mail->Subject = $subject;
-        $mail->Body    = $body;
-        $mail->AltBody = $altBody ?: strip_tags($body);
+        // Expéditeur
+        $mail->setFrom(SMTP_FROM_EMAIL, SMTP_FROM_NAME);
         
-        $mail->send();
-        return true;
+        // Encodage
+        $mail->CharSet = 'UTF-8';
+        $mail->Encoding = 'base64';
+        
+        error_log("✓ Instance PHPMailer créée avec succès");
+        return $mail;
+        
     } catch (Exception $e) {
-        error_log("Erreur d'envoi d'email : " . $mail->ErrorInfo);
-        return false;
+        error_log("✗ Erreur création PHPMailer: " . $e->getMessage());
+        return null;
     }
 }
 ?>
