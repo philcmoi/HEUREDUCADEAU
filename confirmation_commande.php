@@ -561,7 +561,7 @@ try {
             error_log("Erreur envoi email commande #$commande_id: " . $e->getMessage());
         }
     } else {
-        $email_message = "⚠️ La facture n'a pas pu être générée, mais votre commande est confirmée.";
+        //$email_message = "⚠️ La facture n'a pas pu être générée, mais votre commande est confirmée.";
     }
     
 } catch (Exception $e) {
@@ -908,11 +908,11 @@ if (!$pdf_genere) {
                 <?php endif; ?>
             </div>
             
-            <div style="margin: 20px 0;">
+            <!--<div style="margin: 20px 0;">
                 <a href="telecharger-facture.php?commande_id=<?= $commande_id ?>" class="btn btn-download" target="_blank" id="downloadLink">
                     <i class="fas fa-file-pdf"></i> Télécharger ma facture (PDF)
                 </a>
-            </div>
+            </div>-->
             
             <div style="margin-top: 30px;">
                 <a href="index.html" class="btn btn-primary">
