@@ -1,7 +1,6 @@
 <?php
 // index.php - Page d'accueil avec gestion panier et pagination
-// VERSION CORRIGÉE - Affichage correct des produits avec leurs vraies images
-// CORRECTION: Ajout du préfixe /sean/ pour les URLs d'images
+// VERSION CORRIGÉE - URLs d'images uniformisées et affichage fiable
 require_once 'session_verification.php';
 
 // Configuration de la pagination
@@ -43,7 +42,7 @@ if ($pdo) {
         $produits = $stmt->fetchAll();
         
         // ==============================================
-        // VERSION OPTIMISÉE - Récupération des images en une seule requête
+        // RÉCUPÉRATION ROBUSTE DES IMAGES - VERSION CORRIGÉE
         // ==============================================
         $produits_js = [];
         $images = [];
@@ -53,34 +52,47 @@ if ($pdo) {
             $ids = array_column($produits, 'id_produit');
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
             
-            // Récupérer toutes les images principales en une seule requête
+            // Récupérer TOUTES les images, pas seulement les principales
+            // Et pour chaque produit, on prend la première image (priorité à principale)
             $stmt_imgs = $pdo->prepare("
-                SELECT id_produit, url_image 
+                SELECT id_produit, url_image, principale 
                 FROM images_produits 
-                WHERE id_produit IN ($placeholders) AND principale = 1
+                WHERE id_produit IN ($placeholders)
+                ORDER BY principale DESC, ordre ASC, id_image ASC
             ");
             $stmt_imgs->execute($ids);
             
             // Créer un tableau associatif [id_produit => url_image]
+            // On ne garde que la PREMIÈRE image pour chaque produit
             while ($img = $stmt_imgs->fetch()) {
-                $images[$img['id_produit']] = $img['url_image'];
+                // CORRECTION: Nettoyer l'URL si nécessaire (enlever les /sean/ en double)
+                $clean_url = $img['url_image'];
+                if (strpos($clean_url, '/sean/') !== false) {
+                    $clean_url = preg_replace('#/sean/+#', '/', $clean_url);
+                    error_log("URL nettoyée dans index: " . $img['url_image'] . " -> " . $clean_url);
+                }
+                
+                // Si on n'a pas encore d'image pour ce produit, on la prend
+                if (!isset($images[$img['id_produit']])) {
+                    $images[$img['id_produit']] = $clean_url;
+                }
             }
         }
         
         // Construire le tableau des produits pour JavaScript
         foreach ($produits as $p) {
-            // CORRECTION: Ajouter le préfixe /sean/ devant l'URL de l'image
-            // Les images sont stockées dans /var/www/sean/uploads/produits/
-            // et accessibles via /sean/uploads/produits/
-            if (isset($images[$p['id_produit']])) {
-                // Vérifier si l'URL commence déjà par /sean/
-                if (strpos($images[$p['id_produit']], '/sean/') === 0) {
-                    $image_url = $images[$p['id_produit']];
-                } else {
-                    $image_url = '/sean' . $images[$p['id_produit']];
-                }
+            // CORRECTION: Utiliser l'image nettoyée si disponible
+            if (isset($images[$p['id_produit']]) && !empty($images[$p['id_produit']])) {
+                $image_url = $images[$p['id_produit']];
             } else {
-                $image_url = 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
+                // Image par défaut selon l'ID ou générique
+                $default_images = [
+                    1 => 'https://via.placeholder.com/300x300/2c3e50/ffffff?text=Bougie',
+                    2 => 'https://via.placeholder.com/300x300/27ae60/ffffff?text=Coffret',
+                    3 => 'https://via.placeholder.com/300x300/3498db/ffffff?text=Montre',
+                    4 => 'https://via.placeholder.com/300x300/e74c3c/ffffff?text=Bijoux'
+                ];
+                $image_url = $default_images[$p['id_produit']] ?? 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
             }
             
             $produits_js[$p['id_produit']] = [
@@ -116,7 +128,6 @@ $nb_articles = countCartItems();
     <title>HEURE DU CADEAU - Boutique de cadeaux uniques</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <style>
-        /* TOUT VOTRE CSS EXISTANT RESTE ICI - IDENTIQUE */
         /* ==============================================
            STYLES GLOBAUX - CHARTE GRAPHIQUE INDEX.HTML
            ============================================== */
@@ -1688,16 +1699,18 @@ $nb_articles = countCartItems();
                     <?php foreach ($produits as $produit): 
                         $prix = number_format($produit['prix_ttc'] ?? 0, 2, ',', ' ');
                         
-                        // CORRECTION: Ajouter le préfixe /sean/ devant l'URL de l'image
-                        if (isset($images[$produit['id_produit']])) {
-                            // Vérifier si l'URL commence déjà par /sean/
-                            if (strpos($images[$produit['id_produit']], '/sean/') === 0) {
-                                $image_url = $images[$produit['id_produit']];
-                            } else {
-                                $image_url = '/sean' . $images[$produit['id_produit']];
-                            }
+                        // CORRECTION: Utiliser l'image nettoyée depuis le tableau $images
+                        if (isset($images[$produit['id_produit']]) && !empty($images[$produit['id_produit']])) {
+                            $image_url = $images[$produit['id_produit']];
                         } else {
-                            $image_url = 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
+                            // Images par défaut
+                            $default_images = [
+                                1 => 'https://via.placeholder.com/300x300/2c3e50/ffffff?text=Bougie',
+                                2 => 'https://via.placeholder.com/300x300/27ae60/ffffff?text=Coffret',
+                                3 => 'https://via.placeholder.com/300x300/3498db/ffffff?text=Montre',
+                                4 => 'https://via.placeholder.com/300x300/e74c3c/ffffff?text=Bijoux'
+                            ];
+                            $image_url = $default_images[$produit['id_produit']] ?? 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
                         }
                         
                         // Référence courte

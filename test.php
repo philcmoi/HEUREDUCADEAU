@@ -1,68 +1,55 @@
 <?php
-echo "<h1>Test de connexion MySQL</h1>";
-
-// Configuration
-$host = 'localhost';
-$dbname = 'heureducadeau';
-$user = 'Philippe';
-$pass = 'l@99339R';
-
-// Affichage des erreurs
-error_reporting(E_ALL);
 ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
-// Test PDO
+echo "<h1>Test de configuration</h1>";
+
+// Test 1: Version PHP
+echo "<p>Version PHP: " . phpversion() . "</p>";
+
+// Test 2: Extensions chargées
+$extensions = ['pdo', 'pdo_mysql', 'session', 'json', 'curl'];
+foreach ($extensions as $ext) {
+    echo "<p>Extension $ext: " . (extension_loaded($ext) ? '✅ OK' : '❌ MANQUANTE') . "</p>";
+}
+
+// Test 3: Session
+session_start();
+$_SESSION['test'] = time();
+echo "<p>Session: " . (isset($_SESSION['test']) ? '✅ OK' : '❌ ÉCHEC') . "</p>";
+
+// Test 4: Connexion BDD
 try {
-    $dsn = "mysql:host=$host;dbname=$dbname;charset=utf8";
-    $pdo = new PDO($dsn, $user, $pass);
+    $pdo = new PDO(
+        "mysql:host=localhost;dbname=heureducadeau;charset=utf8mb4",
+        "Philippe",
+        "l@99339R"
+    );
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    echo "<p>Connexion BDD: ✅ OK</p>";
     
-    echo "<p style='color:green;font-weight:bold;'>✅ CONNEXION RÉUSSIE !</p>";
-    echo "<p>Base de données: <strong>$dbname</strong></p>";
-    echo "<p>Hôte: <strong>$host</strong></p>";
-    echo "<p>Utilisateur: <strong>$user</strong></p>";
+    // Test 5: Requête simple
+    $stmt = $pdo->query("SELECT COUNT(*) FROM produits");
+    $count = $stmt->fetchColumn();
+    echo "<p>Nombre de produits: $count</p>";
     
-    // Test supplémentaire
-    $stmt = $pdo->query("SELECT DATABASE() as db, USER() as user");
-    $result = $stmt->fetch();
-    echo "<p>Base connectée: " . $result['db'] . "</p>";
-    echo "<p>Utilisateur MySQL: " . $result['user'] . "</p>";
-    
-} catch (PDOException $e) {
-    echo "<p style='color:red;font-weight:bold;'>❌ ERREUR PDO: " . $e->getMessage() . "</p>";
-    
-    // Test sans base
-    try {
-        $pdo2 = new PDO("mysql:host=$host", $user, $pass);
-        echo "<p style='color:orange;'>⚠️ Connexion au serveur MySQL OK, mais problème avec la base</p>";
-        
-        // Vérifier si la base existe
-        $stmt = $pdo2->query("SHOW DATABASES LIKE '$dbname'");
-        if ($stmt->rowCount() > 0) {
-            echo "<p>La base '$dbname' existe</p>";
-            echo "<p>Problème probable: droits insuffisants pour l'utilisateur '$user'</p>";
-        } else {
-            echo "<p>La base '$dbname' n'existe pas</p>";
-        }
-    } catch (PDOException $e2) {
-        echo "<p>❌ Impossible de se connecter au serveur MySQL: " . $e2->getMessage() . "</p>";
+} catch (Exception $e) {
+    echo "<p>Connexion BDD: ❌ ÉCHEC - " . $e->getMessage() . "</p>";
+}
+
+// Test 6: Fichiers requis
+$fichiers = [
+    'session_verification.php',
+    'livraison.php'
+];
+
+foreach ($fichiers as $fichier) {
+    if (file_exists(__DIR__ . '/' . $fichier)) {
+        echo "<p>Fichier $fichier: ✅ Présent</p>";
+    } else {
+        echo "<p>Fichier $fichier: ❌ ABSENT</p>";
     }
 }
 
-// Informations serveur
-echo "<hr>";
-echo "<h2>Informations serveur</h2>";
-echo "<p>Répertoire racine: " . $_SERVER['DOCUMENT_ROOT'] . "</p>";
-echo "<p>Script exécuté: " . __FILE__ . "</p>";
-echo "<p>PHP version: " . phpversion() . "</p>";
-
-// Vérifier les extensions
-echo "<p>Extensions MySQL chargées:</p>";
-echo "<ul>";
-foreach (get_loaded_extensions() as $ext) {
-    if (strpos($ext, 'mysql') !== false || $ext === 'pdo_mysql') {
-        echo "<li>$ext</li>";
-    }
-}
-echo "</ul>";
-?>
+echo "<h2>Test terminé</h2>";

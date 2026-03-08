@@ -1,6 +1,6 @@
 <?php
-// admin_produits.php - CORRIGÉ avec gestion d'upload fonctionnelle
-// VERSION FINALE AVEC CORRECTION DES CHEMINS ET DE L'UPLOAD
+// admin_produits.php - CORRIGÉ avec gestion d'upload fonctionnelle et URLs d'images uniformisées
+// VERSION FINALE - CHEMINS CORRIGÉS POUR L'UPLOAD
 
 require_once 'admin_protection.php';
 
@@ -163,13 +163,12 @@ function generateReference($pdo) {
 }
 
 // ============================================
-// FONCTION D'UPLOAD CORRIGÉE - VERSION FINALE
+// FONCTION D'UPLOAD CORRIGÉE - VERSION FINALE AVEC URL UNIFORMISÉE
 // ============================================
 function uploadImage($file) {
     // Configuration - CHEMINS CORRIGÉS
-    $base_dir = '/var/www/sean/';
-    $upload_dir = $base_dir . 'uploads/produits/';
-    $upload_url = '/sean/uploads/produits/';  // Important: avec /sean/
+    $upload_dir = '/var/www/sean/uploads/produits/';  // Chemin absolu complet
+    $upload_url = '/uploads/produits/';                // URL publique SANS /sean/
     
     // Logger pour déboguer
     error_log("=== uploadImage() appelée ===");
@@ -256,7 +255,7 @@ function uploadImage($file) {
         error_log("uploadImage: SUCCÈS - Fichier uploadé");
         error_log("URL: " . $upload_url . $new_filename);
         
-        // Retourner le chemin relatif pour la BDD
+        // Retourner le chemin relatif pour la BDD (sans /sean/)
         return ['success' => $upload_url . $new_filename];
     } else {
         $error = error_get_last();
@@ -264,6 +263,25 @@ function uploadImage($file) {
         error_log("uploadImage: ÉCHEC - " . $error_msg);
         return ['error' => "Erreur lors de l'upload: " . $error_msg];
     }
+}
+
+/**
+ * Nettoie une URL d'image pour enlever les doubles /sean/
+ */
+function cleanImageUrl($url) {
+    if (empty($url)) return $url;
+    
+    // Enlever les /sean/ en double ou mal placés
+    $clean_url = preg_replace('#/sean/+#', '/', $url);
+    
+    // S'assurer que l'URL commence par /uploads/
+    if (strpos($clean_url, '/uploads/') !== 0) {
+        // Extraire juste le nom du fichier
+        $filename = basename($clean_url);
+        $clean_url = '/uploads/produits/' . $filename;
+    }
+    
+    return $clean_url;
 }
 
 // ============================================
@@ -276,6 +294,27 @@ $id = $_GET['id'] ?? 0;
 
 // Récupérer les catégories pour les formulaires
 $categories = getAllCategories($pdo);
+
+// CORRECTION: Nettoyer les URLs d'images existantes au chargement
+if ($action == 'list' || $action == 'edit' || $action == 'view') {
+    try {
+        // Nettoyer les URLs qui contiennent /sean/ en double
+        $stmt = $pdo->prepare("SELECT id_image, url_image FROM images_produits WHERE url_image LIKE '%/sean/%'");
+        $stmt->execute();
+        $images_a_nettoyer = $stmt->fetchAll();
+        
+        foreach ($images_a_nettoyer as $img) {
+            $clean_url = cleanImageUrl($img['url_image']);
+            if ($clean_url !== $img['url_image']) {
+                $update = $pdo->prepare("UPDATE images_produits SET url_image = ? WHERE id_image = ?");
+                $update->execute([$clean_url, $img['id_image']]);
+                error_log("URL nettoyée: " . $img['url_image'] . " -> " . $clean_url);
+            }
+        }
+    } catch(Exception $e) {
+        error_log("Erreur lors du nettoyage des URLs: " . $e->getMessage());
+    }
+}
 
 // Traitement des formulaires POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -323,13 +362,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $upload_result = uploadImage($_FILES['image']);
                         
                         if (isset($upload_result['success'])) {
+                            // CORRECTION: Nettoyer l'URL avant insertion
+                            $image_url = cleanImageUrl($upload_result['success']);
+                            
                             // Enregistrer l'image dans la table images_produits
                             $sql = "INSERT INTO images_produits (id_produit, url_image, alt_text, principale) 
                                     VALUES (:id_produit, :url_image, :alt_text, 1)";
                             $stmt = $pdo->prepare($sql);
                             $stmt->execute([
                                 'id_produit' => $lastId,
-                                'url_image' => $upload_result['success'],
+                                'url_image' => $image_url,
                                 'alt_text' => $_POST['nom']
                             ]);
                             $image_uploaded = true;
@@ -406,6 +448,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $upload_result = uploadImage($_FILES['image']);
                         
                         if (isset($upload_result['success'])) {
+                            // CORRECTION: Nettoyer l'URL avant insertion
+                            $image_url = cleanImageUrl($upload_result['success']);
+                            
                             // Supprimer l'ancienne image principale
                             $sql = "DELETE FROM images_produits WHERE id_produit = :id_produit AND principale = 1";
                             $stmt = $pdo->prepare($sql);
@@ -417,7 +462,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $stmt = $pdo->prepare($sql);
                             $stmt->execute([
                                 'id_produit' => $id,
-                                'url_image' => $upload_result['success'],
+                                'url_image' => $image_url,
                                 'alt_text' => $_POST['nom']
                             ]);
                             $image_uploaded = true;
@@ -760,11 +805,27 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         </thead>
                         <tbody>
                             <?php foreach ($products as $product): 
-                                // Récupérer l'image du produit
-                                $stmt = $pdo->prepare("SELECT url_image FROM images_produits WHERE id_produit = ? AND principale = 1 LIMIT 1");
+                                // CORRECTION: Récupérer l'image du produit de manière robuste
+                                $stmt = $pdo->prepare("
+                                    SELECT url_image FROM images_produits 
+                                    WHERE id_produit = ? 
+                                    ORDER BY principale DESC, ordre ASC, id_image ASC 
+                                    LIMIT 1
+                                ");
                                 $stmt->execute([$product['id_produit']]);
                                 $image = $stmt->fetch();
-                                $image_url = $image ? $image['url_image'] : 'https://via.placeholder.com/60x60?text=+';
+                                
+                                if ($image && !empty($image['url_image'])) {
+                                    $image_url = $image['url_image'];
+                                    
+                                    // Vérification silencieuse que le fichier existe (optionnel)
+                                    $full_path = $_SERVER['DOCUMENT_ROOT'] . $image_url;
+                                    if (!file_exists($full_path)) {
+                                        error_log("Admin: Image manquante pour produit {$product['id_produit']}: $full_path");
+                                    }
+                                } else {
+                                    $image_url = 'https://via.placeholder.com/60x60?text=+';
+                                }
                                 
                                 // Calcul du prix TTC
                                 $prix_ttc = $product['prix_ht'] * (1 + ($product['tva'] / 100));
@@ -870,7 +931,12 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                 }
                 
                 // Récupérer l'image actuelle
-                $stmt = $pdo->prepare("SELECT url_image FROM images_produits WHERE id_produit = ? AND principale = 1 LIMIT 1");
+                $stmt = $pdo->prepare("
+                    SELECT url_image FROM images_produits 
+                    WHERE id_produit = ? 
+                    ORDER BY principale DESC, ordre ASC, id_image ASC 
+                    LIMIT 1
+                ");
                 $stmt->execute([$id]);
                 $current_image = $stmt->fetch();
             }
@@ -1062,10 +1128,10 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         </div>
                     </div>
                     
-                    <!-- Instructions de correction des permissions si nécessaire -->
+                    <!-- Note sur l'upload d'images -->
                     <div style="background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; margin-bottom: 20px; font-size: 14px; border-left: 4px solid #ffeeba;">
                         <strong><i class="fas fa-info-circle"></i> Note sur l'upload d'images :</strong>
-                        <p style="margin-top: 5px;">Les images seront stockées dans <code>/sean/uploads/produits/</code></p>
+                        <p style="margin-top: 5px;">Les images seront stockées dans <code>/var/www/sean/uploads/produits/</code> et accessibles via <code>/uploads/produits/</code></p>
                     </div>
                     
                     <div style="display: flex; gap: 15px; margin-top: 30px;">
