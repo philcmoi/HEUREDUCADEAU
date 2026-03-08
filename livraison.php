@@ -8,6 +8,8 @@ ini_set('display_errors', 1);
 
 require_once __DIR__ . '/session_verification.php';
 
+//echo "livraison.php accessible";
+
 // ============================================
 // DÉTECTION DU TYPE DE REQUÊTE
 // ============================================
