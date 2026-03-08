@@ -1,8 +1,7 @@
 <?php
-// admin_produits.php - CORRIGÉ avec gestion d'upload améliorée
-// NE PAS mettre session_start() ici
+// admin_produits.php - CORRIGÉ avec gestion d'upload fonctionnelle et URLs d'images uniformisées
+// VERSION FINALE - CHEMINS CORRIGÉS POUR L'UPLOAD
 
-// Inclure la protection
 require_once 'admin_protection.php';
 
 ini_set('display_errors', 1);
@@ -10,7 +9,7 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 // ============================================
-// CONFIGURATION DE LA BASE DE DONNÉES heureducadeau
+// CONFIGURATION DE LA BASE DE DONNÉES
 // ============================================
 $host = 'localhost';
 $dbname = 'heureducadeau';
@@ -20,15 +19,28 @@ $password_db = 'l@99339R';
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username_db, $password_db);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    
+    // S'assurer que la table images_produits existe
+    $pdo->exec("CREATE TABLE IF NOT EXISTS `images_produits` (
+        `id_image` int NOT NULL AUTO_INCREMENT,
+        `id_produit` int NOT NULL,
+        `url_image` varchar(255) NOT NULL,
+        `alt_text` varchar(255) DEFAULT NULL,
+        `ordre` int DEFAULT '0',
+        `principale` tinyint(1) DEFAULT '0',
+        `date_ajout` datetime DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id_image`),
+        KEY `id_produit` (`id_produit`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    
 } catch(PDOException $e) {
     die("Erreur de connexion à la base de données : " . $e->getMessage());
 }
 
 // ============================================
-// FONCTIONS CRUD adaptées à votre structure
+// FONCTIONS CRUD
 // ============================================
 
-// Fonction pour récupérer tous les produits avec catégorie
 function getAllProducts($pdo) {
     $sql = "SELECT p.*, c.nom as categorie_nom 
             FROM produits p 
@@ -39,7 +51,6 @@ function getAllProducts($pdo) {
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-// Fonction pour récupérer un produit par ID
 function getProductById($pdo, $id) {
     $sql = "SELECT p.*, c.nom as categorie_nom 
             FROM produits p 
@@ -50,7 +61,6 @@ function getProductById($pdo, $id) {
     return $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
-// Fonction pour récupérer toutes les catégories
 function getAllCategories($pdo) {
     $sql = "SELECT * FROM categories WHERE active = 1 ORDER BY nom";
     $stmt = $pdo->prepare($sql);
@@ -58,7 +68,6 @@ function getAllCategories($pdo) {
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-// Fonction pour ajouter un produit
 function addProduct($pdo, $data) {
     $sql = "INSERT INTO produits (
                 reference, nom, slug, description, description_courte, 
@@ -78,7 +87,6 @@ function addProduct($pdo, $data) {
     return $stmt->execute($data);
 }
 
-// Fonction pour modifier un produit
 function updateProduct($pdo, $id, $data) {
     $data['id_produit'] = $id;
     
@@ -112,15 +120,14 @@ function updateProduct($pdo, $id, $data) {
     return $stmt->execute($data);
 }
 
-// Fonction pour supprimer un produit
 function deleteProduct($pdo, $id) {
-    // Supprimer d'abord les images associées (si vous avez la table images_produits)
+    // Supprimer d'abord les images associées
     try {
         $sql = "DELETE FROM images_produits WHERE id_produit = :id";
         $stmt = $pdo->prepare($sql);
         $stmt->execute(['id' => $id]);
     } catch(Exception $e) {
-        // Table images_produits peut ne pas exister
+        // Ignorer si la table n'existe pas
     }
     
     // Supprimer les variants associés
@@ -129,7 +136,7 @@ function deleteProduct($pdo, $id) {
         $stmt = $pdo->prepare($sql);
         $stmt->execute(['id' => $id]);
     } catch(Exception $e) {
-        // Table variants peut ne pas exister
+        // Ignorer si la table n'existe pas
     }
     
     // Supprimer le produit
@@ -138,7 +145,6 @@ function deleteProduct($pdo, $id) {
     return $stmt->execute(['id' => $id]);
 }
 
-// Fonction pour générer un slug à partir du nom
 function generateSlug($nom) {
     $slug = strtolower($nom);
     $slug = preg_replace('/[^a-z0-9-]/', '-', $slug);
@@ -147,9 +153,7 @@ function generateSlug($nom) {
     return $slug;
 }
 
-// Fonction pour générer une référence automatique
 function generateReference($pdo) {
-    // Compter le nombre de produits et incrémenter
     $sql = "SELECT COUNT(*) as count FROM produits";
     $stmt = $pdo->query($sql);
     $result = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -159,149 +163,125 @@ function generateReference($pdo) {
 }
 
 // ============================================
-// FONCTION D'UPLOAD CORRIGÉE - VERSION ROBUSTE
+// FONCTION D'UPLOAD CORRIGÉE - VERSION FINALE AVEC URL UNIFORMISÉE
 // ============================================
 function uploadImage($file) {
-    // Essayer différents chemins jusqu'à en trouver un qui fonctionne
-    $base_dir = dirname(__DIR__) . '/'; // /var/www/sean/
-    $possible_dirs = [
-        $base_dir . 'uploads/produits/',           // Chemin normal
-        __DIR__ . '/../uploads/produits/',         // Chemin relatif
-        sys_get_temp_dir() . '/heureducadeau_uploads/produits/', // Dossier temporaire
-        '/tmp/heureducadeau_uploads/produits/'     // Dossier /tmp
-    ];
+    // Configuration - CHEMINS CORRIGÉS
+    $upload_dir = '/var/www/sean/uploads/produits/';  // Chemin absolu complet
+    $upload_url = '/uploads/produits/';                // URL publique SANS /sean/
     
-    $target_dir = null;
-    $errors = [];
+    // Logger pour déboguer
+    error_log("=== uploadImage() appelée ===");
+    error_log("Dossier upload: " . $upload_dir);
+    error_log("URL upload: " . $upload_url);
     
-    // ÉTAPE 1: Trouver un dossier accessible en écriture
-    foreach ($possible_dirs as $dir) {
-        // Nettoyer le chemin
-        $dir = str_replace('//', '/', $dir);
-        
-        // Vérifier si le dossier existe
-        if (!file_exists($dir)) {
-            // Essayer de créer le dossier avec @ pour éviter les warnings
-            if (@mkdir($dir, 0777, true)) {
-                @chmod($dir, 0755);
-            }
-        }
-        
-        // Vérifier si on peut écrire
-        if (file_exists($dir) && is_writable($dir)) {
-            $target_dir = $dir;
-            break;
-        }
-    }
-    
-    // ÉTAPE 2: Vérifier qu'on a un dossier valide
-    if ($target_dir === null) {
-        // Dernier recours : utiliser le dossier temporaire système
-        $target_dir = sys_get_temp_dir() . '/heureducadeau_uploads/produits/';
-        if (!file_exists($target_dir)) {
-            if (!@mkdir($target_dir, 0777, true)) {
-                return ['error' => 'Impossible de créer un dossier d\'upload. Vérifiez les permissions.'];
-            }
-        }
-    }
-    
-    // ÉTAPE 3: Vérifier les permissions en écriture
-    if (!is_writable($target_dir)) {
-        // Tentative de correction des permissions
-        @chmod($target_dir, 0755);
-        if (!is_writable($target_dir)) {
-            return ['error' => 'Le dossier d\'upload n\'est pas accessible en écriture.'];
-        }
-    }
-    
-    // ÉTAPE 4: Vérifier si un fichier a été uploadé
+    // 1. Vérifier si un fichier a été uploadé
     if (!isset($file) || !is_array($file)) {
-        return ['error' => 'Aucun fichier n\'a été envoyé.'];
+        error_log("uploadImage: Aucun fichier");
+        return ['error' => 'Aucun fichier n\'a été envoyé'];
     }
     
-    // ÉTAPE 5: Vérifier les erreurs d'upload
+    // 2. Vérifier les erreurs d'upload
     if ($file['error'] !== UPLOAD_ERR_OK) {
         $upload_errors = [
-            UPLOAD_ERR_INI_SIZE => 'Le fichier dépasse la taille maximale autorisée (2MB).',
-            UPLOAD_ERR_FORM_SIZE => 'Le fichier dépasse la taille maximale autorisée par le formulaire.',
-            UPLOAD_ERR_PARTIAL => 'Le fichier n\'a été que partiellement uploadé.',
-            UPLOAD_ERR_NO_FILE => 'Aucun fichier n\'a été uploadé.',
-            UPLOAD_ERR_NO_TMP_DIR => 'Dossier temporaire manquant.',
-            UPLOAD_ERR_CANT_WRITE => 'Échec de l\'écriture du fichier sur le disque.',
-            UPLOAD_ERR_EXTENSION => 'Une extension PHP a arrêté l\'upload.'
+            UPLOAD_ERR_INI_SIZE => 'Le fichier dépasse la taille maximale autorisée (2MB)',
+            UPLOAD_ERR_FORM_SIZE => 'Le fichier dépasse la taille maximale autorisée par le formulaire',
+            UPLOAD_ERR_PARTIAL => 'Le fichier n\'a été que partiellement uploadé',
+            UPLOAD_ERR_NO_FILE => 'Aucun fichier n\'a été uploadé',
+            UPLOAD_ERR_NO_TMP_DIR => 'Dossier temporaire manquant',
+            UPLOAD_ERR_CANT_WRITE => 'Échec de l\'écriture du fichier sur le disque',
+            UPLOAD_ERR_EXTENSION => 'Une extension PHP a arrêté l\'upload'
         ];
         $error_code = $file['error'];
-        return ['error' => $upload_errors[$error_code] ?? 'Erreur inconnue (code: ' . $error_code . ')'];
+        $error_msg = $upload_errors[$error_code] ?? 'Erreur inconnue (code: ' . $error_code . ')';
+        error_log("uploadImage: Erreur upload - " . $error_msg);
+        return ['error' => $error_msg];
     }
     
-    // ÉTAPE 6: Vérifier que le fichier a bien été uploadé
+    // 3. Vérifier que le fichier a bien été uploadé
     if (!is_uploaded_file($file['tmp_name'])) {
-        return ['error' => 'Le fichier n\'a pas été uploadé correctement.'];
+        error_log("uploadImage: Fichier non uploadé correctement");
+        return ['error' => 'Le fichier n\'a pas été uploadé correctement'];
     }
     
-    // ÉTAPE 7: Vérifier le type MIME
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    if ($finfo === false) {
-        return ['error' => 'Impossible de vérifier le type du fichier.'];
-    }
-    
-    $mime_type = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
-    
-    $allowed_mimes = [
-        'image/jpeg', 'image/jpg', 'image/pjpeg',
-        'image/png', 'image/x-png',
-        'image/gif',
-        'image/webp'
-    ];
-    
-    if (!in_array($mime_type, $allowed_mimes)) {
-        return ['error' => 'Le fichier n\'est pas une image valide (type: ' . $mime_type . ')'];
-    }
-    
-    // ÉTAPE 8: Vérifier que c'est une vraie image
-    $check = @getimagesize($file["tmp_name"]);
-    if ($check === false) {
-        return ['error' => 'Le fichier n\'est pas une image valide.'];
-    }
-    
-    // ÉTAPE 9: Vérifier la taille (max 2MB)
-    $max_size = 2 * 1024 * 1024; // 2MB
-    if ($file["size"] > $max_size) {
-        $size_mb = round($file["size"] / 1024 / 1024, 2);
-        return ['error' => "L'image est trop volumineuse (max 2MB - Taille: {$size_mb} MB)"];
-    }
-    
-    // ÉTAPE 10: Vérifier l'extension
+    // 4. Vérifier l'extension
     $imageFileType = strtolower(pathinfo($file["name"], PATHINFO_EXTENSION));
     $allowed_types = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+    
     if (!in_array($imageFileType, $allowed_types)) {
+        error_log("uploadImage: Extension non autorisée - " . $imageFileType);
         return ['error' => 'Format non autorisé (jpg, png, gif, webp uniquement)'];
     }
     
-    // ÉTAPE 11: Générer un nom unique
-    $new_filename = uniqid() . '_' . date('Ymd_His') . '.' . $imageFileType;
-    $target_file = $target_dir . $new_filename;
+    // 5. Vérifier que c'est une vraie image
+    $check = @getimagesize($file["tmp_name"]);
+    if ($check === false) {
+        error_log("uploadImage: Fichier invalide - pas une image");
+        return ['error' => 'Le fichier n\'est pas une image valide'];
+    }
     
-    // ÉTAPE 12: Uploader le fichier
-    if (move_uploaded_file($file["tmp_name"], $target_file)) {
-        @chmod($target_file, 0644);
-        
-        // Déterminer le chemin relatif pour la BDD
-        if (strpos($target_dir, $base_dir) === 0) {
-            // Le dossier est dans l'arborescence du site
-            $relative_path = str_replace($base_dir, '', $target_file);
-            return ['success' => $relative_path];
-        } else {
-            // Le dossier est ailleurs (tmp), on retourne le chemin absolu
-            // Dans ce cas, il faudra servir l'image via un script PHP
-            return ['success' => $target_file];
+    // 6. Vérifier la taille (max 2MB)
+    $max_size = 2 * 1024 * 1024; // 2MB
+    if ($file["size"] > $max_size) {
+        $size_mb = round($file["size"] / 1024 / 1024, 2);
+        error_log("uploadImage: Fichier trop gros - " . $size_mb . "MB");
+        return ['error' => "L'image est trop volumineuse (max 2MB - Taille: {$size_mb} MB)"];
+    }
+    
+    // 7. Vérifier que le dossier existe et est accessible
+    if (!file_exists($upload_dir)) {
+        error_log("uploadImage: Le dossier n'existe pas, tentative de création");
+        if (!mkdir($upload_dir, 0755, true)) {
+            error_log("uploadImage: Impossible de créer le dossier");
+            return ['error' => "Impossible de créer le dossier d'upload"];
         }
+        error_log("uploadImage: Dossier créé avec succès");
+    }
+    
+    if (!is_writable($upload_dir)) {
+        error_log("uploadImage: Dossier non accessible en écriture");
+        error_log("Permissions: " . substr(sprintf('%o', fileperms($upload_dir)), -4));
+        return ['error' => "Le dossier d'upload n'est pas accessible en écriture"];
+    }
+    
+    // 8. Générer un nom unique
+    $new_filename = uniqid() . '_' . date('Ymd_His') . '.' . $imageFileType;
+    $target_file = $upload_dir . $new_filename;
+    
+    error_log("uploadImage: Tentative d'upload vers " . $target_file);
+    
+    // 9. Uploader le fichier
+    if (move_uploaded_file($file["tmp_name"], $target_file)) {
+        error_log("uploadImage: SUCCÈS - Fichier uploadé");
+        error_log("URL: " . $upload_url . $new_filename);
+        
+        // Retourner le chemin relatif pour la BDD (sans /sean/)
+        return ['success' => $upload_url . $new_filename];
     } else {
         $error = error_get_last();
         $error_msg = $error ? $error['message'] : 'Erreur inconnue';
+        error_log("uploadImage: ÉCHEC - " . $error_msg);
         return ['error' => "Erreur lors de l'upload: " . $error_msg];
     }
+}
+
+/**
+ * Nettoie une URL d'image pour enlever les doubles /sean/
+ */
+function cleanImageUrl($url) {
+    if (empty($url)) return $url;
+    
+    // Enlever les /sean/ en double ou mal placés
+    $clean_url = preg_replace('#/sean/+#', '/', $url);
+    
+    // S'assurer que l'URL commence par /uploads/
+    if (strpos($clean_url, '/uploads/') !== 0) {
+        // Extraire juste le nom du fichier
+        $filename = basename($clean_url);
+        $clean_url = '/uploads/produits/' . $filename;
+    }
+    
+    return $clean_url;
 }
 
 // ============================================
@@ -314,6 +294,27 @@ $id = $_GET['id'] ?? 0;
 
 // Récupérer les catégories pour les formulaires
 $categories = getAllCategories($pdo);
+
+// CORRECTION: Nettoyer les URLs d'images existantes au chargement
+if ($action == 'list' || $action == 'edit' || $action == 'view') {
+    try {
+        // Nettoyer les URLs qui contiennent /sean/ en double
+        $stmt = $pdo->prepare("SELECT id_image, url_image FROM images_produits WHERE url_image LIKE '%/sean/%'");
+        $stmt->execute();
+        $images_a_nettoyer = $stmt->fetchAll();
+        
+        foreach ($images_a_nettoyer as $img) {
+            $clean_url = cleanImageUrl($img['url_image']);
+            if ($clean_url !== $img['url_image']) {
+                $update = $pdo->prepare("UPDATE images_produits SET url_image = ? WHERE id_image = ?");
+                $update->execute([$clean_url, $img['id_image']]);
+                error_log("URL nettoyée: " . $img['url_image'] . " -> " . $clean_url);
+            }
+        }
+    } catch(Exception $e) {
+        error_log("Erreur lors du nettoyage des URLs: " . $e->getMessage());
+    }
+}
 
 // Traitement des formulaires POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -352,36 +353,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 if (addProduct($pdo, $data)) {
                     $lastId = $pdo->lastInsertId();
+                    $image_uploaded = false;
+                    $image_error = '';
                     
                     // Gestion de l'upload d'image
                     if (!empty($_FILES['image']['name'])) {
+                        error_log("Tentative d'upload pour nouveau produit ID: " . $lastId);
                         $upload_result = uploadImage($_FILES['image']);
+                        
                         if (isset($upload_result['success'])) {
+                            // CORRECTION: Nettoyer l'URL avant insertion
+                            $image_url = cleanImageUrl($upload_result['success']);
+                            
                             // Enregistrer l'image dans la table images_produits
-                            try {
-                                $sql = "INSERT INTO images_produits (id_produit, url_image, alt_text, principale) 
-                                        VALUES (:id_produit, :url_image, :alt_text, 1)";
-                                $stmt = $pdo->prepare($sql);
-                                $stmt->execute([
-                                    'id_produit' => $lastId,
-                                    'url_image' => $upload_result['success'],
-                                    'alt_text' => $_POST['nom']
-                                ]);
-                                $message = 'Produit ajouté avec succès! Image uploadée.';
-                            } catch(Exception $e) {
-                                // Table images_produits peut ne pas exister
-                                $message = 'Produit ajouté avec succès! (Image enregistrée)';
-                            }
+                            $sql = "INSERT INTO images_produits (id_produit, url_image, alt_text, principale) 
+                                    VALUES (:id_produit, :url_image, :alt_text, 1)";
+                            $stmt = $pdo->prepare($sql);
+                            $stmt->execute([
+                                'id_produit' => $lastId,
+                                'url_image' => $image_url,
+                                'alt_text' => $_POST['nom']
+                            ]);
+                            $image_uploaded = true;
+                            $message = 'Produit ajouté avec succès ! Image uploadée.';
                         } else {
-                            $error = $upload_result['error'];
-                            break;
+                            $image_error = $upload_result['error'];
+                            $message = 'Produit ajouté mais erreur image: ' . $upload_result['error'];
+                            error_log("ERREUR UPLOAD (add): " . $upload_result['error']);
                         }
                     } else {
-                        $message = 'Produit ajouté avec succès! (Sans image)';
+                        $message = 'Produit ajouté avec succès (sans image)';
                     }
                     
-                    header('Location: admin_produits.php?action=list&message=added');
-                    exit();
+                    if (empty($image_error)) {
+                        header('Location: admin_produits.php?action=list&message=' . ($image_uploaded ? 'added_with_image' : 'added'));
+                        exit();
+                    }
                 } else {
                     $error = 'Erreur lors de l\'ajout du produit.';
                 }
@@ -430,40 +437,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ];
                 
                 if (updateProduct($pdo, $id, $data)) {
+                    $image_uploaded = false;
+                    $image_error = '';
+                    
                     // Gestion de l'upload d'image
                     if (!empty($_FILES['image']['name'])) {
+                        error_log("Tentative d'upload pour produit ID: " . $id);
+                        error_log("Fichier: " . print_r($_FILES['image'], true));
+                        
                         $upload_result = uploadImage($_FILES['image']);
+                        
                         if (isset($upload_result['success'])) {
-                            try {
-                                // Supprimer l'ancienne image si elle existe
-                                $sql = "DELETE FROM images_produits WHERE id_produit = :id_produit AND principale = 1";
-                                $stmt = $pdo->prepare($sql);
-                                $stmt->execute(['id_produit' => $id]);
-                                
-                                // Ajouter la nouvelle image
-                                $sql = "INSERT INTO images_produits (id_produit, url_image, alt_text, principale) 
-                                        VALUES (:id_produit, :url_image, :alt_text, 1)";
-                                $stmt = $pdo->prepare($sql);
-                                $stmt->execute([
-                                    'id_produit' => $id,
-                                    'url_image' => $upload_result['success'],
-                                    'alt_text' => $_POST['nom']
-                                ]);
-                                $message = 'Produit modifié avec succès! Image mise à jour.';
-                            } catch(Exception $e) {
-                                // Table images_produits peut ne pas exister
-                                $message = 'Produit modifié avec succès! (Image enregistrée)';
-                            }
+                            // CORRECTION: Nettoyer l'URL avant insertion
+                            $image_url = cleanImageUrl($upload_result['success']);
+                            
+                            // Supprimer l'ancienne image principale
+                            $sql = "DELETE FROM images_produits WHERE id_produit = :id_produit AND principale = 1";
+                            $stmt = $pdo->prepare($sql);
+                            $stmt->execute(['id_produit' => $id]);
+                            
+                            // Ajouter la nouvelle image
+                            $sql = "INSERT INTO images_produits (id_produit, url_image, alt_text, principale) 
+                                    VALUES (:id_produit, :url_image, :alt_text, 1)";
+                            $stmt = $pdo->prepare($sql);
+                            $stmt->execute([
+                                'id_produit' => $id,
+                                'url_image' => $image_url,
+                                'alt_text' => $_POST['nom']
+                            ]);
+                            $image_uploaded = true;
+                            $message = 'Produit modifié avec succès ! Image mise à jour.';
+                            error_log("Upload réussi pour produit ID: " . $id);
                         } else {
-                            $error = $upload_result['error'];
-                            break;
+                            $image_error = $upload_result['error'];
+                            $message = 'Produit modifié mais erreur image: ' . $upload_result['error'];
+                            error_log("ERREUR UPLOAD (edit): " . $upload_result['error']);
                         }
                     } else {
-                        $message = 'Produit modifié avec succès!';
+                        $message = 'Produit modifié avec succès !';
                     }
                     
-                    header('Location: admin_produits.php?action=list&message=updated');
-                    exit();
+                    if (empty($image_error)) {
+                        header('Location: admin_produits.php?action=list&message=' . ($image_uploaded ? 'updated_with_image' : 'updated'));
+                        exit();
+                    }
                 } else {
                     $error = 'Erreur lors de la modification du produit.';
                 }
@@ -474,7 +491,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $id = intval($_POST['id_produit']);
                 
                 if (deleteProduct($pdo, $id)) {
-                    $message = 'Produit supprimé avec succès!';
                     header('Location: admin_produits.php?action=list&message=deleted');
                     exit();
                 } else {
@@ -497,20 +513,26 @@ if ($action === 'delete_confirm' && $id > 0) {
 // Messages depuis les redirections
 if (isset($_GET['message'])) {
     switch ($_GET['message']) {
-        case 'added': $message = 'Produit ajouté avec succès!'; break;
-        case 'updated': $message = 'Produit modifié avec succès!'; break;
-        case 'deleted': $message = 'Produit supprimé avec succès!'; break;
+        case 'added':
+        case 'added_with_image':
+            $message = 'Produit ajouté avec succès' . ($_GET['message'] == 'added_with_image' ? ' et image uploadée !' : ' !');
+            break;
+        case 'updated':
+        case 'updated_with_image':
+            $message = 'Produit modifié avec succès' . ($_GET['message'] == 'updated_with_image' ? ' et image mise à jour !' : ' !');
+            break;
+        case 'deleted':
+            $message = 'Produit supprimé avec succès !';
+            break;
     }
 }
 if (isset($_GET['error'])) {
     switch ($_GET['error']) {
-        case 'notfound': $error = 'Produit non trouvé!'; break;
+        case 'notfound':
+            $error = 'Produit non trouvé !';
+            break;
     }
 }
-
-// ============================================
-// AFFICHAGE DE L'INTERFACE
-// ============================================
 
 // Récupérer les informations de l'admin depuis la session
 $admin_username = $_SESSION['admin_username'] ?? 'Administrateur';
@@ -524,12 +546,11 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
     <title>Gestion des Produits - Heure du Cadeau</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* Styles CSS - Raccourcis pour la lisibilité */
+        /* TOUS LES STYLES CSS ORIGINAUX SONT CONSERVÉS IDENTIQUES */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f7fa; color: #333; line-height: 1.6; }
         .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
         
-        /* Header */
         .header { 
             background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%); 
             color: white; 
@@ -545,7 +566,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         }
         .header h1 { font-size: 28px; font-weight: 600; }
         
-        /* Badge de rôle */
         .role-badge { 
             background-color: #4CAF50; 
             color: white; 
@@ -556,12 +576,10 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         }
         .superadmin-badge { background-color: #f44336; }
         
-        /* Messages */
         .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: 500; }
         .alert-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .alert-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         
-        /* Navigation */
         .nav-tabs { 
             display: flex; 
             background-color: white; 
@@ -584,7 +602,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         .nav-tabs a:hover { background-color: #f8f9fa; color: #6a11cb; }
         .nav-tabs a.active { color: #6a11cb; border-bottom-color: #6a11cb; background-color: #f0f8ff; }
         
-        /* Boutons */
         .btn { 
             padding: 10px 20px; 
             border: none; 
@@ -605,7 +622,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         .btn-danger { background-color: #f44336; color: white; }
         .btn-secondary { background-color: #6c757d; color: white; }
         
-        /* Tableaux */
         .table-container { 
             background-color: white; 
             border-radius: 10px; 
@@ -633,7 +649,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         td { padding: 16px 15px; border-bottom: 1px solid #eee; vertical-align: middle; }
         tr:hover { background-color: #f9f9f9; }
         
-        /* Images produits */
         .product-image { 
             width: 60px; 
             height: 60px; 
@@ -642,7 +657,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             border: 1px solid #ddd;
         }
         
-        /* Prix et quantités */
         .price { font-weight: 600; color: #2e7d32; }
         .quantity { 
             display: inline-block; 
@@ -655,10 +669,8 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         .quantity-medium { background-color: #fff8e1; color: #f57c00; }
         .quantity-high { background-color: #e8f5e9; color: #2e7d32; }
         
-        /* Actions */
         .actions { display: flex; gap: 8px; }
         
-        /* Formulaires */
         .form-container { 
             background-color: white; 
             border-radius: 10px; 
@@ -687,7 +699,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         }
         textarea.form-control { min-height: 120px; resize: vertical; }
         
-        /* Modal */
         .modal { 
             display: none; 
             position: fixed; 
@@ -709,7 +720,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
         }
         
-        /* Responsive */
         @media (max-width: 768px) {
             .header { flex-direction: column; text-align: center; }
             .nav-tabs { flex-wrap: wrap; }
@@ -782,6 +792,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         <thead>
                             <tr>
                                 <th>ID</th>
+                                <th>Image</th>
                                 <th>Référence</th>
                                 <th>Nom</th>
                                 <th>Catégorie</th>
@@ -794,6 +805,28 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         </thead>
                         <tbody>
                             <?php foreach ($products as $product): 
+                                // CORRECTION: Récupérer l'image du produit de manière robuste
+                                $stmt = $pdo->prepare("
+                                    SELECT url_image FROM images_produits 
+                                    WHERE id_produit = ? 
+                                    ORDER BY principale DESC, ordre ASC, id_image ASC 
+                                    LIMIT 1
+                                ");
+                                $stmt->execute([$product['id_produit']]);
+                                $image = $stmt->fetch();
+                                
+                                if ($image && !empty($image['url_image'])) {
+                                    $image_url = $image['url_image'];
+                                    
+                                    // Vérification silencieuse que le fichier existe (optionnel)
+                                    $full_path = $_SERVER['DOCUMENT_ROOT'] . $image_url;
+                                    if (!file_exists($full_path)) {
+                                        error_log("Admin: Image manquante pour produit {$product['id_produit']}: $full_path");
+                                    }
+                                } else {
+                                    $image_url = 'https://via.placeholder.com/60x60?text=+';
+                                }
+                                
                                 // Calcul du prix TTC
                                 $prix_ttc = $product['prix_ht'] * (1 + ($product['tva'] / 100));
                                 
@@ -811,6 +844,12 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                             ?>
                             <tr>
                                 <td>#<?php echo $product['id_produit']; ?></td>
+                                <td>
+                                    <img src="<?php echo htmlspecialchars($image_url); ?>" 
+                                         alt="<?php echo htmlspecialchars($product['nom']); ?>"
+                                         class="product-image"
+                                         onerror="this.src='https://via.placeholder.com/60x60?text=+'">
+                                </td>
                                 <td><strong><?php echo htmlspecialchars($product['reference']); ?></strong></td>
                                 <td><?php echo htmlspecialchars($product['nom']); ?></td>
                                 <td><?php echo htmlspecialchars($product['categorie_nom'] ?? 'Non catégorisé'); ?></td>
@@ -839,11 +878,11 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                                     $status = $product['statut'] ?? 'actif';
                                     $color = $statusColors[$status] ?? 'secondary';
                                     ?>
-                                    <span style="display: inline-block; padding: 4px 10px; font-size: 12px; border-radius: 4px; background-color: var(--color, #6c757d); color: white; --color: <?php 
+                                    <span style="display: inline-block; padding: 4px 10px; font-size: 12px; border-radius: 4px; background-color: <?php 
                                         echo $color === 'success' ? '#4CAF50' : 
                                               ($color === 'secondary' ? '#6c757d' : 
                                               ($color === 'danger' ? '#f44336' : '#ff9800'));
-                                    ?>">
+                                    ?>; color: white;">
                                         <?php echo $statusText[$status] ?? $status; ?>
                                     </span>
                                 </td>
@@ -890,6 +929,16 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                     echo '<a href="admin_produits.php?action=list" class="btn btn-secondary">Retour à la liste</a>';
                     exit();
                 }
+                
+                // Récupérer l'image actuelle
+                $stmt = $pdo->prepare("
+                    SELECT url_image FROM images_produits 
+                    WHERE id_produit = ? 
+                    ORDER BY principale DESC, ordre ASC, id_image ASC 
+                    LIMIT 1
+                ");
+                $stmt->execute([$id]);
+                $current_image = $stmt->fetch();
             }
             
             // Valeurs par défaut pour l'ajout
@@ -1063,11 +1112,26 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         <div class="form-group">
                             <label for="image"><i class="fas fa-image"></i> Image du produit</label>
                             <input type="file" id="image" name="image" class="form-control" accept="image/jpeg,image/png,image/gif,image/webp">
-                            <?php if ($action == 'edit'): ?>
-                                <small style="color: #666;">Laissez vide pour conserver l'image actuelle</small>
+                            
+                            <?php if ($action == 'edit' && !empty($current_image)): ?>
+                                <div style="margin-top: 10px; display: flex; align-items: center; gap: 15px;">
+                                    <img src="<?php echo htmlspecialchars($current_image['url_image']); ?>" 
+                                         alt="Image actuelle" 
+                                         style="max-width: 100px; max-height: 100px; border-radius: 8px; border: 1px solid #ddd;">
+                                    <small style="color: #666;">Image actuelle - Laissez vide pour conserver</small>
+                                </div>
+                            <?php else: ?>
+                                <small style="color: #666;">Laissez vide pour ne pas ajouter d'image</small>
                             <?php endif; ?>
+                            
                             <small style="display: block; color: #999; margin-top: 5px;">Formats acceptés : JPG, PNG, GIF, WebP (max 2MB)</small>
                         </div>
+                    </div>
+                    
+                    <!-- Note sur l'upload d'images -->
+                    <div style="background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; margin-bottom: 20px; font-size: 14px; border-left: 4px solid #ffeeba;">
+                        <strong><i class="fas fa-info-circle"></i> Note sur l'upload d'images :</strong>
+                        <p style="margin-top: 5px;">Les images seront stockées dans <code>/var/www/sean/uploads/produits/</code> et accessibles via <code>/uploads/produits/</code></p>
                     </div>
                     
                     <div style="display: flex; gap: 15px; margin-top: 30px;">
@@ -1082,7 +1146,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             </div>
             
         <?php elseif ($action == 'stats'): ?>
-            <!-- STATISTIQUES -->
+            <!-- STATISTIQUES (inchangées) -->
             <div class="form-container">
                 <h2 style="margin-bottom: 25px; color: #333; display: flex; align-items: center; gap: 10px;">
                     <i class="fas fa-chart-bar"></i> Statistiques produits
@@ -1170,6 +1234,202 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         <i class="fas fa-exclamation-circle"></i> Erreur lors du chargement des statistiques
                     </div>
                 <?php } ?>
+            </div>
+            
+        <?php elseif ($action == 'view' && $id > 0): ?>
+            <!-- VUE DÉTAIL PRODUIT -->
+            <?php
+            $product = getProductById($pdo, $id);
+            if (!$product) {
+                echo '<div class="alert alert-danger">Produit non trouvé!</div>';
+                echo '<a href="admin_produits.php?action=list" class="btn btn-secondary">Retour à la liste</a>';
+                exit();
+            }
+            
+            // Récupérer toutes les images du produit
+            $stmt = $pdo->prepare("SELECT * FROM images_produits WHERE id_produit = ? ORDER BY principale DESC, ordre ASC");
+            $stmt->execute([$id]);
+            $images = $stmt->fetchAll();
+            ?>
+            
+            <div class="form-container">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+                    <h2 style="color: #333; display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-eye"></i> Détail du produit #<?php echo $product['id_produit']; ?>
+                    </h2>
+                    <div>
+                        <a href="admin_produits.php?action=edit&id=<?php echo $id; ?>" class="btn btn-warning">
+                            <i class="fas fa-edit"></i> Modifier
+                        </a>
+                        <a href="admin_produits.php?action=list" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Retour
+                        </a>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 30px;">
+                    <!-- Colonne images -->
+                    <div>
+                        <h3 style="margin-bottom: 15px;">Images</h3>
+                        <?php if (!empty($images)): ?>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 15px;">
+                                <?php foreach ($images as $img): ?>
+                                    <div style="border: 2px solid <?php echo $img['principale'] ? '#4CAF50' : '#ddd'; ?>; border-radius: 8px; padding: 5px;">
+                                        <img src="<?php echo htmlspecialchars($img['url_image']); ?>" 
+                                             alt="<?php echo htmlspecialchars($img['alt_text']); ?>"
+                                             style="width: 100%; height: 100px; object-fit: cover; border-radius: 4px;">
+                                        <?php if ($img['principale']): ?>
+                                            <small style="display: block; text-align: center; color: #4CAF50; margin-top: 5px;">
+                                                <i class="fas fa-star"></i> Principale
+                                            </small>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div style="text-align: center; padding: 30px; background: #f8f9fa; border-radius: 8px;">
+                                <i class="fas fa-image" style="font-size: 48px; color: #ccc; margin-bottom: 15px;"></i>
+                                <p>Aucune image pour ce produit</p>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                    
+                    <!-- Colonne informations -->
+                    <div>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr>
+                                <th style="width: 200px; background: #f8f9fa; padding: 12px;">Référence</th>
+                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><?php echo htmlspecialchars($product['reference']); ?></td>
+                            </tr>
+                            <tr>
+                                <th style="background: #f8f9fa; padding: 12px;">Nom</th>
+                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><?php echo htmlspecialchars($product['nom']); ?></td>
+                            </tr>
+                            <tr>
+                                <th style="background: #f8f9fa; padding: 12px;">Slug</th>
+                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><?php echo htmlspecialchars($product['slug']); ?></td>
+                            </tr>
+                            <tr>
+                                <th style="background: #f8f9fa; padding: 12px;">Catégorie</th>
+                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><?php echo htmlspecialchars($product['categorie_nom'] ?? 'Non catégorisé'); ?></td>
+                            </tr>
+                            <tr>
+                                <th style="background: #f8f9fa; padding: 12px;">Prix HT</th>
+                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><?php echo number_format($product['prix_ht'], 2, ',', ' '); ?> €</td>
+                            </tr>
+                            <tr>
+                                <th style="background: #f8f9fa; padding: 12px;">TVA</th>
+                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><?php echo $product['tva']; ?>%</td>
+                            </tr>
+                            <tr>
+                                <th style="background: #f8f9fa; padding: 12px;">Prix TTC</th>
+                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><strong><?php echo number_format($product['prix_ht'] * (1 + $product['tva']/100), 2, ',', ' '); ?> €</strong></td>
+                            </tr>
+                            <tr>
+                                <th style="background: #f8f9fa; padding: 12px;">Stock</th>
+                                <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                                    <?php echo $product['quantite_stock']; ?> unités 
+                                    (seuil d'alerte: <?php echo $product['seuil_alerte']; ?>)
+                                </td>
+                            </tr>
+                            <tr>
+                                <th style="background: #f8f9fa; padding: 12px;">Statut</th>
+                                <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                                    <?php 
+                                    $statusColors = [
+                                        'actif' => '#4CAF50',
+                                        'inactif' => '#6c757d',
+                                        'rupture' => '#f44336',
+                                        'bientot' => '#ff9800'
+                                    ];
+                                    $color = $statusColors[$product['statut']] ?? '#6c757d';
+                                    ?>
+                                    <span style="display: inline-block; padding: 4px 10px; border-radius: 4px; background-color: <?php echo $color; ?>; color: white;">
+                                        <?php echo ucfirst($product['statut']); ?>
+                                    </span>
+                                </td>
+                            </tr>
+                        </table>
+                        
+                        <div style="margin-top: 30px;">
+                            <h3 style="margin-bottom: 15px;">Description courte</h3>
+                            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                                <?php echo nl2br(htmlspecialchars($product['description_courte'] ?: 'Aucune description courte')); ?>
+                            </div>
+                            
+                            <h3 style="margin-bottom: 15px;">Description complète</h3>
+                            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                                <?php echo nl2br(htmlspecialchars($product['description'] ?: 'Aucune description')); ?>
+                            </div>
+                        </div>
+                        
+                        <?php if ($product['marque'] || $product['poids'] || $product['dimensions'] || $product['materiau'] || $product['couleur'] || $product['made_in']): ?>
+                        <div style="margin-top: 30px;">
+                            <h3 style="margin-bottom: 15px;">Caractéristiques</h3>
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <?php if ($product['marque']): ?>
+                                <tr>
+                                    <th style="width: 150px; background: #f8f9fa; padding: 10px;">Marque</th>
+                                    <td style="padding: 10px;"><?php echo htmlspecialchars($product['marque']); ?></td>
+                                </tr>
+                                <?php endif; ?>
+                                <?php if ($product['poids']): ?>
+                                <tr>
+                                    <th style="background: #f8f9fa; padding: 10px;">Poids</th>
+                                    <td style="padding: 10px;"><?php echo $product['poids']; ?> g</td>
+                                </tr>
+                                <?php endif; ?>
+                                <?php if ($product['dimensions']): ?>
+                                <tr>
+                                    <th style="background: #f8f9fa; padding: 10px;">Dimensions</th>
+                                    <td style="padding: 10px;"><?php echo htmlspecialchars($product['dimensions']); ?> cm</td>
+                                </tr>
+                                <?php endif; ?>
+                                <?php if ($product['materiau']): ?>
+                                <tr>
+                                    <th style="background: #f8f9fa; padding: 10px;">Matériau</th>
+                                    <td style="padding: 10px;"><?php echo htmlspecialchars($product['materiau']); ?></td>
+                                </tr>
+                                <?php endif; ?>
+                                <?php if ($product['couleur']): ?>
+                                <tr>
+                                    <th style="background: #f8f9fa; padding: 10px;">Couleur</th>
+                                    <td style="padding: 10px;"><?php echo htmlspecialchars($product['couleur']); ?></td>
+                                </tr>
+                                <?php endif; ?>
+                                <?php if ($product['made_in']): ?>
+                                <tr>
+                                    <th style="background: #f8f9fa; padding: 10px;">Origine</th>
+                                    <td style="padding: 10px;"><?php echo htmlspecialchars($product['made_in']); ?></td>
+                                </tr>
+                                <?php endif; ?>
+                            </table>
+                        </div>
+                        <?php endif; ?>
+                        
+                        <?php 
+                        $special = [];
+                        if ($product['personnalisable']) $special[] = 'Personnalisable';
+                        if ($product['ecologique']) $special[] = 'Écologique';
+                        if ($product['made_in_france']) $special[] = 'Made in France';
+                        if ($product['artisanal']) $special[] = 'Artisanal';
+                        if ($product['exclusif']) $special[] = 'Exclusif';
+                        
+                        if (!empty($special)): 
+                        ?>
+                        <div style="margin-top: 30px;">
+                            <h3 style="margin-bottom: 15px;">Caractéristiques spéciales</h3>
+                            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                                <?php foreach ($special as $tag): ?>
+                                    <span style="background: #e3f2fd; color: #1976d2; padding: 5px 15px; border-radius: 20px; font-size: 14px;">
+                                        <i class="fas fa-check-circle"></i> <?php echo $tag; ?>
+                                    </span>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
             </div>
             
         <?php endif; ?>

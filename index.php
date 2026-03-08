@@ -1,6 +1,6 @@
 <?php
 // index.php - Page d'accueil avec gestion panier et pagination
-// VERSION CORRIGÉE COMPLÈTE - Avec tout le CSS restauré
+// VERSION CORRIGÉE - URLs d'images uniformisées et affichage fiable
 require_once 'session_verification.php';
 
 // Configuration de la pagination
@@ -18,38 +18,12 @@ $message_erreur = '';
 
 if ($pdo) {
     try {
-        // 1. Vérifier d'abord s'il y a des produits dans la table
-        $check_sql = "SELECT COUNT(*) as total FROM produits";
-        $check_stmt = $pdo->query($check_sql);
-        $check_result = $check_stmt->fetch();
-        /*
-        if ($check_result['total'] == 0) {
-            // Table vide - insérer des produits de démonstration
-            $produits_demo = [
-                ['REF001', 'Bougie parfumée "Élégance"', 'bougie-parfumee-elegance', 'Bougie artisanale parfum vanille et santal. 50h de combustion.', 'Bougie artisanale', 29.08, 20.00, 50, 1],
-                ['REF002', 'Coffret gourmand "Délice"', 'coffret-gourmand-delice', 'Sélection des meilleures spécialités françaises.', 'Coffret de spécialités', 41.58, 20.00, 25, 1],
-                ['REF003', 'Montre "Temps Précieux"', 'montre-temps-precieux', 'Montre élégante avec gravure personnalisée.', 'Montre avec gravure', 74.92, 20.00, 15, 1],
-                ['REF004', 'Set bijoux "Lumière"', 'set-bijoux-lumiere', 'Collier, boucles d\'oreilles et bracelet assortis.', 'Set bijoux argent', 1000.00, 20.00, 10, 1]
-            ];
-            
-            $insert_sql = "INSERT INTO produits 
-                (reference, nom, slug, description, description_courte, prix_ht, tva, quantite_stock, id_categorie, statut) 
-                VALUES 
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, 'actif')";
-            
-            $insert_stmt = $pdo->prepare($insert_sql);
-            foreach ($produits_demo as $demo) {
-                $insert_stmt->execute($demo);
-            }
-            error_log("Produits de démonstration insérés avec succès");
-        }*/
-        
-        // 2. Compter le nombre total de produits actifs
+        // 1. Compter le nombre total de produits actifs
         $stmt_count = $pdo->query("SELECT COUNT(*) FROM produits WHERE statut = 'actif'");
         $total_produits = $stmt_count->fetchColumn();
         $total_pages = ceil($total_produits / $produits_par_page);
         
-        // 3. Récupérer les produits avec pagination
+        // 2. Récupérer les produits avec pagination
         $sql = "
             SELECT p.*, 
                    c.nom as categorie_nom,
@@ -67,7 +41,70 @@ if ($pdo) {
         $stmt->execute();
         $produits = $stmt->fetchAll();
         
-        // Log pour debug
+        // ==============================================
+        // RÉCUPÉRATION ROBUSTE DES IMAGES - VERSION CORRIGÉE
+        // ==============================================
+        $produits_js = [];
+        $images = [];
+        
+        if (!empty($produits)) {
+            // Récupérer tous les IDs des produits
+            $ids = array_column($produits, 'id_produit');
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            
+            // Récupérer TOUTES les images, pas seulement les principales
+            // Et pour chaque produit, on prend la première image (priorité à principale)
+            $stmt_imgs = $pdo->prepare("
+                SELECT id_produit, url_image, principale 
+                FROM images_produits 
+                WHERE id_produit IN ($placeholders)
+                ORDER BY principale DESC, ordre ASC, id_image ASC
+            ");
+            $stmt_imgs->execute($ids);
+            
+            // Créer un tableau associatif [id_produit => url_image]
+            // On ne garde que la PREMIÈRE image pour chaque produit
+            while ($img = $stmt_imgs->fetch()) {
+                // CORRECTION: Nettoyer l'URL si nécessaire (enlever les /sean/ en double)
+                $clean_url = $img['url_image'];
+                if (strpos($clean_url, '/sean/') !== false) {
+                    $clean_url = preg_replace('#/sean/+#', '/', $clean_url);
+                    error_log("URL nettoyée dans index: " . $img['url_image'] . " -> " . $clean_url);
+                }
+                
+                // Si on n'a pas encore d'image pour ce produit, on la prend
+                if (!isset($images[$img['id_produit']])) {
+                    $images[$img['id_produit']] = $clean_url;
+                }
+            }
+        }
+        
+        // Construire le tableau des produits pour JavaScript
+        foreach ($produits as $p) {
+            // CORRECTION: Utiliser l'image nettoyée si disponible
+            if (isset($images[$p['id_produit']]) && !empty($images[$p['id_produit']])) {
+                $image_url = $images[$p['id_produit']];
+            } else {
+                // Image par défaut selon l'ID ou générique
+                $default_images = [
+                    1 => 'https://via.placeholder.com/300x300/2c3e50/ffffff?text=Bougie',
+                    2 => 'https://via.placeholder.com/300x300/27ae60/ffffff?text=Coffret',
+                    3 => 'https://via.placeholder.com/300x300/3498db/ffffff?text=Montre',
+                    4 => 'https://via.placeholder.com/300x300/e74c3c/ffffff?text=Bijoux'
+                ];
+                $image_url = $default_images[$p['id_produit']] ?? 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
+            }
+            
+            $produits_js[$p['id_produit']] = [
+                'id' => $p['id_produit'],
+                'nom' => $p['nom'],
+                'reference' => $p['reference'],
+                'prix_ttc' => floatval($p['prix_ttc']),
+                'description_courte' => $p['description_courte'],
+                'image' => $image_url
+            ];
+        }
+        
         error_log("Nombre de produits trouvés : " . count($produits));
         
     } catch (Exception $e) {
@@ -1661,15 +1698,23 @@ $nb_articles = countCartItems();
                 <?php else: ?>
                     <?php foreach ($produits as $produit): 
                         $prix = number_format($produit['prix_ttc'] ?? 0, 2, ',', ' ');
-                        // Images par défaut selon l'ID pour éviter les erreurs 404
-                        $images_defaut = [
-                            1 => 'https://via.placeholder.com/300x300/2c3e50/ffffff?text=Bougie',
-                            2 => 'https://via.placeholder.com/300x300/27ae60/ffffff?text=Coffret',
-                            3 => 'https://via.placeholder.com/300x300/3498db/ffffff?text=Montre',
-                            4 => 'https://via.placeholder.com/300x300/e74c3c/ffffff?text=Bijoux'
-                        ];
-                        $image_id = $produit['id_produit'];
-                        $image_url = isset($images_defaut[$image_id]) ? $images_defaut[$image_id] : 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
+                        
+                        // CORRECTION: Utiliser l'image nettoyée depuis le tableau $images
+                        if (isset($images[$produit['id_produit']]) && !empty($images[$produit['id_produit']])) {
+                            $image_url = $images[$produit['id_produit']];
+                        } else {
+                            // Images par défaut
+                            $default_images = [
+                                1 => 'https://via.placeholder.com/300x300/2c3e50/ffffff?text=Bougie',
+                                2 => 'https://via.placeholder.com/300x300/27ae60/ffffff?text=Coffret',
+                                3 => 'https://via.placeholder.com/300x300/3498db/ffffff?text=Montre',
+                                4 => 'https://via.placeholder.com/300x300/e74c3c/ffffff?text=Bijoux'
+                            ];
+                            $image_url = $default_images[$produit['id_produit']] ?? 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
+                        }
+                        
+                        // Référence courte
+                        $ref_short = substr($produit['reference'] ?? 'REF' . $produit['id_produit'], 0, 8);
                     ?>
                     <div class="product-card" data-id="<?= $produit['id_produit'] ?>">
                         <?php if (($produit['id_produit'] ?? 0) == 4): ?>
@@ -1678,7 +1723,8 @@ $nb_articles = countCartItems();
                         <div class="product-image">
                             <img src="<?= $image_url ?>" 
                                  alt="<?= htmlspecialchars($produit['nom'] ?? 'Produit') ?>" 
-                                 loading="lazy">
+                                 loading="lazy"
+                                 onerror="this.src='https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit'">
                             <div class="product-overlay">
                                 <i class="fas fa-eye"></i>
                             </div>
@@ -1722,12 +1768,21 @@ $nb_articles = countCartItems();
 
                 <div class="pagination-numbers">
                     <?php
-                    for ($i = 1; $i <= min(5, $total_pages); $i++):
-                        ?>
+                    $start = max(1, min($page - 2, $total_pages - 4));
+                    $end = min($total_pages, max(5, $page + 2));
+                    
+                    if ($start > 1) {
+                        echo '<a href="?page=1" class="page-number">1</a>';
+                        if ($start > 2) echo '<span class="page-dots">...</span>';
+                    }
+                    
+                    for ($i = $start; $i <= $end; $i++):
+                    ?>
                         <a href="?page=<?= $i ?>" class="page-number <?= $i == $page ? 'active' : '' ?>"><?= $i ?></a>
                     <?php endfor; ?>
-                    <?php if ($total_pages > 5): ?>
-                        <span class="page-dots">...</span>
+                    
+                    <?php if ($end < $total_pages): ?>
+                        <?php if ($end < $total_pages - 1) echo '<span class="page-dots">...</span>'; ?>
                         <a href="?page=<?= $total_pages ?>" class="page-number"><?= $total_pages ?></a>
                     <?php endif; ?>
                 </div>
@@ -1873,7 +1928,12 @@ $nb_articles = countCartItems();
 
     <script>
         // ==============================================
-        // GESTIONNAIRE DE PANIER
+        // DONNÉES DES PRODUITS - EXTRAITES DE LA BDD
+        // ==============================================
+        const produitsData = <?= json_encode($produits_js, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) ?>;
+
+        // ==============================================
+        // GESTIONNAIRE DE PANIER - VERSION CORRIGÉE
         // ==============================================
 
         const API_PANIER_URL = "panier.php";
@@ -1918,6 +1978,7 @@ $nb_articles = countCartItems();
                 this.cartModalBody = document.getElementById("cartModalBody");
                 this.cartCountElements = document.querySelectorAll(".cart-count");
                 this.updateInProgress = false;
+                this.produitsData = produitsData; // Stocker les données des produits
                 this.initEvents();
                 this.updateCartCount();
             }
@@ -1941,6 +2002,14 @@ $nb_articles = countCartItems();
             async ajouterAuPanier(id_produit, quantite = 1, button = null) {
                 if (!id_produit || id_produit <= 0) {
                     this.showNotification("Erreur: Produit invalide", "error");
+                    return false;
+                }
+
+                // Récupérer les infos du produit depuis les données PHP
+                const produitInfo = this.produitsData[id_produit];
+                
+                if (!produitInfo) {
+                    this.showNotification("Erreur: Produit non trouvé", "error");
                     return false;
                 }
 
@@ -1971,18 +2040,16 @@ $nb_articles = countCartItems();
                     if (data.success) {
                         await this.updateCartCount();
 
-                        // Récupérer les infos du produit depuis la page
-                        const productCard = document.querySelector(`.product-card[data-id="${id_produit}"]`);
-                        const productInfo = {
-                            nom: productCard?.querySelector('h3')?.textContent || `Produit #${id_produit}`,
-                            prix_ttc: 29.99,
-                            image: productCard?.querySelector('img')?.src || 'https://via.placeholder.com/300',
-                            reference: `REF${id_produit}`,
-                            id_produit: id_produit
-                        };
-
-                        this.showCartModal(productInfo);
-                        this.showNotification(`"${productInfo.nom}" ajouté au panier !`);
+                        // Utiliser les données du produit récupérées depuis la BDD
+                        this.showCartModal({
+                            id: produitInfo.id,
+                            nom: produitInfo.nom,
+                            reference: produitInfo.reference,
+                            prix_ttc: produitInfo.prix_ttc,
+                            image: produitInfo.image
+                        });
+                        
+                        this.showNotification(`"${produitInfo.nom}" ajouté au panier !`);
                         return true;
                     } else {
                         this.showNotification(data.message || "Erreur lors de l'ajout", "error");
@@ -2013,11 +2080,11 @@ $nb_articles = countCartItems();
                         <div class="modal-product-image">
                             <img src="${product.image}" 
                                  alt="${product.nom}"
-                                 onerror="this.src='https://via.placeholder.com/300'">
+                                 onerror="this.src='https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit'">
                         </div>
                         <div class="modal-product-info">
                             <h4>${product.nom}</h4>
-                            <p class="modal-product-ref">Réf: ${product.reference || product.id_produit}</p>
+                            <p class="modal-product-ref">Réf: ${product.reference || 'REF' + product.id}</p>
                             <p class="modal-product-price">${prix} €</p>
                             <p class="modal-success-message">
                                 <i class="fas fa-check-circle"></i>
