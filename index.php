@@ -1,6 +1,6 @@
 <?php
 // index.php - Page d'accueil avec gestion panier et pagination
-// VERSION CORRIGÉE - URLs d'images uniformisées et affichage fiable
+// VERSION CORRIGÉE - Pagination réparée et URLs d'images uniformisées
 require_once 'session_verification.php';
 
 // Configuration de la pagination
@@ -22,6 +22,12 @@ if ($pdo) {
         $stmt_count = $pdo->query("SELECT COUNT(*) FROM produits WHERE statut = 'actif'");
         $total_produits = $stmt_count->fetchColumn();
         $total_pages = ceil($total_produits / $produits_par_page);
+        
+        // CORRECTION: S'assurer que la page demandée n'est pas supérieure au total
+        if ($total_pages > 0 && $page > $total_pages) {
+            $page = $total_pages;
+            $offset = ($page - 1) * $produits_par_page;
+        }
         
         // 2. Récupérer les produits avec pagination
         $sql = "
@@ -906,7 +912,7 @@ $nb_articles = countCartItems();
             background: linear-gradient(135deg, #2980b9, #2573a7);
         }
 
-        /* Pagination */
+        /* Pagination - CORRECTION APPLIQUÉE ICI */
         .pagination {
             display: flex;
             justify-content: center;
@@ -1631,37 +1637,37 @@ $nb_articles = countCartItems();
                     <div class="category-icon"><i class="fas fa-birthday-cake"></i></div>
                     <h3>Anniversaires</h3>
                     <p>Cadeaux uniques pour célébrer les anniversaires</p>
-                    <a href="catalogue.php?categorie=1" class="category-link">Voir les produits →</a>
+                    <a href="catalogue.php?categorie=2" class="category-link">Voir les produits →</a>
                 </div>
                 <div class="category-card">
                     <div class="category-icon"><i class="fas fa-heart"></i></div>
                     <h3>Saint-Valentin</h3>
                     <p>Romantique et mémorable</p>
-                    <a href="catalogue.php?categorie=2" class="category-link">Voir les produits →</a>
+                    <a href="catalogue.php?categorie=3" class="category-link">Voir les produits →</a>
                 </div>
                 <div class="category-card">
                     <div class="category-icon"><i class="fas fa-glass-cheers"></i></div>
                     <h3>Mariage</h3>
                     <p>Cadeaux de mariage élégants</p>
-                    <a href="catalogue.php?categorie=3" class="category-link">Voir les produits →</a>
+                    <a href="catalogue.php?categorie=4" class="category-link">Voir les produits →</a>
                 </div>
                 <div class="category-card">
                     <div class="category-icon"><i class="fas fa-baby"></i></div>
                     <h3>Naissance</h3>
                     <p>Pour accueillir bébé</p>
-                    <a href="catalogue.php?categorie=4" class="category-link">Voir les produits →</a>
+                    <a href="catalogue.php?categorie=5" class="category-link">Voir les produits →</a>
                 </div>
                 <div class="category-card">
                     <div class="category-icon"><i class="fas fa-graduation-cap"></i></div>
                     <h3>Diplômés</h3>
                     <p>Pour célébrer la réussite</p>
-                    <a href="catalogue.php?categorie=5" class="category-link">Voir les produits →</a>
+                    <a href="catalogue.php?categorie=6" class="category-link">Voir les produits →</a>
                 </div>
                 <div class="category-card">
                     <div class="category-icon"><i class="fas fa-christmas-tree"></i></div>
                     <h3>Noël</h3>
                     <p>Magie des fêtes de fin d'année</p>
-                    <a href="catalogue.php?categorie=6" class="category-link">Voir les produits →</a>
+                    <a href="catalogue.php?categorie=7" class="category-link">Voir les produits →</a>
                 </div>
             </div>
         </div>
@@ -1753,7 +1759,7 @@ $nb_articles = countCartItems();
                 <?php endif; ?>
             </div>
 
-            <!-- Pagination -->
+            <!-- PAGINATION CORRIGÉE - Logique simplifiée et fiable -->
             <?php if ($total_pages > 1): ?>
             <div class="pagination">
                 <?php if ($page > 1): ?>
@@ -1768,23 +1774,29 @@ $nb_articles = countCartItems();
 
                 <div class="pagination-numbers">
                     <?php
-                    $start = max(1, min($page - 2, $total_pages - 4));
-                    $end = min($total_pages, max(5, $page + 2));
-                    
-                    if ($start > 1) {
+                    // CORRECTION: Logique de pagination simplifiée et fiable
+                    // Afficher la première page si on n'est pas proche du début
+                    if ($page > 3) {
                         echo '<a href="?page=1" class="page-number">1</a>';
-                        if ($start > 2) echo '<span class="page-dots">...</span>';
+                        if ($page > 4) echo '<span class="page-dots">...</span>';
                     }
+                    
+                    // Afficher jusqu'à 5 pages autour de la page courante
+                    $start = max(1, $page - 2);
+                    $end = min($total_pages, $page + 2);
                     
                     for ($i = $start; $i <= $end; $i++):
                     ?>
                         <a href="?page=<?= $i ?>" class="page-number <?= $i == $page ? 'active' : '' ?>"><?= $i ?></a>
                     <?php endfor; ?>
                     
-                    <?php if ($end < $total_pages): ?>
-                        <?php if ($end < $total_pages - 1) echo '<span class="page-dots">...</span>'; ?>
-                        <a href="?page=<?= $total_pages ?>" class="page-number"><?= $total_pages ?></a>
-                    <?php endif; ?>
+                    <?php
+                    // Afficher la dernière page si on n'est pas proche de la fin
+                    if ($page < $total_pages - 2) {
+                        if ($page < $total_pages - 3) echo '<span class="page-dots">...</span>';
+                        echo '<a href="?page=' . $total_pages . '" class="page-number">' . $total_pages . '</a>';
+                    }
+                    ?>
                 </div>
 
                 <?php if ($page < $total_pages): ?>

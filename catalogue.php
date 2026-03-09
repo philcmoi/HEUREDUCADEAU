@@ -1561,7 +1561,7 @@ if ($is_all_categories) {
                     <i class="fas fa-box-open"></i>
                     <h3>Aucun produit <?= !$is_all_categories ? 'dans cette catégorie' : '' ?></h3>
                     <p>Découvrez nos autres catégories de cadeaux</p>
-                    <a href="catalogue.php" class="btn-add-to-cart" style="display: inline-block;">
+                    <a href="index.php" class="btn-add-to-cart" style="display: inline-block;">
                         <i class="fas fa-arrow-left"></i> Voir toutes les catégories
                     </a>
                 </div>
@@ -1688,9 +1688,9 @@ if ($is_all_categories) {
         </div>
         <?php endif; ?>
 
-        <div class="text-center" style="margin-top: 20px; margin-bottom: 40px;">
-            <a href="index.php" class="btn-add-to-cart" style="display: inline-block; padding: 12px 30px;">
-                <i class="fas fa-home"></i> Retour à l'accueil
+       <div class="text-center" style="margin-top: 20px; margin-bottom: 40px;">
+            <a href="index.php" class="btn-home" style="display: inline-block; padding: 12px 30px; background: linear-gradient(135deg, #27ae60, #219653); color: white; border-radius: 8px; text-decoration: none; font-weight: 600;">
+            <i class="fas fa-home"></i> Retour à l'accueil
             </a>
         </div>
     </section>
