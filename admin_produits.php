@@ -1,6 +1,6 @@
 <?php
-// admin_produits.php - CORRIGÉ avec gestion d'upload fonctionnelle et URLs d'images uniformisées
-// VERSION FINALE - CHEMINS CORRIGÉS POUR L'UPLOAD
+// admin_produits.php - Gestion complète des produits avec upload d'images
+// VERSION CORRIGÉE - Alignement des colonnes prix résolu
 
 require_once 'admin_protection.php';
 
@@ -145,12 +145,56 @@ function deleteProduct($pdo, $id) {
     return $stmt->execute(['id' => $id]);
 }
 
-function generateSlug($nom) {
+/**
+ * Génère un slug unique à partir du nom
+ * @param string $nom Le nom du produit
+ * @param PDO $pdo Connexion à la base de données
+ * @param int|null $id_exclu ID du produit à exclure (pour l'édition)
+ * @return string Slug unique
+ */
+function generateUniqueSlug($nom, $pdo, $id_exclu = null) {
+    // Slug de base
     $slug = strtolower($nom);
     $slug = preg_replace('/[^a-z0-9-]/', '-', $slug);
     $slug = preg_replace('/-+/', '-', $slug);
     $slug = trim($slug, '-');
+    
+    // Si le slug est vide, utiliser "produit"
+    if (empty($slug)) {
+        $slug = 'produit';
+    }
+    
+    $slug_original = $slug;
+    $compteur = 1;
+    
+    // Vérifier l'unicité
+    while (slugExists($pdo, $slug, $id_exclu)) {
+        $slug = $slug_original . '-' . $compteur;
+        $compteur++;
+    }
+    
     return $slug;
+}
+
+/**
+ * Vérifie si un slug existe déjà
+ * @param PDO $pdo Connexion à la base de données
+ * @param string $slug Le slug à vérifier
+ * @param int|null $id_exclu ID du produit à exclure
+ * @return bool
+ */
+function slugExists($pdo, $slug, $id_exclu = null) {
+    if ($id_exclu) {
+        $sql = "SELECT COUNT(*) FROM produits WHERE slug = :slug AND id_produit != :id_exclu";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(['slug' => $slug, 'id_exclu' => $id_exclu]);
+    } else {
+        $sql = "SELECT COUNT(*) FROM produits WHERE slug = :slug";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(['slug' => $slug]);
+    }
+    
+    return $stmt->fetchColumn() > 0;
 }
 
 function generateReference($pdo) {
@@ -163,14 +207,13 @@ function generateReference($pdo) {
 }
 
 // ============================================
-// FONCTION D'UPLOAD CORRIGÉE - VERSION FINALE AVEC URL UNIFORMISÉE
+// FONCTION D'UPLOAD
 // ============================================
 function uploadImage($file) {
-    // Configuration - CHEMINS CORRIGÉS
-    $upload_dir = '/var/www/sean/uploads/produits/';  // Chemin absolu complet
-    $upload_url = '/uploads/produits/';                // URL publique SANS /sean/
+    // Configuration
+    $upload_dir = '/var/www/sean/uploads/produits/';
+    $upload_url = '/uploads/produits/';
     
-    // Logger pour déboguer
     error_log("=== uploadImage() appelée ===");
     error_log("Dossier upload: " . $upload_dir);
     error_log("URL upload: " . $upload_url);
@@ -221,7 +264,7 @@ function uploadImage($file) {
     }
     
     // 6. Vérifier la taille (max 2MB)
-    $max_size = 2 * 1024 * 1024; // 2MB
+    $max_size = 2 * 1024 * 1024;
     if ($file["size"] > $max_size) {
         $size_mb = round($file["size"] / 1024 / 1024, 2);
         error_log("uploadImage: Fichier trop gros - " . $size_mb . "MB");
@@ -255,7 +298,6 @@ function uploadImage($file) {
         error_log("uploadImage: SUCCÈS - Fichier uploadé");
         error_log("URL: " . $upload_url . $new_filename);
         
-        // Retourner le chemin relatif pour la BDD (sans /sean/)
         return ['success' => $upload_url . $new_filename];
     } else {
         $error = error_get_last();
@@ -271,12 +313,9 @@ function uploadImage($file) {
 function cleanImageUrl($url) {
     if (empty($url)) return $url;
     
-    // Enlever les /sean/ en double ou mal placés
     $clean_url = preg_replace('#/sean/+#', '/', $url);
     
-    // S'assurer que l'URL commence par /uploads/
     if (strpos($clean_url, '/uploads/') !== 0) {
-        // Extraire juste le nom du fichier
         $filename = basename($clean_url);
         $clean_url = '/uploads/produits/' . $filename;
     }
@@ -295,10 +334,9 @@ $id = $_GET['id'] ?? 0;
 // Récupérer les catégories pour les formulaires
 $categories = getAllCategories($pdo);
 
-// CORRECTION: Nettoyer les URLs d'images existantes au chargement
+// Nettoyer les URLs d'images existantes
 if ($action == 'list' || $action == 'edit' || $action == 'view') {
     try {
-        // Nettoyer les URLs qui contiennent /sean/ en double
         $stmt = $pdo->prepare("SELECT id_image, url_image FROM images_produits WHERE url_image LIKE '%/sean/%'");
         $stmt->execute();
         $images_a_nettoyer = $stmt->fetchAll();
@@ -321,10 +359,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
         switch ($_POST['action']) {
             
-            // AJOUTER UN PRODUIT
             case 'add':
-                // Générer le slug
-                $slug = generateSlug($_POST['nom']);
+                // Générer un slug unique
+                $slug = generateUniqueSlug($_POST['nom'], $pdo);
                 
                 $data = [
                     'reference' => $_POST['reference'],
@@ -356,16 +393,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $image_uploaded = false;
                     $image_error = '';
                     
-                    // Gestion de l'upload d'image
                     if (!empty($_FILES['image']['name'])) {
                         error_log("Tentative d'upload pour nouveau produit ID: " . $lastId);
                         $upload_result = uploadImage($_FILES['image']);
                         
                         if (isset($upload_result['success'])) {
-                            // CORRECTION: Nettoyer l'URL avant insertion
                             $image_url = cleanImageUrl($upload_result['success']);
                             
-                            // Enregistrer l'image dans la table images_produits
                             $sql = "INSERT INTO images_produits (id_produit, url_image, alt_text, principale) 
                                     VALUES (:id_produit, :url_image, :alt_text, 1)";
                             $stmt = $pdo->prepare($sql);
@@ -394,21 +428,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
             
-            // MODIFIER UN PRODUIT
             case 'edit':
                 $id = intval($_POST['id_produit']);
                 
-                // Récupérer le produit existant
                 $existingProduct = getProductById($pdo, $id);
                 if (!$existingProduct) {
                     $error = 'Produit non trouvé!';
                     break;
                 }
                 
-                // Garder le même slug si le nom n'a pas changé
+                // Générer un slug unique (en excluant ce produit)
                 $slug = ($existingProduct['nom'] == $_POST['nom']) 
                     ? $existingProduct['slug'] 
-                    : generateSlug($_POST['nom']);
+                    : generateUniqueSlug($_POST['nom'], $pdo, $id);
                 
                 $data = [
                     'reference' => $_POST['reference'],
@@ -440,7 +472,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $image_uploaded = false;
                     $image_error = '';
                     
-                    // Gestion de l'upload d'image
                     if (!empty($_FILES['image']['name'])) {
                         error_log("Tentative d'upload pour produit ID: " . $id);
                         error_log("Fichier: " . print_r($_FILES['image'], true));
@@ -448,15 +479,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $upload_result = uploadImage($_FILES['image']);
                         
                         if (isset($upload_result['success'])) {
-                            // CORRECTION: Nettoyer l'URL avant insertion
                             $image_url = cleanImageUrl($upload_result['success']);
                             
-                            // Supprimer l'ancienne image principale
                             $sql = "DELETE FROM images_produits WHERE id_produit = :id_produit AND principale = 1";
                             $stmt = $pdo->prepare($sql);
                             $stmt->execute(['id_produit' => $id]);
                             
-                            // Ajouter la nouvelle image
                             $sql = "INSERT INTO images_produits (id_produit, url_image, alt_text, principale) 
                                     VALUES (:id_produit, :url_image, :alt_text, 1)";
                             $stmt = $pdo->prepare($sql);
@@ -486,7 +514,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
             
-            // SUPPRIMER UN PRODUIT
             case 'delete':
                 $id = intval($_POST['id_produit']);
                 
@@ -501,7 +528,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Traitement des actions GET
 if ($action === 'delete_confirm' && $id > 0) {
     $product = getProductById($pdo, $id);
     if (!$product) {
@@ -510,7 +536,6 @@ if ($action === 'delete_confirm' && $id > 0) {
     }
 }
 
-// Messages depuis les redirections
 if (isset($_GET['message'])) {
     switch ($_GET['message']) {
         case 'added':
@@ -534,7 +559,6 @@ if (isset($_GET['error'])) {
     }
 }
 
-// Récupérer les informations de l'admin depuis la session
 $admin_username = $_SESSION['admin_username'] ?? 'Administrateur';
 $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
 ?>
@@ -542,190 +566,659 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <title>Gestion des Produits - Heure du Cadeau</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* TOUS LES STYLES CSS ORIGINAUX SONT CONSERVÉS IDENTIQUES */
+        /* ============================================
+           STYLES RESPONSIVES OPTIMISÉS - VERSION ANTI-CLIGNOTEMENT
+           ============================================ */
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f7fa; color: #333; line-height: 1.6; }
-        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
         
-        .header { 
-            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%); 
-            color: white; 
-            padding: 25px; 
-            border-radius: 15px; 
-            margin-bottom: 30px; 
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        :root {
+            --primary-color: #6a11cb;
+            --primary-gradient: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+            --success-color: #4CAF50;
+            --warning-color: #ff9800;
+            --danger-color: #f44336;
+            --info-color: #17a2b8;
+            --dark-color: #333;
+            --light-bg: #f5f7fa;
+            --border-color: #dee2e6;
+            --shadow-sm: 0 2px 8px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 15px rgba(0,0,0,0.08);
+            --shadow-lg: 0 4px 20px rgba(0,0,0,0.1);
+            --border-radius: 10px;
+            --border-radius-sm: 6px;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--light-bg);
+            color: var(--dark-color);
+            line-height: 1.6;
+            font-size: 16px;
+            opacity: 1;
+            transition: opacity 0.2s ease;
+        }
+        
+        /* Prévention du FOUC */
+        body:not(.loaded) {
+            opacity: 1; /* Maintenir la visibilité */
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 15px;
+            will-change: transform; /* Optimisation des performances */
+        }
+        
+        /* Header responsive */
+        .header {
+            background: var(--primary-gradient);
+            color: white;
+            padding: 20px;
+            border-radius: var(--border-radius);
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-lg);
             display: flex;
-            justify-content: space-between;
+            flex-direction: column;
+            gap: 15px;
+            transform: translateZ(0); /* Accélération matérielle */
+            backface-visibility: hidden;
+        }
+        
+        .header h1 { 
+            font-size: 24px; 
+            font-weight: 600; 
+            display: flex;
             align-items: center;
-            flex-wrap: wrap;
-            gap: 20px;
-        }
-        .header h1 { font-size: 28px; font-weight: 600; }
-        
-        .role-badge { 
-            background-color: #4CAF50; 
-            color: white; 
-            padding: 8px 15px; 
-            border-radius: 20px; 
-            font-size: 14px; 
-            font-weight: 500;
-        }
-        .superadmin-badge { background-color: #f44336; }
-        
-        .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: 500; }
-        .alert-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .alert-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        
-        .nav-tabs { 
-            display: flex; 
-            background-color: white; 
-            border-radius: 10px; 
-            overflow: hidden; 
-            margin-bottom: 30px; 
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-        }
-        .nav-tabs a { 
-            padding: 18px 25px; 
-            text-decoration: none; 
-            color: #555; 
-            font-weight: 500; 
-            border-bottom: 3px solid transparent; 
-            transition: all 0.3s ease; 
-            display: flex; 
-            align-items: center; 
             gap: 10px;
         }
-        .nav-tabs a:hover { background-color: #f8f9fa; color: #6a11cb; }
-        .nav-tabs a.active { color: #6a11cb; border-bottom-color: #6a11cb; background-color: #f0f8ff; }
         
-        .btn { 
-            padding: 10px 20px; 
-            border: none; 
-            border-radius: 6px; 
-            cursor: pointer; 
-            font-weight: 500; 
-            font-size: 14px; 
-            transition: all 0.3s ease; 
-            display: inline-flex; 
-            align-items: center; 
-            gap: 8px; 
+        .role-badge {
+            background-color: var(--success-color);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            width: fit-content;
+        }
+        
+        .superadmin-badge { background-color: var(--danger-color); }
+        
+        /* Navigation responsive */
+        .nav-tabs {
+            display: flex;
+            background-color: white;
+            border-radius: var(--border-radius);
+            overflow-x: auto;
+            overflow-y: hidden;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-sm);
+            flex-wrap: nowrap;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+            transform: translateZ(0);
+        }
+        
+        .nav-tabs::-webkit-scrollbar {
+            height: 4px;
+        }
+        
+        .nav-tabs::-webkit-scrollbar-thumb {
+            background-color: #ccc;
+            border-radius: 4px;
+        }
+        
+        .nav-tabs a {
+            padding: 15px 20px;
             text-decoration: none;
+            color: #555;
+            font-weight: 500;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+            font-size: 14px;
         }
-        .btn-primary { background-color: #6a11cb; color: white; }
-        .btn-primary:hover { background-color: #5a0cb3; }
-        .btn-success { background-color: #4CAF50; color: white; }
-        .btn-warning { background-color: #ff9800; color: white; }
-        .btn-danger { background-color: #f44336; color: white; }
-        .btn-secondary { background-color: #6c757d; color: white; }
         
-        .table-container { 
-            background-color: white; 
-            border-radius: 10px; 
-            overflow: hidden; 
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08); 
-            margin-bottom: 30px;
-        }
-        .table-header { 
+        .nav-tabs a:hover { 
             background-color: #f8f9fa; 
-            padding: 20px; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
+            color: var(--primary-color); 
+        }
+        
+        .nav-tabs a.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+            background-color: #f0f8ff;
+        }
+        
+        /* Alertes */
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            word-break: break-word;
+            transform: translateZ(0);
+        }
+        
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .alert-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        /* Boutons */
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 15px;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-decoration: none;
+            width: 100%;
+            text-align: center;
+            transform: translateZ(0);
+        }
+        
+        .btn-sm { 
+            padding: 8px 12px; 
+            font-size: 14px; 
+        }
+        
+        .btn-primary { background-color: var(--primary-color); color: white; }
+        .btn-primary:hover { background-color: #5a0cb3; }
+        .btn-success { background-color: var(--success-color); color: white; }
+        .btn-warning { background-color: var(--warning-color); color: white; }
+        .btn-danger { background-color: var(--danger-color); color: white; }
+        .btn-secondary { background-color: #6c757d; color: white; }
+        .btn-info { background-color: var(--info-color); color: white; }
+        
+        /* Table responsive */
+        .table-container {
+            background: white;
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            box-shadow: var(--shadow-md);
+            margin-bottom: 20px;
+            transform: translateZ(0);
+        }
+        
+        .table-header {
+            background-color: #f8f9fa;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
             border-bottom: 1px solid #eee;
         }
-        table { width: 100%; border-collapse: collapse; }
-        th { 
-            background-color: #f1f5fd; 
-            padding: 16px 15px; 
-            text-align: left; 
-            font-weight: 600; 
-            color: #2c3e50; 
-            border-bottom: 2px solid #dee2e6;
+        
+        .table-responsive {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
-        td { padding: 16px 15px; border-bottom: 1px solid #eee; vertical-align: middle; }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1000px;
+        }
+        
+        th {
+            background-color: #f1f5fd;
+            padding: 12px 10px;
+            text-align: left;
+            font-weight: 600;
+            color: #2c3e50;
+            border-bottom: 2px solid var(--border-color);
+            white-space: nowrap;
+            font-size: 14px;
+        }
+        
+        td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #eee;
+            vertical-align: middle;
+            font-size: 14px;
+        }
+        
         tr:hover { background-color: #f9f9f9; }
         
+        /* Optimisation des images pour éviter le clignotement */
         .product-image { 
-            width: 60px; 
-            height: 60px; 
+            width: 50px; 
+            height: 50px; 
             object-fit: cover; 
-            border-radius: 8px; 
+            border-radius: 6px; 
             border: 1px solid #ddd;
+            background-color: #f5f5f5; /* Couleur de fond pendant le chargement */
+            display: block;
+            opacity: 1;
+            transition: opacity 0.2s ease;
+            aspect-ratio: 1/1; /* Maintient les proportions */
         }
         
-        .price { font-weight: 600; color: #2e7d32; }
+        .product-image.loading {
+            opacity: 0.7;
+        }
+        
+        .price { 
+            font-weight: 600; 
+            color: #2e7d32; 
+            white-space: nowrap;
+        }
+        
         .quantity { 
             display: inline-block; 
-            padding: 5px 12px; 
+            padding: 4px 8px; 
             border-radius: 20px; 
-            font-size: 13px; 
+            font-size: 12px; 
             font-weight: 500;
+            white-space: nowrap;
         }
+        
         .quantity-low { background-color: #ffebee; color: #c62828; }
         .quantity-medium { background-color: #fff8e1; color: #f57c00; }
         .quantity-high { background-color: #e8f5e9; color: #2e7d32; }
         
-        .actions { display: flex; gap: 8px; }
+        .actions {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
         
-        .form-container { 
-            background-color: white; 
-            border-radius: 10px; 
-            padding: 30px; 
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            font-size: 11px;
+            border-radius: 4px;
+            color: white;
+            white-space: nowrap;
         }
-        .form-group { margin-bottom: 20px; }
-        .form-group label { 
-            display: block; 
-            margin-bottom: 8px; 
-            font-weight: 500; 
+        
+        /* Formulaires */
+        .form-container {
+            background-color: white;
+            border-radius: var(--border-radius);
+            padding: 20px;
+            box-shadow: var(--shadow-md);
+            transform: translateZ(0);
+        }
+        
+        .form-group { margin-bottom: 15px; }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
             color: #444;
+            font-size: 15px;
         }
-        .form-control { 
-            width: 100%; 
-            padding: 12px 15px; 
-            border: 1px solid #ddd; 
-            border-radius: 6px; 
-            font-size: 16px; 
+        
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: var(--border-radius-sm);
+            font-size: 16px;
             transition: border-color 0.3s;
         }
-        .form-control:focus { 
-            outline: none; 
-            border-color: #6a11cb; 
+        
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(106, 17, 203, 0.1);
         }
-        textarea.form-control { min-height: 120px; resize: vertical; }
         
-        .modal { 
-            display: none; 
-            position: fixed; 
-            top: 0; 
-            left: 0; 
-            width: 100%; 
-            height: 100%; 
-            background-color: rgba(0, 0, 0, 0.5); 
-            z-index: 1000; 
-            align-items: center; 
+        textarea.form-control { min-height: 100px; resize: vertical; }
+        
+        /* Grilles de formulaires */
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .form-row-2 {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .form-row-3 {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .form-row-4 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 5px;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            min-width: 120px;
+        }
+        
+        .checkbox-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+        }
+        
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
             justify-content: center;
-        }
-        .modal-content { 
-            background-color: white; 
-            border-radius: 10px; 
-            padding: 30px; 
-            max-width: 500px; 
-            width: 90%; 
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
         }
         
-        @media (max-width: 768px) {
-            .header { flex-direction: column; text-align: center; }
-            .nav-tabs { flex-wrap: wrap; }
-            .nav-tabs a { flex: 1; min-width: 140px; justify-content: center; }
-            .table-header { flex-direction: column; gap: 15px; align-items: flex-start; }
-            .actions { flex-direction: column; }
+        .modal.show {
+            display: flex;
+            opacity: 1;
+        }
+        
+        .modal-content {
+            background-color: white;
+            border-radius: var(--border-radius);
+            padding: 20px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+            transform: translateZ(0);
+        }
+        
+        .modal-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .modal-actions form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+        }
+        
+        /* Stats cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transform: translateZ(0);
+        }
+        
+        .stat-card h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+        }
+        
+        .stat-blue { border-left-color: #2196F3; }
+        .stat-green { border-left-color: #4CAF50; }
+        .stat-orange { border-left-color: #FF9800; }
+        .stat-red { border-left-color: #F44336; }
+        
+        /* Images grid dans détail */
+        .images-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .image-item {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 5px;
+        }
+        
+        .image-item.principale {
+            border-color: #4CAF50;
+        }
+        
+        .image-item img {
+            width: 100%;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 4px;
+            background-color: #f5f5f5;
+        }
+        
+        /* Info rows dans détail */
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .info-table th {
+            width: 150px;
+            background: #f8f9fa;
+            padding: 10px;
+            text-align: left;
+            font-weight: 600;
+        }
+        
+        .info-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        /* Classes utilitaires */
+        .text-center { text-align: center; }
+        .mt-2 { margin-top: 10px; }
+        .mt-3 { margin-top: 15px; }
+        .mt-4 { margin-top: 20px; }
+        .mb-2 { margin-bottom: 10px; }
+        .mb-3 { margin-bottom: 15px; }
+        .mb-4 { margin-bottom: 20px; }
+        .hide-mobile { display: none; }
+        .show-mobile { display: inline; }
+        
+        /* Info note */
+        .info-note {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            border-left: 4px solid #ffeeba;
+            word-break: break-word;
+        }
+        
+        /* Tags caractéristiques */
+        .special-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .special-tag {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        
+        /* Loader placeholder pour images */
+        .image-placeholder {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+        }
+        
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        
+        /* ============================================
+           MEDIA QUERIES - CORRIGÉES
+           ============================================ */
+        @media (min-width: 480px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (min-width: 768px) {
+            .container { padding: 20px; }
+            
+            .header {
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+                padding: 25px;
+            }
+            
+            .header h1 { font-size: 28px; }
+            
+            .nav-tabs a {
+                padding: 18px 25px;
+                font-size: 16px;
+            }
+            
+            .btn {
+                width: auto;
+                padding: 10px 20px;
+            }
+            
+            .product-image { 
+                width: 60px; 
+                height: 60px; 
+            }
+            
+            .table-header {
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+                padding: 20px;
+            }
+            
+            .form-container {
+                padding: 30px;
+            }
+            
+            .form-row { grid-template-columns: 2fr 1fr; }
+            .form-row-2 { grid-template-columns: repeat(2, 1fr); }
+            .form-row-3 { grid-template-columns: repeat(3, 1fr); }
+            .form-row-4 { grid-template-columns: repeat(4, 1fr); }
+            
+            .modal-content { padding: 30px; }
+            
+            .modal-actions {
+                flex-direction: row;
+                justify-content: flex-end;
+            }
+            
+            .modal-actions form {
+                flex-direction: row;
+                justify-content: flex-end;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+            
+            .hide-mobile { display: inline; }
+            .show-mobile { display: none; }
+            
+            .images-grid {
+                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            }
+            
+            .info-table th {
+                width: 150px;
+            }
+        }
+        
+        @media (min-width: 1024px) {
+            .stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            }
+        }
+        
+        @media (max-width: 767px) {
+            .info-table th {
+                width: 120px;
+                font-size: 14px;
+            }
+            
+            .info-table td {
+                font-size: 14px;
+            }
+            
+            .detail-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -745,16 +1238,16 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         <!-- Navigation -->
         <div class="nav-tabs">
             <a href="dashboard.php">
-                <i class="fas fa-arrow-left"></i> Retour Dashboard
+                <i class="fas fa-arrow-left"></i> <span class="hide-mobile">Retour Dashboard</span>
             </a>
             <a href="admin_produits.php?action=list" class="<?php echo $action == 'list' ? 'active' : ''; ?>">
-                <i class="fas fa-list"></i> Liste des produits
+                <i class="fas fa-list"></i> <span>Liste</span>
             </a>
             <a href="admin_produits.php?action=add" class="<?php echo $action == 'add' ? 'active' : ''; ?>">
-                <i class="fas fa-plus-circle"></i> Ajouter un produit
+                <i class="fas fa-plus-circle"></i> <span>Ajouter</span>
             </a>
             <a href="admin_produits.php?action=stats" class="<?php echo $action == 'stats' ? 'active' : ''; ?>">
-                <i class="fas fa-chart-bar"></i> Statistiques
+                <i class="fas fa-chart-bar"></i> <span>Stats</span>
             </a>
         </div>
         
@@ -788,86 +1281,57 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                 </div>
                 
                 <?php if ($totalProducts > 0): ?>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Image</th>
-                                <th>Référence</th>
-                                <th>Nom</th>
-                                <th>Catégorie</th>
-                                <th>Prix HT</th>
-                                <th>Prix TTC</th>
-                                <th>Stock</th>
-                                <th>Statut</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($products as $product): 
-                                // CORRECTION: Récupérer l'image du produit de manière robuste
-                                $stmt = $pdo->prepare("
-                                    SELECT url_image FROM images_produits 
-                                    WHERE id_produit = ? 
-                                    ORDER BY principale DESC, ordre ASC, id_image ASC 
-                                    LIMIT 1
-                                ");
-                                $stmt->execute([$product['id_produit']]);
-                                $image = $stmt->fetch();
-                                
-                                if ($image && !empty($image['url_image'])) {
-                                    $image_url = $image['url_image'];
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Image</th>
+                                    <th>Réf.</th>
+                                    <th>Nom</th>
+                                    <th class="hide-mobile">Catégorie</th>
+                                    <th>Prix HT</th>
+                                    <th class="hide-mobile">Prix TTC</th>
+                                    <th>Stock</th>
+                                    <th>Statut</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($products as $product): 
+                                    $stmt = $pdo->prepare("
+                                        SELECT url_image FROM images_produits 
+                                        WHERE id_produit = ? 
+                                        ORDER BY principale DESC, ordre ASC, id_image ASC 
+                                        LIMIT 1
+                                    ");
+                                    $stmt->execute([$product['id_produit']]);
+                                    $image = $stmt->fetch();
                                     
-                                    // Vérification silencieuse que le fichier existe (optionnel)
-                                    $full_path = $_SERVER['DOCUMENT_ROOT'] . $image_url;
-                                    if (!file_exists($full_path)) {
-                                        error_log("Admin: Image manquante pour produit {$product['id_produit']}: $full_path");
+                                    if ($image && !empty($image['url_image'])) {
+                                        $image_url = $image['url_image'];
+                                    } else {
+                                        $image_url = 'https://via.placeholder.com/60x60?text=+';
                                     }
-                                } else {
-                                    $image_url = 'https://via.placeholder.com/60x60?text=+';
-                                }
-                                
-                                // Calcul du prix TTC
-                                $prix_ttc = $product['prix_ht'] * (1 + ($product['tva'] / 100));
-                                
-                                // Déterminer la classe pour la quantité
-                                $quantityClass = 'quantity-high';
-                                if ($product['quantite_stock'] == 0) {
-                                    $quantityClass = 'quantity-low';
-                                    $stockStatus = 'Rupture';
-                                } elseif ($product['quantite_stock'] <= $product['seuil_alerte']) {
-                                    $quantityClass = 'quantity-medium';
-                                    $stockStatus = 'Faible';
-                                } else {
-                                    $stockStatus = 'OK';
-                                }
-                            ?>
-                            <tr>
-                                <td>#<?php echo $product['id_produit']; ?></td>
-                                <td>
-                                    <img src="<?php echo htmlspecialchars($image_url); ?>" 
-                                         alt="<?php echo htmlspecialchars($product['nom']); ?>"
-                                         class="product-image"
-                                         onerror="this.src='https://via.placeholder.com/60x60?text=+'">
-                                </td>
-                                <td><strong><?php echo htmlspecialchars($product['reference']); ?></strong></td>
-                                <td><?php echo htmlspecialchars($product['nom']); ?></td>
-                                <td><?php echo htmlspecialchars($product['categorie_nom'] ?? 'Non catégorisé'); ?></td>
-                                <td class="price"><?php echo number_format($product['prix_ht'], 2, ',', ' '); ?> €</td>
-                                <td class="price"><?php echo number_format($prix_ttc, 2, ',', ' '); ?> €</td>
-                                <td>
-                                    <span class="quantity <?php echo $quantityClass; ?>">
-                                        <?php echo $product['quantite_stock']; ?> unités
-                                        <small>(<?php echo $stockStatus; ?>)</small>
-                                    </span>
-                                </td>
-                                <td>
-                                    <?php 
+                                    
+                                    $prix_ttc = $product['prix_ht'] * (1 + ($product['tva'] / 100));
+                                    
+                                    $quantityClass = 'quantity-high';
+                                    if ($product['quantite_stock'] == 0) {
+                                        $quantityClass = 'quantity-low';
+                                        $stockStatus = 'Rupture';
+                                    } elseif ($product['quantite_stock'] <= $product['seuil_alerte']) {
+                                        $quantityClass = 'quantity-medium';
+                                        $stockStatus = 'Faible';
+                                    } else {
+                                        $stockStatus = 'OK';
+                                    }
+                                    
                                     $statusColors = [
-                                        'actif' => 'success',
-                                        'inactif' => 'secondary',
-                                        'rupture' => 'danger',
-                                        'bientot' => 'warning'
+                                        'actif' => '#4CAF50',
+                                        'inactif' => '#6c757d',
+                                        'rupture' => '#f44336',
+                                        'bientot' => '#ff9800'
                                     ];
                                     $statusText = [
                                         'actif' => 'Actif',
@@ -876,38 +1340,63 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                                         'bientot' => 'Bientôt'
                                     ];
                                     $status = $product['statut'] ?? 'actif';
-                                    $color = $statusColors[$status] ?? 'secondary';
-                                    ?>
-                                    <span style="display: inline-block; padding: 4px 10px; font-size: 12px; border-radius: 4px; background-color: <?php 
-                                        echo $color === 'success' ? '#4CAF50' : 
-                                              ($color === 'secondary' ? '#6c757d' : 
-                                              ($color === 'danger' ? '#f44336' : '#ff9800'));
-                                    ?>; color: white;">
-                                        <?php echo $statusText[$status] ?? $status; ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <div class="actions">
-                                        <a href="admin_produits.php?action=edit&id=<?php echo $product['id_produit']; ?>" 
-                                           class="btn btn-warning btn-sm">
-                                            <i class="fas fa-edit"></i> Modifier
-                                        </a>
-                                        <button onclick="confirmDelete(<?php echo $product['id_produit']; ?>, '<?php echo addslashes($product['nom']); ?>')" 
-                                                class="btn btn-danger btn-sm">
-                                            <i class="fas fa-trash"></i> Supprimer
-                                        </button>
-                                        <a href="admin_produits.php?action=view&id=<?php echo $product['id_produit']; ?>" 
-                                           class="btn btn-secondary btn-sm">
-                                            <i class="fas fa-eye"></i> Voir
-                                        </a>
-                                    </div>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
+                                    $color = $statusColors[$status] ?? '#6c757d';
+                                ?>
+                                <tr>
+                                    <td>#<?php echo $product['id_produit']; ?></td>
+                                    <td>
+                                        <img src="<?php echo htmlspecialchars($image_url); ?>" 
+                                             alt="<?php echo htmlspecialchars($product['nom']); ?>"
+                                             class="product-image"
+                                             loading="lazy"
+                                             decoding="async"
+                                             onload="this.classList.remove('loading')"
+                                             onerror="this.onerror=null; this.src='https://via.placeholder.com/60x60?text=+'; this.classList.remove('loading')">
+                                    </td>
+                                    <td><strong><?php echo htmlspecialchars($product['reference']); ?></strong></td>
+                                    <td>
+                                        <?php echo htmlspecialchars($product['nom']); ?>
+                                        <div class="show-mobile" style="font-size: 12px; color: #666;">
+                                            <?php echo htmlspecialchars($product['categorie_nom'] ?? 'Non catégorisé'); ?>
+                                        </div>
+                                    </td>
+                                    <td class="hide-mobile"><?php echo htmlspecialchars($product['categorie_nom'] ?? 'Non catégorisé'); ?></td>
+                                    <td class="price"><?php echo number_format($product['prix_ht'], 0); ?> €</td>
+                                    <td class="price hide-mobile"><?php echo number_format($prix_ttc, 0); ?> €</td>
+                                    <td>
+                                        <span class="quantity <?php echo $quantityClass; ?>">
+                                            <?php echo $product['quantite_stock']; ?>
+                                            <span class="hide-mobile"> (<?php echo $stockStatus; ?>)</span>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="status-badge" style="background-color: <?php echo $color; ?>;">
+                                            <?php echo $statusText[$status] ?? $status; ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="actions">
+                                            <a href="admin_produits.php?action=view&id=<?php echo $product['id_produit']; ?>" 
+                                               class="btn btn-info btn-sm" title="Voir">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            <a href="admin_produits.php?action=edit&id=<?php echo $product['id_produit']; ?>" 
+                                               class="btn btn-warning btn-sm" title="Modifier">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <button onclick="confirmDelete(<?php echo $product['id_produit']; ?>, '<?php echo addslashes($product['nom']); ?>')" 
+                                                    class="btn btn-danger btn-sm" title="Supprimer">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 <?php else: ?>
-                    <div style="text-align: center; padding: 40px;">
+                    <div class="text-center" style="padding: 40px;">
                         <i class="fas fa-box-open" style="font-size: 60px; color: #ccc; margin-bottom: 20px;"></i>
                         <h3 style="color: #777; margin-bottom: 10px;">Aucun produit trouvé</h3>
                         <p style="color: #999; margin-bottom: 30px;">Commencez par ajouter votre premier produit.</p>
@@ -930,7 +1419,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                     exit();
                 }
                 
-                // Récupérer l'image actuelle
                 $stmt = $pdo->prepare("
                     SELECT url_image FROM images_produits 
                     WHERE id_produit = ? 
@@ -941,12 +1429,11 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                 $current_image = $stmt->fetch();
             }
             
-            // Valeurs par défaut pour l'ajout
             $defaultReference = $action == 'add' ? generateReference($pdo) : ($product['reference'] ?? '');
             ?>
             
             <div class="form-container">
-                <h2 style="margin-bottom: 25px; color: #333; display: flex; align-items: center; gap: 10px;">
+                <h2 style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                     <i class="fas <?php echo $action == 'add' ? 'fa-plus-circle' : 'fa-edit'; ?>"></i>
                     <?php echo $action == 'add' ? 'Ajouter un nouveau produit' : 'Modifier le produit #' . $product['id_produit']; ?>
                 </h2>
@@ -957,13 +1444,13 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         <input type="hidden" name="id_produit" value="<?php echo $product['id_produit']; ?>">
                     <?php endif; ?>
                     
-                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <div class="form-row">
                         <div class="form-group">
                             <label for="nom"><i class="fas fa-tag"></i> Nom du produit *</label>
                             <input type="text" id="nom" name="nom" class="form-control" 
                                    value="<?php echo htmlspecialchars($product['nom'] ?? ''); ?>" required
-                                   oninput="document.getElementById('slug-preview').textContent = 'Slug : ' + generateSlug(this.value)">
-                            <small id="slug-preview" style="color: #666; margin-top: 5px;">
+                                   oninput="updateSlug(this.value)">
+                            <small id="slug-preview" style="color: #666; margin-top: 5px; display: block; word-break: break-word;">
                                 Slug : <?php echo $product['slug'] ?? ''; ?>
                             </small>
                         </div>
@@ -975,7 +1462,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         </div>
                     </div>
                     
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <div class="form-row-2">
                         <div class="form-group">
                             <label for="description_courte"><i class="fas fa-align-left"></i> Description courte</label>
                             <textarea id="description_courte" name="description_courte" class="form-control" rows="3"><?php echo htmlspecialchars($product['description_courte'] ?? ''); ?></textarea>
@@ -987,7 +1474,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         </div>
                     </div>
                     
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <div class="form-row-3">
                         <div class="form-group">
                             <label for="prix_ht"><i class="fas fa-euro-sign"></i> Prix HT (€) *</label>
                             <input type="number" id="prix_ht" name="prix_ht" class="form-control" 
@@ -1014,7 +1501,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         </div>
                     </div>
                     
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <div class="form-row-2">
                         <div class="form-group">
                             <label for="quantite_stock"><i class="fas fa-cubes"></i> Quantité en stock *</label>
                             <input type="number" id="quantite_stock" name="quantite_stock" class="form-control" 
@@ -1028,7 +1515,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         </div>
                     </div>
                     
-                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px;">
+                    <div class="form-row-4">
                         <div class="form-group">
                             <label for="marque"><i class="fas fa-trademark"></i> Marque</label>
                             <input type="text" id="marque" name="marque" class="form-control" 
@@ -1069,28 +1556,28 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                     <!-- Caractéristiques spéciales -->
                     <div class="form-group">
                         <label><i class="fas fa-star"></i> Caractéristiques spéciales</label>
-                        <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;">
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                        <div class="checkbox-group">
+                            <div class="checkbox-item">
                                 <input type="checkbox" id="personnalisable" name="personnalisable" 
                                        value="1" <?php echo (isset($product['personnalisable']) && $product['personnalisable'] == 1) ? 'checked' : ''; ?>>
                                 <label for="personnalisable">Personnalisable</label>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="checkbox-item">
                                 <input type="checkbox" id="ecologique" name="ecologique" 
                                        value="1" <?php echo (isset($product['ecologique']) && $product['ecologique'] == 1) ? 'checked' : ''; ?>>
                                 <label for="ecologique">Écologique</label>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="checkbox-item">
                                 <input type="checkbox" id="made_in_france" name="made_in_france" 
                                        value="1" <?php echo (isset($product['made_in_france']) && $product['made_in_france'] == 1) ? 'checked' : ''; ?>>
                                 <label for="made_in_france">Made in France</label>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="checkbox-item">
                                 <input type="checkbox" id="artisanal" name="artisanal" 
                                        value="1" <?php echo (isset($product['artisanal']) && $product['artisanal'] == 1) ? 'checked' : ''; ?>>
                                 <label for="artisanal">Artisanal</label>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="checkbox-item">
                                 <input type="checkbox" id="exclusif" name="exclusif" 
                                        value="1" <?php echo (isset($product['exclusif']) && $product['exclusif'] == 1) ? 'checked' : ''; ?>>
                                 <label for="exclusif">Exclusif</label>
@@ -1098,7 +1585,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         </div>
                     </div>
                     
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <div class="form-row-2">
                         <div class="form-group">
                             <label for="statut"><i class="fas fa-toggle-on"></i> Statut *</label>
                             <select id="statut" name="statut" class="form-control" required>
@@ -1114,27 +1601,28 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                             <input type="file" id="image" name="image" class="form-control" accept="image/jpeg,image/png,image/gif,image/webp">
                             
                             <?php if ($action == 'edit' && !empty($current_image)): ?>
-                                <div style="margin-top: 10px; display: flex; align-items: center; gap: 15px;">
+                                <div style="margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 15px;">
                                     <img src="<?php echo htmlspecialchars($current_image['url_image']); ?>" 
                                          alt="Image actuelle" 
-                                         style="max-width: 100px; max-height: 100px; border-radius: 8px; border: 1px solid #ddd;">
+                                         style="max-width: 80px; max-height: 80px; border-radius: 8px; border: 1px solid #ddd;"
+                                         loading="lazy"
+                                         decoding="async">
                                     <small style="color: #666;">Image actuelle - Laissez vide pour conserver</small>
                                 </div>
                             <?php else: ?>
                                 <small style="color: #666;">Laissez vide pour ne pas ajouter d'image</small>
                             <?php endif; ?>
                             
-                            <small style="display: block; color: #999; margin-top: 5px;">Formats acceptés : JPG, PNG, GIF, WebP (max 2MB)</small>
+                            <small style="display: block; color: #999; margin-top: 5px;">Formats : JPG, PNG, GIF, WebP (max 2MB)</small>
                         </div>
                     </div>
                     
-                    <!-- Note sur l'upload d'images -->
-                    <div style="background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; margin-bottom: 20px; font-size: 14px; border-left: 4px solid #ffeeba;">
-                        <strong><i class="fas fa-info-circle"></i> Note sur l'upload d'images :</strong>
-                        <p style="margin-top: 5px;">Les images seront stockées dans <code>/var/www/sean/uploads/produits/</code> et accessibles via <code>/uploads/produits/</code></p>
+                    <div class="info-note">
+                        <strong><i class="fas fa-info-circle"></i> Note :</strong>
+                        <p style="margin-top: 5px;">Les images seront stockées dans <code>/uploads/produits/</code></p>
                     </div>
                     
-                    <div style="display: flex; gap: 15px; margin-top: 30px;">
+                    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px;">
                         <button type="submit" class="btn btn-success">
                             <i class="fas fa-save"></i> <?php echo $action == 'add' ? 'Ajouter le produit' : 'Mettre à jour'; ?>
                         </button>
@@ -1146,64 +1634,59 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             </div>
             
         <?php elseif ($action == 'stats'): ?>
-            <!-- STATISTIQUES (inchangées) -->
+            <!-- STATISTIQUES -->
             <div class="form-container">
-                <h2 style="margin-bottom: 25px; color: #333; display: flex; align-items: center; gap: 10px;">
+                <h2 style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
                     <i class="fas fa-chart-bar"></i> Statistiques produits
                 </h2>
                 
                 <?php 
                 try {
-                    // Nombre total de produits
                     $sql = "SELECT COUNT(*) as total FROM produits";
                     $stmt = $pdo->query($sql);
                     $total = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
                     
-                    // Produits par statut
                     $sql = "SELECT statut, COUNT(*) as count FROM produits GROUP BY statut";
                     $stmt = $pdo->query($sql);
                     $statuts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     
-                    // Produits en alerte
                     $sql = "SELECT COUNT(*) as alertes FROM produits WHERE quantite_stock <= seuil_alerte AND statut = 'actif'";
                     $stmt = $pdo->query($sql);
                     $alertes = $stmt->fetch(PDO::FETCH_ASSOC)['alertes'];
                     
-                    // Produits en rupture
                     $sql = "SELECT COUNT(*) as rupture FROM produits WHERE quantite_stock = 0 AND statut = 'actif'";
                     $stmt = $pdo->query($sql);
                     $rupture = $stmt->fetch(PDO::FETCH_ASSOC)['rupture'];
                     
-                    // Valeur totale du stock
                     $sql = "SELECT SUM(prix_ht * quantite_stock * (1 + tva/100)) as valeur FROM produits WHERE statut = 'actif'";
                     $stmt = $pdo->query($sql);
                     $valeur = $stmt->fetch(PDO::FETCH_ASSOC)['valeur'];
                 ?>
                 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
-                    <div style="background-color: white; padding: 20px; border-radius: 8px; border-left: 4px solid #2196F3; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                        <h3 style="color: #2196F3; margin-bottom: 10px;">Total produits</h3>
-                        <p style="font-size: 32px; font-weight: 700;"><?php echo $total; ?></p>
+                <div class="stats-grid">
+                    <div class="stat-card stat-blue">
+                        <h3>Total produits</h3>
+                        <div class="stat-value"><?php echo $total; ?></div>
                     </div>
                     
-                    <div style="background-color: white; padding: 20px; border-radius: 8px; border-left: 4px solid #4CAF50; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                        <h3 style="color: #4CAF50; margin-bottom: 10px;">Valeur stock</h3>
-                        <p style="font-size: 32px; font-weight: 700;"><?php echo number_format($valeur ?? 0, 2, ',', ' '); ?> €</p>
+                    <div class="stat-card stat-green">
+                        <h3>Valeur stock</h3>
+                        <div class="stat-value"><?php echo number_format($valeur ?? 0, 0); ?> €</div>
                     </div>
                     
-                    <div style="background-color: white; padding: 20px; border-radius: 8px; border-left: 4px solid #FF9800; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                        <h3 style="color: #FF9800; margin-bottom: 10px;">Alertes stock</h3>
-                        <p style="font-size: 32px; font-weight: 700;"><?php echo $alertes; ?></p>
+                    <div class="stat-card stat-orange">
+                        <h3>Alertes stock</h3>
+                        <div class="stat-value"><?php echo $alertes; ?></div>
                     </div>
                     
-                    <div style="background-color: white; padding: 20px; border-radius: 8px; border-left: 4px solid #F44336; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                        <h3 style="color: #F44336; margin-bottom: 10px;">Ruptures</h3>
-                        <p style="font-size: 32px; font-weight: 700;"><?php echo $rupture; ?></p>
+                    <div class="stat-card stat-red">
+                        <h3>Ruptures</h3>
+                        <div class="stat-value"><?php echo $rupture; ?></div>
                     </div>
                 </div>
                 
-                <div style="background-color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                    <h3 style="margin-bottom: 20px; color: #333;">Répartition par statut</h3>
+                <div style="background-color: white; padding: 20px; border-radius: 8px;">
+                    <h3 style="margin-bottom: 20px;">Répartition par statut</h3>
                     <?php foreach ($statuts as $stat): ?>
                         <?php 
                         $percentage = $total > 0 ? ($stat['count'] / $total) * 100 : 0;
@@ -1216,14 +1699,14 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         $color = $colors[$stat['statut']] ?? '#333';
                         ?>
                         <div style="margin-bottom: 15px;">
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px; flex-wrap: wrap; gap: 5px;">
                                 <span style="font-weight: 600; color: <?php echo $color; ?>">
                                     <?php echo ucfirst($stat['statut']); ?>
                                 </span>
                                 <span><?php echo $stat['count']; ?> (<?php echo number_format($percentage, 1); ?>%)</span>
                             </div>
                             <div style="height: 8px; background-color: #eee; border-radius: 4px; overflow: hidden;">
-                                <div style="height: 100%; width: <?php echo $percentage; ?>%; background-color: <?php echo $color; ?>; border-radius: 4px;"></div>
+                                <div style="height: 100%; width: <?php echo $percentage; ?>%; background-color: <?php echo $color; ?>;"></div>
                             </div>
                         </div>
                     <?php endforeach; ?>
@@ -1246,38 +1729,40 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                 exit();
             }
             
-            // Récupérer toutes les images du produit
             $stmt = $pdo->prepare("SELECT * FROM images_produits WHERE id_produit = ? ORDER BY principale DESC, ordre ASC");
             $stmt->execute([$id]);
             $images = $stmt->fetchAll();
             ?>
             
             <div class="form-container">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
-                    <h2 style="color: #333; display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-eye"></i> Détail du produit #<?php echo $product['id_produit']; ?>
-                    </h2>
-                    <div>
-                        <a href="admin_produits.php?action=edit&id=<?php echo $id; ?>" class="btn btn-warning">
-                            <i class="fas fa-edit"></i> Modifier
-                        </a>
-                        <a href="admin_produits.php?action=list" class="btn btn-secondary">
-                            <i class="fas fa-arrow-left"></i> Retour
-                        </a>
+                <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                        <h2 style="display: flex; align-items: center; gap: 10px;">
+                            <i class="fas fa-eye"></i> Détail du produit #<?php echo $product['id_produit']; ?>
+                        </h2>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <a href="admin_produits.php?action=edit&id=<?php echo $id; ?>" class="btn btn-warning">
+                                <i class="fas fa-edit"></i> Modifier
+                            </a>
+                            <a href="admin_produits.php?action=list" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Retour
+                            </a>
+                        </div>
                     </div>
                 </div>
                 
-                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 30px;">
+                <div class="detail-grid" style="display: grid; grid-template-columns: 1fr; gap: 20px;">
                     <!-- Colonne images -->
                     <div>
                         <h3 style="margin-bottom: 15px;">Images</h3>
                         <?php if (!empty($images)): ?>
-                            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 15px;">
+                            <div class="images-grid">
                                 <?php foreach ($images as $img): ?>
-                                    <div style="border: 2px solid <?php echo $img['principale'] ? '#4CAF50' : '#ddd'; ?>; border-radius: 8px; padding: 5px;">
+                                    <div class="image-item <?php echo $img['principale'] ? 'principale' : ''; ?>">
                                         <img src="<?php echo htmlspecialchars($img['url_image']); ?>" 
                                              alt="<?php echo htmlspecialchars($img['alt_text']); ?>"
-                                             style="width: 100%; height: 100px; object-fit: cover; border-radius: 4px;">
+                                             loading="lazy"
+                                             decoding="async">
                                         <?php if ($img['principale']): ?>
                                             <small style="display: block; text-align: center; color: #4CAF50; margin-top: 5px;">
                                                 <i class="fas fa-star"></i> Principale
@@ -1287,7 +1772,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                                 <?php endforeach; ?>
                             </div>
                         <?php else: ?>
-                            <div style="text-align: center; padding: 30px; background: #f8f9fa; border-radius: 8px;">
+                            <div class="text-center" style="padding: 30px; background: #f8f9fa; border-radius: 8px;">
                                 <i class="fas fa-image" style="font-size: 48px; color: #ccc; margin-bottom: 15px;"></i>
                                 <p>Aucune image pour ce produit</p>
                             </div>
@@ -1296,45 +1781,45 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                     
                     <!-- Colonne informations -->
                     <div>
-                        <table style="width: 100%; border-collapse: collapse;">
+                        <table class="info-table">
                             <tr>
-                                <th style="width: 200px; background: #f8f9fa; padding: 12px;">Référence</th>
-                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><?php echo htmlspecialchars($product['reference']); ?></td>
+                                <th>Référence</th>
+                                <td><?php echo htmlspecialchars($product['reference']); ?></td>
                             </tr>
                             <tr>
-                                <th style="background: #f8f9fa; padding: 12px;">Nom</th>
-                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><?php echo htmlspecialchars($product['nom']); ?></td>
+                                <th>Nom</th>
+                                <td><?php echo htmlspecialchars($product['nom']); ?></td>
                             </tr>
                             <tr>
-                                <th style="background: #f8f9fa; padding: 12px;">Slug</th>
-                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><?php echo htmlspecialchars($product['slug']); ?></td>
+                                <th>Slug</th>
+                                <td><code><?php echo htmlspecialchars($product['slug']); ?></code></td>
                             </tr>
                             <tr>
-                                <th style="background: #f8f9fa; padding: 12px;">Catégorie</th>
-                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><?php echo htmlspecialchars($product['categorie_nom'] ?? 'Non catégorisé'); ?></td>
+                                <th>Catégorie</th>
+                                <td><?php echo htmlspecialchars($product['categorie_nom'] ?? 'Non catégorisé'); ?></td>
                             </tr>
                             <tr>
-                                <th style="background: #f8f9fa; padding: 12px;">Prix HT</th>
-                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><?php echo number_format($product['prix_ht'], 2, ',', ' '); ?> €</td>
+                                <th>Prix HT</th>
+                                <td><?php echo number_format($product['prix_ht'], 2); ?> €</td>
                             </tr>
                             <tr>
-                                <th style="background: #f8f9fa; padding: 12px;">TVA</th>
-                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><?php echo $product['tva']; ?>%</td>
+                                <th>TVA</th>
+                                <td><?php echo $product['tva']; ?>%</td>
                             </tr>
                             <tr>
-                                <th style="background: #f8f9fa; padding: 12px;">Prix TTC</th>
-                                <td style="padding: 12px; border-bottom: 1px solid #eee;"><strong><?php echo number_format($product['prix_ht'] * (1 + $product['tva']/100), 2, ',', ' '); ?> €</strong></td>
+                                <th>Prix TTC</th>
+                                <td><strong><?php echo number_format($product['prix_ht'] * (1 + $product['tva']/100), 2); ?> €</strong></td>
                             </tr>
                             <tr>
-                                <th style="background: #f8f9fa; padding: 12px;">Stock</th>
-                                <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                                <th>Stock</th>
+                                <td>
                                     <?php echo $product['quantite_stock']; ?> unités 
-                                    (seuil d'alerte: <?php echo $product['seuil_alerte']; ?>)
+                                    (seuil: <?php echo $product['seuil_alerte']; ?>)
                                 </td>
                             </tr>
                             <tr>
-                                <th style="background: #f8f9fa; padding: 12px;">Statut</th>
-                                <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                                <th>Statut</th>
+                                <td>
                                     <?php 
                                     $statusColors = [
                                         'actif' => '#4CAF50',
@@ -1344,63 +1829,63 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                                     ];
                                     $color = $statusColors[$product['statut']] ?? '#6c757d';
                                     ?>
-                                    <span style="display: inline-block; padding: 4px 10px; border-radius: 4px; background-color: <?php echo $color; ?>; color: white;">
+                                    <span class="status-badge" style="background-color: <?php echo $color; ?>;">
                                         <?php echo ucfirst($product['statut']); ?>
                                     </span>
                                 </td>
                             </tr>
                         </table>
                         
-                        <div style="margin-top: 30px;">
-                            <h3 style="margin-bottom: 15px;">Description courte</h3>
-                            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <div style="margin-top: 20px;">
+                            <h3 style="margin-bottom: 10px;">Description courte</h3>
+                            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; word-break: break-word;">
                                 <?php echo nl2br(htmlspecialchars($product['description_courte'] ?: 'Aucune description courte')); ?>
                             </div>
                             
-                            <h3 style="margin-bottom: 15px;">Description complète</h3>
-                            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                            <h3 style="margin-bottom: 10px;">Description complète</h3>
+                            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; word-break: break-word;">
                                 <?php echo nl2br(htmlspecialchars($product['description'] ?: 'Aucune description')); ?>
                             </div>
                         </div>
                         
                         <?php if ($product['marque'] || $product['poids'] || $product['dimensions'] || $product['materiau'] || $product['couleur'] || $product['made_in']): ?>
-                        <div style="margin-top: 30px;">
-                            <h3 style="margin-bottom: 15px;">Caractéristiques</h3>
-                            <table style="width: 100%; border-collapse: collapse;">
+                        <div style="margin-top: 20px;">
+                            <h3 style="margin-bottom: 10px;">Caractéristiques</h3>
+                            <table class="info-table">
                                 <?php if ($product['marque']): ?>
                                 <tr>
-                                    <th style="width: 150px; background: #f8f9fa; padding: 10px;">Marque</th>
-                                    <td style="padding: 10px;"><?php echo htmlspecialchars($product['marque']); ?></td>
+                                    <th>Marque</th>
+                                    <td><?php echo htmlspecialchars($product['marque']); ?></td>
                                 </tr>
                                 <?php endif; ?>
                                 <?php if ($product['poids']): ?>
                                 <tr>
-                                    <th style="background: #f8f9fa; padding: 10px;">Poids</th>
-                                    <td style="padding: 10px;"><?php echo $product['poids']; ?> g</td>
+                                    <th>Poids</th>
+                                    <td><?php echo $product['poids']; ?> g</td>
                                 </tr>
                                 <?php endif; ?>
                                 <?php if ($product['dimensions']): ?>
                                 <tr>
-                                    <th style="background: #f8f9fa; padding: 10px;">Dimensions</th>
-                                    <td style="padding: 10px;"><?php echo htmlspecialchars($product['dimensions']); ?> cm</td>
+                                    <th>Dimensions</th>
+                                    <td><?php echo htmlspecialchars($product['dimensions']); ?> cm</td>
                                 </tr>
                                 <?php endif; ?>
                                 <?php if ($product['materiau']): ?>
                                 <tr>
-                                    <th style="background: #f8f9fa; padding: 10px;">Matériau</th>
-                                    <td style="padding: 10px;"><?php echo htmlspecialchars($product['materiau']); ?></td>
+                                    <th>Matériau</th>
+                                    <td><?php echo htmlspecialchars($product['materiau']); ?></td>
                                 </tr>
                                 <?php endif; ?>
                                 <?php if ($product['couleur']): ?>
                                 <tr>
-                                    <th style="background: #f8f9fa; padding: 10px;">Couleur</th>
-                                    <td style="padding: 10px;"><?php echo htmlspecialchars($product['couleur']); ?></td>
+                                    <th>Couleur</th>
+                                    <td><?php echo htmlspecialchars($product['couleur']); ?></td>
                                 </tr>
                                 <?php endif; ?>
                                 <?php if ($product['made_in']): ?>
                                 <tr>
-                                    <th style="background: #f8f9fa; padding: 10px;">Origine</th>
-                                    <td style="padding: 10px;"><?php echo htmlspecialchars($product['made_in']); ?></td>
+                                    <th>Origine</th>
+                                    <td><?php echo htmlspecialchars($product['made_in']); ?></td>
                                 </tr>
                                 <?php endif; ?>
                             </table>
@@ -1417,11 +1902,11 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                         
                         if (!empty($special)): 
                         ?>
-                        <div style="margin-top: 30px;">
-                            <h3 style="margin-bottom: 15px;">Caractéristiques spéciales</h3>
-                            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                        <div style="margin-top: 20px;">
+                            <h3 style="margin-bottom: 10px;">Caractéristiques spéciales</h3>
+                            <div class="special-tags">
                                 <?php foreach ($special as $tag): ?>
-                                    <span style="background: #e3f2fd; color: #1976d2; padding: 5px 15px; border-radius: 20px; font-size: 14px;">
+                                    <span class="special-tag">
                                         <i class="fas fa-check-circle"></i> <?php echo $tag; ?>
                                     </span>
                                 <?php endforeach; ?>
@@ -1440,7 +1925,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         <div class="modal-content">
             <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
                 <i class="fas fa-exclamation-triangle" style="color: #f44336; font-size: 24px;"></i>
-                <h3 style="font-size: 22px; color: #333;">Confirmer la suppression</h3>
+                <h3 style="font-size: 20px;">Confirmer la suppression</h3>
             </div>
             <div style="margin-bottom: 25px; color: #666;">
                 <p>Êtes-vous sûr de vouloir supprimer le produit "<span id="productName"></span>" ?</p>
@@ -1448,23 +1933,48 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                     <i class="fas fa-exclamation-circle"></i> Cette action est irréversible !
                 </p>
             </div>
-            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <div class="modal-actions">
                 <form id="deleteForm" method="POST" action="">
                     <input type="hidden" name="action" value="delete">
                     <input type="hidden" name="id_produit" id="productId">
-                    <button type="button" onclick="closeModal()" class="btn btn-secondary">
-                        <i class="fas fa-times"></i> Annuler
-                    </button>
-                    <button type="submit" class="btn btn-danger">
-                        <i class="fas fa-trash"></i> Supprimer
-                    </button>
+                    <button type="button" onclick="closeModal()" class="btn btn-secondary">Annuler</button>
+                    <button type="submit" class="btn btn-danger">Supprimer</button>
                 </form>
             </div>
         </div>
     </div>
     
     <script>
-        // Fonction pour générer un slug
+        // Optimisation du chargement de la page
+        document.addEventListener('DOMContentLoaded', function() {
+            // Marquer le body comme chargé
+            document.body.classList.add('loaded');
+            
+            // Initialiser les calculs
+            calculateTTC();
+            
+            // Ajouter le preview TTC si nécessaire
+            const prixHTField = document.getElementById('prix_ht');
+            if (prixHTField && !document.getElementById('ttc-preview')) {
+                const ttcPreview = document.createElement('small');
+                ttcPreview.id = 'ttc-preview';
+                ttcPreview.style.color = '#666';
+                ttcPreview.style.marginTop = '5px';
+                ttcPreview.style.display = 'block';
+                prixHTField.parentNode.appendChild(ttcPreview);
+                calculateTTC();
+            }
+            
+            // Gestionnaire d'erreur global pour les images
+            document.querySelectorAll('img').forEach(img => {
+                img.addEventListener('error', function() {
+                    if (!this.src.includes('placeholder')) {
+                        this.src = 'https://via.placeholder.com/60x60?text=+';
+                    }
+                });
+            });
+        });
+        
         function generateSlug(text) {
             return text
                 .toLowerCase()
@@ -1473,18 +1983,33 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                 .replace(/^-|-$/g, '');
         }
         
-        // Fonctions pour la modal de suppression
+        function updateSlug(nom) {
+            const slug = generateSlug(nom);
+            const preview = document.getElementById('slug-preview');
+            if (preview) {
+                preview.innerHTML = 'Slug : ' + (slug || '(vide)');
+            }
+        }
+        
         function confirmDelete(id, name) {
             document.getElementById('productId').value = id;
             document.getElementById('productName').textContent = name;
-            document.getElementById('deleteModal').style.display = 'flex';
+            const modal = document.getElementById('deleteModal');
+            modal.style.display = 'flex';
+            // Petite pause pour permettre la transition CSS
+            setTimeout(() => {
+                modal.classList.add('show');
+            }, 10);
         }
         
         function closeModal() {
-            document.getElementById('deleteModal').style.display = 'none';
+            const modal = document.getElementById('deleteModal');
+            modal.classList.remove('show');
+            setTimeout(() => {
+                modal.style.display = 'none';
+            }, 200);
         }
         
-        // Fermer la modal en cliquant en dehors
         window.onclick = function(event) {
             const modal = document.getElementById('deleteModal');
             if (event.target === modal) {
@@ -1492,7 +2017,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             }
         }
         
-        // Calcul automatique du prix TTC
         const prixHT = document.getElementById('prix_ht');
         const tva = document.getElementById('tva');
         
@@ -1511,25 +2035,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                 ttcElement.textContent = 'Prix TTC : ' + prixTTC.toFixed(2) + ' €';
             }
         }
-        
-        // Initialiser le calcul TTC au chargement
-        document.addEventListener('DOMContentLoaded', function() {
-            calculateTTC();
-            
-            // Ajouter un aperçu du prix TTC si le champ existe
-            const prixHTField = document.getElementById('prix_ht');
-            if (prixHTField) {
-                if (!document.getElementById('ttc-preview')) {
-                    const ttcPreview = document.createElement('small');
-                    ttcPreview.id = 'ttc-preview';
-                    ttcPreview.style.color = '#666';
-                    ttcPreview.style.marginTop = '5px';
-                    ttcPreview.style.display = 'block';
-                    prixHTField.parentNode.appendChild(ttcPreview);
-                    calculateTTC();
-                }
-            }
-        });
     </script>
 </body>
 </html>

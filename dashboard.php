@@ -586,7 +586,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         </div>
         
         <!-- Informations système -->
-        <div class="system-info">
+        <!--<div class="system-info">
             <h2><i class="fas fa-info-circle"></i> Informations système</h2>
             <div class="info-grid">
                 <div class="info-item">
@@ -609,10 +609,10 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                     <div class="info-value"><?php echo date('d/m/Y H:i:s'); ?></div>
                 </div>
             </div>
-        </div>
+        </div>-->
         
         <!-- Informations de session -->
-        <div class="session-info">
+        <!--div class="session-info">
             <h3><i class="fas fa-user-circle"></i> Informations de session</h3>
             <div class="session-details">
                 <div class="session-item">
@@ -645,7 +645,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                     <div class="session-value"><?php echo isset($_SESSION['last_activity']) ? date('H:i:s', $_SESSION['last_activity']) : 'Maintenant'; ?></div>
                 </div>
             </div>
-        </div>
+        </div>-->
         
         <!-- Menu de navigation -->
         <div style="margin-top: 40px; padding: 25px; background-color: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);">

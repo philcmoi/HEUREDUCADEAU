@@ -16,7 +16,7 @@ $commande_id = isset($_GET['commande']) ? intval($_GET['commande']) : 0;
 $token = isset($_GET['token']) ? $_GET['token'] : '';
 
 if ($commande_id <= 0) {
-    header('Location: index.html');
+    header('Location: index.php');
     exit;
 }
 
@@ -574,7 +574,7 @@ try {
 
 // Si commande non trouvée, rediriger
 if (!$commande) {
-    header('Location: index.html');
+    header('Location: index.php');
     exit;
 }
 
@@ -915,7 +915,7 @@ if (!$pdf_genere) {
             </div>-->
             
             <div style="margin-top: 30px;">
-                <a href="index.html" class="btn btn-primary">
+                <a href="index.php" class="btn btn-primary">
                     <i class="fas fa-home"></i> Retour à l'accueil
                 </a>
             </div>
