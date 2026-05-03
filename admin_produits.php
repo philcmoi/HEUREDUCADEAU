@@ -1,6 +1,6 @@
 <?php
 // admin_produits.php - Gestion complète des produits avec upload d'images
-// VERSION RESPONSIVE OPTIMISÉE
+// VERSION CORRIGÉE - Alignement des colonnes prix résolu
 
 require_once 'admin_protection.php';
 
@@ -145,12 +145,56 @@ function deleteProduct($pdo, $id) {
     return $stmt->execute(['id' => $id]);
 }
 
-function generateSlug($nom) {
+/**
+ * Génère un slug unique à partir du nom
+ * @param string $nom Le nom du produit
+ * @param PDO $pdo Connexion à la base de données
+ * @param int|null $id_exclu ID du produit à exclure (pour l'édition)
+ * @return string Slug unique
+ */
+function generateUniqueSlug($nom, $pdo, $id_exclu = null) {
+    // Slug de base
     $slug = strtolower($nom);
     $slug = preg_replace('/[^a-z0-9-]/', '-', $slug);
     $slug = preg_replace('/-+/', '-', $slug);
     $slug = trim($slug, '-');
+    
+    // Si le slug est vide, utiliser "produit"
+    if (empty($slug)) {
+        $slug = 'produit';
+    }
+    
+    $slug_original = $slug;
+    $compteur = 1;
+    
+    // Vérifier l'unicité
+    while (slugExists($pdo, $slug, $id_exclu)) {
+        $slug = $slug_original . '-' . $compteur;
+        $compteur++;
+    }
+    
     return $slug;
+}
+
+/**
+ * Vérifie si un slug existe déjà
+ * @param PDO $pdo Connexion à la base de données
+ * @param string $slug Le slug à vérifier
+ * @param int|null $id_exclu ID du produit à exclure
+ * @return bool
+ */
+function slugExists($pdo, $slug, $id_exclu = null) {
+    if ($id_exclu) {
+        $sql = "SELECT COUNT(*) FROM produits WHERE slug = :slug AND id_produit != :id_exclu";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(['slug' => $slug, 'id_exclu' => $id_exclu]);
+    } else {
+        $sql = "SELECT COUNT(*) FROM produits WHERE slug = :slug";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(['slug' => $slug]);
+    }
+    
+    return $stmt->fetchColumn() > 0;
 }
 
 function generateReference($pdo) {
@@ -316,7 +360,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         switch ($_POST['action']) {
             
             case 'add':
-                $slug = generateSlug($_POST['nom']);
+                // Générer un slug unique
+                $slug = generateUniqueSlug($_POST['nom'], $pdo);
                 
                 $data = [
                     'reference' => $_POST['reference'],
@@ -392,9 +437,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     break;
                 }
                 
+                // Générer un slug unique (en excluant ce produit)
                 $slug = ($existingProduct['nom'] == $_POST['nom']) 
                     ? $existingProduct['slug'] 
-                    : generateSlug($_POST['nom']);
+                    : generateUniqueSlug($_POST['nom'], $pdo, $id);
                 
                 $data = [
                     'reference' => $_POST['reference'],
@@ -525,7 +571,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         /* ============================================
-           STYLES RESPONSIVES OPTIMISÉS
+           STYLES RESPONSIVES OPTIMISÉS - VERSION ANTI-CLIGNOTEMENT
            ============================================ */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -552,16 +598,20 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             color: var(--dark-color);
             line-height: 1.6;
             font-size: 16px;
+            opacity: 1;
+            transition: opacity 0.2s ease;
+        }
+        
+        /* Prévention du FOUC */
+        body:not(.loaded) {
+            opacity: 1; /* Maintenir la visibilité */
         }
         
         .container {
             max-width: 1400px;
             margin: 0 auto;
             padding: 15px;
-        }
-        
-        @media (min-width: 768px) {
-            .container { padding: 20px; }
+            will-change: transform; /* Optimisation des performances */
         }
         
         /* Header responsive */
@@ -575,15 +625,8 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             display: flex;
             flex-direction: column;
             gap: 15px;
-        }
-        
-        @media (min-width: 768px) {
-            .header {
-                flex-direction: row;
-                justify-content: space-between;
-                align-items: center;
-                padding: 25px;
-            }
+            transform: translateZ(0); /* Accélération matérielle */
+            backface-visibility: hidden;
         }
         
         .header h1 { 
@@ -592,10 +635,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             display: flex;
             align-items: center;
             gap: 10px;
-        }
-        
-        @media (min-width: 768px) {
-            .header h1 { font-size: 28px; }
         }
         
         .role-badge {
@@ -625,6 +664,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             flex-wrap: nowrap;
             -webkit-overflow-scrolling: touch;
             scrollbar-width: thin;
+            transform: translateZ(0);
         }
         
         .nav-tabs::-webkit-scrollbar {
@@ -650,13 +690,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             font-size: 14px;
         }
         
-        @media (min-width: 768px) {
-            .nav-tabs a {
-                padding: 18px 25px;
-                font-size: 16px;
-            }
-        }
-        
         .nav-tabs a:hover { 
             background-color: #f8f9fa; 
             color: var(--primary-color); 
@@ -678,6 +711,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             align-items: center;
             gap: 10px;
             word-break: break-word;
+            transform: translateZ(0);
         }
         
         .alert-success {
@@ -708,13 +742,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             text-decoration: none;
             width: 100%;
             text-align: center;
-        }
-        
-        @media (min-width: 768px) {
-            .btn {
-                width: auto;
-                padding: 10px 20px;
-            }
+            transform: translateZ(0);
         }
         
         .btn-sm { 
@@ -737,6 +765,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             overflow: hidden;
             box-shadow: var(--shadow-md);
             margin-bottom: 20px;
+            transform: translateZ(0);
         }
         
         .table-header {
@@ -746,15 +775,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             flex-direction: column;
             gap: 10px;
             border-bottom: 1px solid #eee;
-        }
-        
-        @media (min-width: 768px) {
-            .table-header {
-                flex-direction: row;
-                justify-content: space-between;
-                align-items: center;
-                padding: 20px;
-            }
         }
         
         .table-responsive {
@@ -788,19 +808,22 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         
         tr:hover { background-color: #f9f9f9; }
         
+        /* Optimisation des images pour éviter le clignotement */
         .product-image { 
             width: 50px; 
             height: 50px; 
             object-fit: cover; 
             border-radius: 6px; 
             border: 1px solid #ddd;
+            background-color: #f5f5f5; /* Couleur de fond pendant le chargement */
+            display: block;
+            opacity: 1;
+            transition: opacity 0.2s ease;
+            aspect-ratio: 1/1; /* Maintient les proportions */
         }
         
-        @media (min-width: 768px) {
-            .product-image { 
-                width: 60px; 
-                height: 60px; 
-            }
+        .product-image.loading {
+            opacity: 0.7;
         }
         
         .price { 
@@ -843,12 +866,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             border-radius: var(--border-radius);
             padding: 20px;
             box-shadow: var(--shadow-md);
-        }
-        
-        @media (min-width: 768px) {
-            .form-container {
-                padding: 30px;
-            }
+            transform: translateZ(0);
         }
         
         .form-group { margin-bottom: 15px; }
@@ -907,13 +925,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             margin-bottom: 15px;
         }
         
-        @media (min-width: 768px) {
-            .form-row { grid-template-columns: 2fr 1fr; }
-            .form-row-2 { grid-template-columns: repeat(2, 1fr); }
-            .form-row-3 { grid-template-columns: repeat(3, 1fr); }
-            .form-row-4 { grid-template-columns: repeat(4, 1fr); }
-        }
-        
         .checkbox-group {
             display: flex;
             flex-wrap: wrap;
@@ -946,6 +957,13 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             align-items: center;
             justify-content: center;
             padding: 15px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        
+        .modal.show {
+            display: flex;
+            opacity: 1;
         }
         
         .modal-content {
@@ -957,10 +975,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             max-height: 90vh;
             overflow-y: auto;
             box-shadow: var(--shadow-lg);
-        }
-        
-        @media (min-width: 768px) {
-            .modal-content { padding: 30px; }
+            transform: translateZ(0);
         }
         
         .modal-actions {
@@ -970,11 +985,11 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             margin-top: 20px;
         }
         
-        @media (min-width: 768px) {
-            .modal-actions {
-                flex-direction: row;
-                justify-content: flex-end;
-            }
+        .modal-actions form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
         }
         
         /* Stats cards */
@@ -985,30 +1000,13 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             margin-bottom: 20px;
         }
         
-        @media (min-width: 480px) {
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-        
-        @media (min-width: 768px) {
-            .stats-grid {
-                grid-template-columns: repeat(3, 1fr);
-            }
-        }
-        
-        @media (min-width: 1024px) {
-            .stats-grid {
-                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            }
-        }
-        
         .stat-card {
             background: white;
             padding: 20px;
             border-radius: 8px;
             border-left: 4px solid;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transform: translateZ(0);
         }
         
         .stat-card h3 {
@@ -1034,12 +1032,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             margin-top: 15px;
         }
         
-        @media (min-width: 768px) {
-            .images-grid {
-                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-            }
-        }
-        
         .image-item {
             border: 2px solid #ddd;
             border-radius: 8px;
@@ -1055,6 +1047,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             height: 100px;
             object-fit: cover;
             border-radius: 4px;
+            background-color: #f5f5f5;
         }
         
         /* Info rows dans détail */
@@ -1076,17 +1069,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             border-bottom: 1px solid #eee;
         }
         
-        @media (max-width: 767px) {
-            .info-table th {
-                width: 120px;
-                font-size: 14px;
-            }
-            
-            .info-table td {
-                font-size: 14px;
-            }
-        }
-        
         /* Classes utilitaires */
         .text-center { text-align: center; }
         .mt-2 { margin-top: 10px; }
@@ -1096,16 +1078,7 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         .mb-3 { margin-bottom: 15px; }
         .mb-4 { margin-bottom: 20px; }
         .hide-mobile { display: none; }
-        
-        @media (min-width: 768px) {
-            .hide-mobile { display: inline; }
-        }
-        
         .show-mobile { display: inline; }
-        
-        @media (min-width: 768px) {
-            .show-mobile { display: none; }
-        }
         
         /* Info note */
         .info-note {
@@ -1133,6 +1106,119 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             padding: 5px 15px;
             border-radius: 20px;
             font-size: 14px;
+        }
+        
+        /* Loader placeholder pour images */
+        .image-placeholder {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+        }
+        
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        
+        /* ============================================
+           MEDIA QUERIES - CORRIGÉES
+           ============================================ */
+        @media (min-width: 480px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (min-width: 768px) {
+            .container { padding: 20px; }
+            
+            .header {
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+                padding: 25px;
+            }
+            
+            .header h1 { font-size: 28px; }
+            
+            .nav-tabs a {
+                padding: 18px 25px;
+                font-size: 16px;
+            }
+            
+            .btn {
+                width: auto;
+                padding: 10px 20px;
+            }
+            
+            .product-image { 
+                width: 60px; 
+                height: 60px; 
+            }
+            
+            .table-header {
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+                padding: 20px;
+            }
+            
+            .form-container {
+                padding: 30px;
+            }
+            
+            .form-row { grid-template-columns: 2fr 1fr; }
+            .form-row-2 { grid-template-columns: repeat(2, 1fr); }
+            .form-row-3 { grid-template-columns: repeat(3, 1fr); }
+            .form-row-4 { grid-template-columns: repeat(4, 1fr); }
+            
+            .modal-content { padding: 30px; }
+            
+            .modal-actions {
+                flex-direction: row;
+                justify-content: flex-end;
+            }
+            
+            .modal-actions form {
+                flex-direction: row;
+                justify-content: flex-end;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+            
+            .hide-mobile { display: inline; }
+            .show-mobile { display: none; }
+            
+            .images-grid {
+                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            }
+            
+            .info-table th {
+                width: 150px;
+            }
+        }
+        
+        @media (min-width: 1024px) {
+            .stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            }
+        }
+        
+        @media (max-width: 767px) {
+            .info-table th {
+                width: 120px;
+                font-size: 14px;
+            }
+            
+            .info-table td {
+                font-size: 14px;
+            }
+            
+            .detail-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -1262,7 +1348,10 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                                         <img src="<?php echo htmlspecialchars($image_url); ?>" 
                                              alt="<?php echo htmlspecialchars($product['nom']); ?>"
                                              class="product-image"
-                                             onerror="this.src='https://via.placeholder.com/60x60?text=+'">
+                                             loading="lazy"
+                                             decoding="async"
+                                             onload="this.classList.remove('loading')"
+                                             onerror="this.onerror=null; this.src='https://via.placeholder.com/60x60?text=+'; this.classList.remove('loading')">
                                     </td>
                                     <td><strong><?php echo htmlspecialchars($product['reference']); ?></strong></td>
                                     <td>
@@ -1515,7 +1604,9 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                                 <div style="margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 15px;">
                                     <img src="<?php echo htmlspecialchars($current_image['url_image']); ?>" 
                                          alt="Image actuelle" 
-                                         style="max-width: 80px; max-height: 80px; border-radius: 8px; border: 1px solid #ddd;">
+                                         style="max-width: 80px; max-height: 80px; border-radius: 8px; border: 1px solid #ddd;"
+                                         loading="lazy"
+                                         decoding="async">
                                     <small style="color: #666;">Image actuelle - Laissez vide pour conserver</small>
                                 </div>
                             <?php else: ?>
@@ -1645,27 +1736,22 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
             
             <div class="form-container">
                 <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
-                    @media (min-width: 768px) {
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                    }
-                    <h2 style="display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-eye"></i> Détail du produit #<?php echo $product['id_produit']; ?>
-                    </h2>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <a href="admin_produits.php?action=edit&id=<?php echo $id; ?>" class="btn btn-warning">
-                            <i class="fas fa-edit"></i> Modifier
-                        </a>
-                        <a href="admin_produits.php?action=list" class="btn btn-secondary">
-                            <i class="fas fa-arrow-left"></i> Retour
-                        </a>
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                        <h2 style="display: flex; align-items: center; gap: 10px;">
+                            <i class="fas fa-eye"></i> Détail du produit #<?php echo $product['id_produit']; ?>
+                        </h2>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <a href="admin_produits.php?action=edit&id=<?php echo $id; ?>" class="btn btn-warning">
+                                <i class="fas fa-edit"></i> Modifier
+                            </a>
+                            <a href="admin_produits.php?action=list" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Retour
+                            </a>
+                        </div>
                     </div>
                 </div>
                 
-                <div style="display: grid; grid-template-columns: 1fr; gap: 20px;">
-                    @media (min-width: 768px) {
-                        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 30px;">
-                    }
-                    
+                <div class="detail-grid" style="display: grid; grid-template-columns: 1fr; gap: 20px;">
                     <!-- Colonne images -->
                     <div>
                         <h3 style="margin-bottom: 15px;">Images</h3>
@@ -1674,7 +1760,9 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                                 <?php foreach ($images as $img): ?>
                                     <div class="image-item <?php echo $img['principale'] ? 'principale' : ''; ?>">
                                         <img src="<?php echo htmlspecialchars($img['url_image']); ?>" 
-                                             alt="<?php echo htmlspecialchars($img['alt_text']); ?>">
+                                             alt="<?php echo htmlspecialchars($img['alt_text']); ?>"
+                                             loading="lazy"
+                                             decoding="async">
                                         <?php if ($img['principale']): ?>
                                             <small style="display: block; text-align: center; color: #4CAF50; margin-top: 5px;">
                                                 <i class="fas fa-star"></i> Principale
@@ -1857,6 +1945,36 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
     </div>
     
     <script>
+        // Optimisation du chargement de la page
+        document.addEventListener('DOMContentLoaded', function() {
+            // Marquer le body comme chargé
+            document.body.classList.add('loaded');
+            
+            // Initialiser les calculs
+            calculateTTC();
+            
+            // Ajouter le preview TTC si nécessaire
+            const prixHTField = document.getElementById('prix_ht');
+            if (prixHTField && !document.getElementById('ttc-preview')) {
+                const ttcPreview = document.createElement('small');
+                ttcPreview.id = 'ttc-preview';
+                ttcPreview.style.color = '#666';
+                ttcPreview.style.marginTop = '5px';
+                ttcPreview.style.display = 'block';
+                prixHTField.parentNode.appendChild(ttcPreview);
+                calculateTTC();
+            }
+            
+            // Gestionnaire d'erreur global pour les images
+            document.querySelectorAll('img').forEach(img => {
+                img.addEventListener('error', function() {
+                    if (!this.src.includes('placeholder')) {
+                        this.src = 'https://via.placeholder.com/60x60?text=+';
+                    }
+                });
+            });
+        });
+        
         function generateSlug(text) {
             return text
                 .toLowerCase()
@@ -1867,17 +1985,29 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
         
         function updateSlug(nom) {
             const slug = generateSlug(nom);
-            document.getElementById('slug-preview').innerHTML = 'Slug : ' + (slug || '(vide)');
+            const preview = document.getElementById('slug-preview');
+            if (preview) {
+                preview.innerHTML = 'Slug : ' + (slug || '(vide)');
+            }
         }
         
         function confirmDelete(id, name) {
             document.getElementById('productId').value = id;
             document.getElementById('productName').textContent = name;
-            document.getElementById('deleteModal').style.display = 'flex';
+            const modal = document.getElementById('deleteModal');
+            modal.style.display = 'flex';
+            // Petite pause pour permettre la transition CSS
+            setTimeout(() => {
+                modal.classList.add('show');
+            }, 10);
         }
         
         function closeModal() {
-            document.getElementById('deleteModal').style.display = 'none';
+            const modal = document.getElementById('deleteModal');
+            modal.classList.remove('show');
+            setTimeout(() => {
+                modal.style.display = 'none';
+            }, 200);
         }
         
         window.onclick = function(event) {
@@ -1905,29 +2035,6 @@ $admin_role = $_SESSION['admin_role'] ?? 'Non défini';
                 ttcElement.textContent = 'Prix TTC : ' + prixTTC.toFixed(2) + ' €';
             }
         }
-        
-        document.addEventListener('DOMContentLoaded', function() {
-            calculateTTC();
-            
-            const prixHTField = document.getElementById('prix_ht');
-            if (prixHTField && !document.getElementById('ttc-preview')) {
-                const ttcPreview = document.createElement('small');
-                ttcPreview.id = 'ttc-preview';
-                ttcPreview.style.color = '#666';
-                ttcPreview.style.marginTop = '5px';
-                ttcPreview.style.display = 'block';
-                prixHTField.parentNode.appendChild(ttcPreview);
-                calculateTTC();
-            }
-            
-            const style = document.createElement('style');
-            style.textContent = `
-                @media (max-width: 767px) {
-                    .hide-mobile { display: none !important; }
-                }
-            `;
-            document.head.appendChild(style);
-        });
     </script>
 </body>
 </html>

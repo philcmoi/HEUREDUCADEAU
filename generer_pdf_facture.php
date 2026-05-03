@@ -1,262 +1,388 @@
 <?php
 // ============================================
-// GÉNÉRATION PDF DE FACTURE AVEC TCPDF
+// GENERATEUR DE FACTURE PDF (Sans TCPDF)
+// Utilise l'impression HTML/CSS pour générer le PDF
 // ============================================
 
-// Vérifier que TCPDF est disponible
-if (!class_exists('\\TCPDF')) {
-    error_log("ERREUR: TCPDF n'est pas installé. Exécutez 'composer require tecnickcom/tcpdf'");
-    define('TCPDF_AVAILABLE', false);
-} else {
-    define('TCPDF_AVAILABLE', true);
-}
-
 /**
- * Génère un PDF de facture à partir des données de commande
+ * Génère une facture au format HTML pour impression/PDF
  * 
  * @param array $commande Données de la commande
  * @param array $items Articles de la commande
  * @param array|null $transaction Données de transaction
- * @return string Contenu du PDF (binaire)
- * @throws Exception Si TCPDF n'est pas disponible
+ * @return string HTML de la facture
  */
-function genererPDFFacture($commande, $items, $transaction = null) {
-    
-    if (!defined('TCPDF_AVAILABLE') || !TCPDF_AVAILABLE) {
-        throw new \Exception("TCPDF n'est pas installé. Impossible de générer le PDF.");
+function genererFactureHTML($commande, $items, $transaction = null) {
+    // Calcul du total
+    $total = 0;
+    foreach ($items as $item) {
+        $total += $item['quantite'] * $item['prix_unitaire_ttc'];
     }
     
-    // Créer une nouvelle instance TCPDF
-    $pdf = new \TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
-    
-    // ============================================
-    // CONFIGURATION DU DOCUMENT
-    // ============================================
-    
-    // Supprimer l'en-tête et pied de page par défaut
-    $pdf->setPrintHeader(false);
-    $pdf->setPrintFooter(false);
-    
-    // Informations du document
-    $pdf->SetCreator('HEURE DU CADEAU');
-    $pdf->SetAuthor('HEURE DU CADEAU');
-    $pdf->SetTitle('Facture ' . $commande['numero_commande']);
-    $pdf->SetSubject('Facture de commande');
-    $pdf->SetKeywords('facture, commande, cadeau');
-    
-    // Marges
-    $pdf->SetMargins(15, 15, 15);
-    $pdf->SetAutoPageBreak(true, 25);
-    
-    // Police par défaut
-    $pdf->SetFont('helvetica', '', 10);
-    
-    // ============================================
-    // AJOUTER UNE PAGE
-    // ============================================
-    $pdf->AddPage();
-    
-    // ============================================
-    // EN-TÊTE AVEC LOGO
-    // ============================================
-    
-    // Logo (si le fichier existe)
-    $logo_path = __DIR__ . '/img/logo-facture.png';
-    if (file_exists($logo_path)) {
-        $pdf->Image($logo_path, 15, 15, 50, 0, 'PNG');
-    } else {
-        // Texte du logo
-        $pdf->SetFont('helvetica', 'B', 24);
-        $pdf->SetTextColor(44, 62, 80);
-        $pdf->Cell(0, 20, 'HEURE DU CADEAU', 0, 1, 'L');
+    // Déterminer le mode de paiement
+    $mode_paiement = $commande['mode_paiement'] ?? 'carte';
+    $mode_paiement_label = '';
+    switch ($mode_paiement) {
+        case 'paypal':
+            $mode_paiement_label = 'PayPal';
+            break;
+        case 'carte':
+            $mode_paiement_label = 'Carte bancaire';
+            break;
+        case 'virement':
+            $mode_paiement_label = 'Virement bancaire';
+            break;
+        default:
+            $mode_paiement_label = ucfirst($mode_paiement);
     }
     
-    // Informations de la société
-    $pdf->SetY(30);
-    $pdf->SetFont('helvetica', '', 9);
-    $pdf->SetTextColor(100, 100, 100);
-    $pdf->Cell(0, 5, '123 Rue des Cadeaux', 0, 1, 'R');
-    $pdf->Cell(0, 5, '75001 Paris, France', 0, 1, 'R');
-    $pdf->Cell(0, 5, 'Tél: 01 23 45 67 89', 0, 1, 'R');
-    $pdf->Cell(0, 5, 'Email: contact@heureducadeau.fr', 0, 1, 'R');
-    $pdf->Cell(0, 5, 'SIRET: 123 456 789 00012', 0, 1, 'R');
-    
-    // Ligne de séparation
-    $pdf->Line(15, 50, 195, 50);
-    
-    // ============================================
-    // TITRE FACTURE
-    // ============================================
-    $pdf->SetY(55);
-    $pdf->SetFont('helvetica', 'B', 18);
-    $pdf->SetTextColor(41, 128, 185);
-    $pdf->Cell(0, 10, 'FACTURE', 0, 1, 'C');
-    
-    // Numéro et date
-    $pdf->SetFont('helvetica', '', 11);
-    $pdf->SetTextColor(0, 0, 0);
-    $pdf->Cell(0, 6, 'N° ' . $commande['numero_commande'], 0, 1, 'C');
-    $pdf->Cell(0, 6, 'Date: ' . date('d/m/Y', strtotime($commande['date_commande'])), 0, 1, 'C');
-    
-    // ============================================
-    // INFORMATIONS CLIENT ET ADRESSES
-    // ============================================
-    $pdf->SetY(80);
-    
-    // Coordonnées client
-    $pdf->SetFont('helvetica', 'B', 11);
-    $pdf->SetTextColor(44, 62, 80);
-    $pdf->Cell(95, 8, 'CLIENT', 0, 0, 'L');
-    $pdf->Cell(95, 8, 'FACTURATION', 0, 1, 'L');
-    
-    $pdf->SetFont('helvetica', '', 10);
-    $pdf->SetTextColor(0, 0, 0);
-    
-    // Client
-    $client_nom = $commande['client_prenom'] . ' ' . $commande['client_nom'];
-    $facturation_nom = $commande['facturation_prenom'] . ' ' . $commande['facturation_nom'];
-    
-    $pdf->Cell(95, 5, $client_nom, 0, 0, 'L');
-    $pdf->Cell(95, 5, $facturation_nom, 0, 1, 'L');
-    
-    $pdf->Cell(95, 5, $commande['livraison_adresse'], 0, 0, 'L');
-    $pdf->Cell(95, 5, $commande['facturation_adresse'], 0, 1, 'L');
-    
-    if (!empty($commande['livraison_complement'])) {
-        $pdf->Cell(95, 5, $commande['livraison_complement'], 0, 0, 'L');
-    } else {
-        $pdf->Cell(95, 5, '', 0, 0, 'L');
-    }
-    
-    if (!empty($commande['facturation_complement'])) {
-        $pdf->Cell(95, 5, $commande['facturation_complement'], 0, 1, 'L');
-    } else {
-        $pdf->Cell(95, 5, '', 0, 1, 'L');
-    }
-    
-    $pdf->Cell(95, 5, $commande['livraison_code_postal'] . ' ' . $commande['livraison_ville'], 0, 0, 'L');
-    $pdf->Cell(95, 5, $commande['facturation_code_postal'] . ' ' . $commande['facturation_ville'], 0, 1, 'L');
-    
-    $pdf->Cell(95, 5, $commande['livraison_pays'], 0, 0, 'L');
-    $pdf->Cell(95, 5, $commande['facturation_pays'], 0, 1, 'L');
-    
-    if (!empty($commande['livraison_telephone'])) {
-        $pdf->Cell(95, 5, 'Tél: ' . $commande['livraison_telephone'], 0, 0, 'L');
-    } else {
-        $pdf->Cell(95, 5, '', 0, 0, 'L');
-    }
-    
-    $pdf->Cell(95, 5, 'Email: ' . $commande['email'], 0, 1, 'L');
-    
-    // Ligne de séparation
-    $pdf->Line(15, $pdf->GetY() + 5, 195, $pdf->GetY() + 5);
-    
-    // ============================================
-    // TABLEAU DES ARTICLES
-    // ============================================
-    $pdf->SetY($pdf->GetY() + 10);
-    
-    // En-tête du tableau
-    $pdf->SetFillColor(44, 62, 80);
-    $pdf->SetTextColor(255, 255, 255);
-    $pdf->SetFont('helvetica', 'B', 10);
-    
-    $pdf->Cell(80, 10, 'PRODUIT', 1, 0, 'C', true);
-    $pdf->Cell(30, 10, 'RÉFÉRENCE', 1, 0, 'C', true);
-    $pdf->Cell(20, 10, 'QTÉ', 1, 0, 'C', true);
-    $pdf->Cell(30, 10, 'PRIX UNIT.', 1, 0, 'C', true);
-    $pdf->Cell(30, 10, 'TOTAL', 1, 1, 'C', true);
-    
-    // Contenu du tableau
-    $pdf->SetFillColor(245, 245, 245);
-    $pdf->SetTextColor(0, 0, 0);
-    $pdf->SetFont('helvetica', '', 9);
-    
-    $sous_total = 0;
-    $fill = false;
+    $html = '<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Facture ' . htmlspecialchars($commande['numero_commande'] ?? 'N/A') . '</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: "Helvetica Neue", Arial, sans-serif;
+            background: #fff;
+            color: #333;
+            line-height: 1.4;
+        }
+        
+        .facture-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 30px;
+        }
+        
+        /* En-tête */
+        .header {
+            border-bottom: 3px solid #2c3e50;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .logo span {
+            color: #e74c3c;
+        }
+        
+        .facture-title {
+            text-align: right;
+            margin-top: -45px;
+        }
+        
+        .facture-title h1 {
+            font-size: 24px;
+            color: #2c3e50;
+        }
+        
+        .facture-number {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+        
+        /* Informations */
+        .info-section {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            gap: 20px;
+        }
+        
+        .info-box {
+            flex: 1;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        
+        .info-box h3 {
+            font-size: 16px;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .info-box p {
+            margin: 5px 0;
+            font-size: 13px;
+            color: #555;
+        }
+        
+        /* Tableau des articles */
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        .items-table th {
+            background: #2c3e50;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+        }
+        
+        .items-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 13px;
+        }
+        
+        .items-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        /* Totaux */
+        .totals {
+            margin-top: 20px;
+            text-align: right;
+        }
+        
+        .total-row {
+            padding: 8px 0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 30px;
+        }
+        
+        .total-row span:first-child {
+            font-weight: normal;
+            color: #666;
+        }
+        
+        .total-row span:last-child {
+            min-width: 100px;
+            text-align: right;
+        }
+        
+        .grand-total {
+            font-size: 18px;
+            font-weight: bold;
+            color: #e74c3c;
+            border-top: 2px solid #e0e0e0;
+            margin-top: 10px;
+            padding-top: 10px;
+        }
+        
+        /* Pied de page */
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            text-align: center;
+            font-size: 11px;
+            color: #999;
+        }
+        
+        /* Badge de statut */
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        
+        .status-paye {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        /* Responsive */
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+                margin: 0;
+            }
+            
+            .facture-container {
+                padding: 20px;
+            }
+            
+            .no-print {
+                display: none;
+            }
+        }
+        
+        /* Bouton impression */
+        .print-btn {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .print-btn button {
+            background: #2c3e50;
+            color: white;
+            border: none;
+            padding: 10px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .print-btn button:hover {
+            background: #1a252f;
+        }
+    </style>
+</head>
+<body>
+    <div class="facture-container">
+        <div class="print-btn no-print">
+            <button onclick="window.print();">
+                <i>🖨️</i> Imprimer / Télécharger en PDF
+            </button>
+        </div>
+        
+        <div class="header">
+            <div class="logo">
+                HEURE DU <span>CADEAU</span>
+            </div>
+            <div class="facture-title">
+                <h1>FACTURE</h1>
+                <div class="facture-number">N° ' . htmlspecialchars($commande['numero_commande'] ?? 'N/A') . '</div>
+            </div>
+        </div>
+        
+        <div class="info-section">
+            <div class="info-box">
+                <h3>📦 EXPÉDITION</h3>
+                <p><strong>' . htmlspecialchars(($commande['prenom'] ?? '') . ' ' . ($commande['nom'] ?? '')) . '</strong></p>
+                <p>' . nl2br(htmlspecialchars($commande['adresse'] ?? '')) . '</p>
+                ' . (!empty($commande['complement']) ? '<p>' . htmlspecialchars($commande['complement']) . '</p>' : '') . '
+                <p>' . htmlspecialchars(($commande['code_postal'] ?? '') . ' ' . ($commande['ville'] ?? '')) . '</p>
+                <p>' . htmlspecialchars($commande['pays'] ?? 'France') . '</p>
+                ' . (!empty($commande['telephone']) ? '<p>📞 ' . htmlspecialchars($commande['telephone']) . '</p>' : '') . '
+            </div>
+            
+            <div class="info-box">
+                <h3>🧾 FACTURE</h3>
+                <p><strong>Date :</strong> ' . date('d/m/Y', strtotime($commande['date_commande'] ?? 'now')) . '</p>
+                <p><strong>Mode de paiement :</strong> ' . $mode_paiement_label . '</p>
+                <p><strong>Statut :</strong> <span class="status-badge status-paye">Payé</span></p>
+                ' . (!empty($transaction['reference_paiement']) ? '<p><strong>Transaction :</strong> ' . htmlspecialchars(substr($transaction['reference_paiement'], 0, 20)) . '...</p>' : '') . '
+                ' . (!empty($commande['email']) ? '<p><strong>Email :</strong> ' . htmlspecialchars($commande['email']) . '</p>' : '') . '
+            </div>
+        </div>
+        
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th>Produit</th>
+                    <th>Référence</th>
+                    <th>Quantité</th>
+                    <th>Prix unitaire</th>
+                    <th>Total</th>
+                </tr>
+            </thead>
+            <tbody>';
     
     foreach ($items as $item) {
         $prix_total = $item['quantite'] * $item['prix_unitaire_ttc'];
-        $sous_total += $prix_total;
-        
-        $pdf->Cell(80, 8, ' ' . $item['nom_produit'], 'LR', 0, 'L', $fill);
-        $pdf->Cell(30, 8, $item['reference_produit'], 'LR', 0, 'C', $fill);
-        $pdf->Cell(20, 8, $item['quantite'], 'LR', 0, 'C', $fill);
-        $pdf->Cell(30, 8, number_format($item['prix_unitaire_ttc'], 2, ',', ' ') . ' €', 'LR', 0, 'R', $fill);
-        $pdf->Cell(30, 8, number_format($prix_total, 2, ',', ' ') . ' €', 'LR', 1, 'R', $fill);
-        
-        $fill = !$fill;
+        $html .= '
+                <tr>
+                    <td>' . htmlspecialchars($item['nom_produit']) . '</td>
+                    <td>' . htmlspecialchars($item['reference_produit'] ?? '-') . '</td>
+                    <td>' . $item['quantite'] . '</td>
+                    <td>' . number_format($item['prix_unitaire_ttc'], 2, ',', ' ') . ' €</td>
+                    <td><strong>' . number_format($prix_total, 2, ',', ' ') . ' €</strong></td>
+                </tr>';
     }
     
-    // Ligne de fermeture du tableau
-    $pdf->Cell(190, 0, '', 'T', 1);
+    $frais_livraison = floatval($commande['frais_livraison'] ?? 0);
+    $total_ttc = floatval($commande['total_ttc'] ?? $total);
     
-    // ============================================
-    // TOTAUX
-    // ============================================
-    $pdf->SetY($pdf->GetY() + 5);
+    $html .= '
+            </tbody>
+        </table>
+        
+        <div class="totals">
+            <div class="total-row">
+                <span>Sous-total</span>
+                <span>' . number_format($total, 2, ',', ' ') . ' €</span>
+            </div>
+            <div class="total-row">
+                <span>Frais de livraison</span>
+                <span>' . number_format($frais_livraison, 2, ',', ' ') . ' €</span>
+            </div>
+            <div class="total-row grand-total">
+                <span>TOTAL TTC</span>
+                <span>' . number_format($total_ttc, 2, ',', ' ') . ' €</span>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>HEURE DU CADEAU - 123 Rue des Cadeaux, 75001 Paris</p>
+            <p>contact@heureducadeau.fr - 01 23 45 67 89</p>
+            <p>SIRET : 123 456 789 00010 - TVA : FR12345678901</p>
+            <p>© ' . date('Y') . ' HEURE DU CADEAU - Tous droits réservés</p>
+        </div>
+    </div>
     
-    $pdf->SetFont('helvetica', '', 10);
+    <script>
+        // Auto-impression au chargement (optionnel)
+        // setTimeout(function() { window.print(); }, 500);
+    </script>
+</body>
+</html>';
     
-    // Sous-total
-    $pdf->Cell(130, 7, '', 0, 0, 'L');
-    $pdf->Cell(30, 7, 'Sous-total:', 0, 0, 'R');
-    $pdf->Cell(30, 7, number_format($sous_total, 2, ',', ' ') . ' €', 0, 1, 'R');
+    return $html;
+}
+
+/**
+ * Génère et force le téléchargement de la facture
+ * 
+ * @param array $commande Données de la commande
+ * @param array $items Articles de la commande
+ * @param array|null $transaction Données de transaction
+ */
+function telechargerFactureHTML($commande, $items, $transaction = null) {
+    $html = genererFactureHTML($commande, $items, $transaction);
     
-    // Frais de livraison
-    $pdf->Cell(130, 7, '', 0, 0, 'L');
-    $pdf->Cell(30, 7, 'Livraison:', 0, 0, 'R');
-    $pdf->Cell(30, 7, number_format($commande['frais_livraison'], 2, ',', ' ') . ' €', 0, 1, 'R');
+    // Définir les headers pour le téléchargement
+    header('Content-Type: text/html; charset=utf-8');
+    header('Content-Disposition: attachment; filename="facture_' . htmlspecialchars($commande['numero_commande'] ?? 'N/A') . '.html"');
+    header('Cache-Control: private, max-age=0, must-revalidate');
     
-    // Ligne de séparation
-    $pdf->Cell(130, 5, '', 0, 0, 'L');
-    $pdf->Cell(30, 5, '---', 0, 0, 'R');
-    $pdf->Cell(30, 5, '---', 0, 1, 'R');
+    echo $html;
+    exit;
+}
+
+/**
+ * Affiche la facture dans le navigateur (pour visualisation/impression)
+ * 
+ * @param array $commande Données de la commande
+ * @param array $items Articles de la commande
+ * @param array|null $transaction Données de transaction
+ */
+function afficherFactureHTML($commande, $items, $transaction = null) {
+    $html = genererFactureHTML($commande, $items, $transaction);
     
-    // Total TTC
-    $pdf->SetFont('helvetica', 'B', 14);
-    $pdf->SetTextColor(231, 76, 60);
-    $pdf->Cell(130, 10, '', 0, 0, 'L');
-    $pdf->Cell(30, 10, 'TOTAL TTC:', 0, 0, 'R');
-    $pdf->Cell(30, 10, number_format($commande['total_ttc'], 2, ',', ' ') . ' €', 0, 1, 'R');
-    
-    // ============================================
-    // INFORMATIONS DE PAIEMENT
-    // ============================================
-    $pdf->SetY($pdf->GetY() + 10);
-    $pdf->SetFont('helvetica', 'B', 11);
-    $pdf->SetTextColor(44, 62, 80);
-    $pdf->Cell(0, 8, 'INFORMATIONS DE PAIEMENT', 0, 1, 'L');
-    
-    $pdf->SetFont('helvetica', '', 10);
-    $pdf->SetTextColor(0, 0, 0);
-    
-    $pdf->Cell(40, 6, 'Mode de paiement:', 0, 0, 'L');
-    $pdf->Cell(0, 6, strtoupper($commande['mode_paiement']), 0, 1, 'L');
-    
-    $pdf->Cell(40, 6, 'Date de paiement:', 0, 0, 'L');
-    $date_paiement = !empty($commande['date_paiement']) ? $commande['date_paiement'] : $commande['date_commande'];
-    $pdf->Cell(0, 6, date('d/m/Y H:i', strtotime($date_paiement)), 0, 1, 'L');
-    
-    if ($transaction && !empty($transaction['reference_paiement'])) {
-        $pdf->Cell(40, 6, 'Référence:', 0, 0, 'L');
-        $pdf->Cell(0, 6, $transaction['reference_paiement'], 0, 1, 'L');
-    }
-    
-    // ============================================
-    // MENTIONS LÉGALES
-    // ============================================
-    $pdf->SetY(-40);
-    $pdf->SetFont('helvetica', '', 8);
-    $pdf->SetTextColor(150, 150, 150);
-    $pdf->Cell(0, 4, 'TVA non applicable - article 293 B du CGI', 0, 1, 'C');
-    $pdf->Cell(0, 4, 'HEURE DU CADEAU - 123 Rue des Cadeaux, 75001 Paris', 0, 1, 'C');
-    $pdf->Cell(0, 4, 'contact@heureducadeau.fr - 01 23 45 67 89', 0, 1, 'C');
-    $pdf->Cell(0, 4, 'SIRET 123 456 789 00012 - RCS Paris', 0, 1, 'C');
-    
-    // ============================================
-    // RETOURNER LE PDF
-    // ============================================
-    return $pdf->Output('facture_' . $commande['numero_commande'] . '.pdf', 'S');
+    header('Content-Type: text/html; charset=utf-8');
+    echo $html;
+    exit;
+}
+
+// Si le fichier est appelé directement
+if (basename($_SERVER['PHP_SELF']) == 'generer_pdf_facture.php') {
+    // Rediriger vers la page d'accueil si accès direct
+    header('Location: index.html');
+    exit;
 }
 ?>
