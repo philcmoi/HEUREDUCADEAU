@@ -170,7 +170,7 @@ function validateExpiryDate($month, $year) {
 /**
  * Validation Luhn pour numéro de carte
  */
-/*confirmation_commande.php?function validateLuhn($number) {
+function validateLuhn($number) {
     $number = preg_replace('/[^0-9]/', '', $number);
     $sum = 0;
     $alt = false;
@@ -186,7 +186,7 @@ function validateExpiryDate($month, $year) {
         $alt = !$alt;
     }
     return ($sum % 10 == 0);
-}*/
+}
 
 /**
  * Vérifie si une commande a déjà été payée

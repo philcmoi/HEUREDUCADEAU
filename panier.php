@@ -1,36 +1,66 @@
 <?php
 // panier.php - API de gestion du panier
-// VERSION CORRIGÉE COMPLÈTE - Avec tous les endpoints et logs corrigés
+// VERSION CORRIGÉE - Utilise les nouvelles fonctions de session_verification.php
+// Tout en conservant les acquis du passé
+
 require_once 'session_verification.php';
 
 header('Content-Type: application/json');
 header('Cache-Control: no-cache, must-revalidate');
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+// Gestion des requêtes OPTIONS pour CORS
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
 }
 
 $pdo = getPDOConnection();
 if (!$pdo) {
-    echo json_encode(['success' => false, 'message' => 'Erreur de connexion à la base de données']);
+    echo json_encode([
+        'success' => false, 
+        'message' => 'Erreur de connexion à la base de données'
+    ]);
     exit;
 }
 
-$input = json_decode(file_get_contents('php://input'), true);
-$action = $_GET['action'] ?? $input['action'] ?? null;
+// Récupération de l'action
+$action = $_GET['action'] ?? null;
+
+// Si c'est une requête POST, essayer de lire le body JSON
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $input = json_decode(file_get_contents('php://input'), true);
+    if ($input && isset($input['action'])) {
+        $action = $input['action'];
+    }
+}
 
 // Router des actions
 switch ($action) {
     case 'ajouter':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['success' => false, 'message' => 'Méthode non autorisée']);
+            break;
+        }
+        $input = json_decode(file_get_contents('php://input'), true);
         ajouterAuPanier($pdo, $input);
         break;
     
     case 'supprimer':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['success' => false, 'message' => 'Méthode non autorisée']);
+            break;
+        }
+        $input = json_decode(file_get_contents('php://input'), true);
         supprimerDuPanier($pdo, $input);
         break;
     
     case 'modifier':
-    case 'update_quantite': // Alias pour compatibilité
+    case 'update_quantite':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['success' => false, 'message' => 'Méthode non autorisée']);
+            break;
+        }
+        $input = json_decode(file_get_contents('php://input'), true);
         modifierQuantite($pdo, $input);
         break;
     
@@ -39,6 +69,10 @@ switch ($action) {
         break;
     
     case 'vider':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['success' => false, 'message' => 'Méthode non autorisée']);
+            break;
+        }
         viderPanier($pdo);
         break;
     
@@ -55,7 +89,63 @@ switch ($action) {
         break;
     
     default:
-        echo json_encode(['success' => false, 'message' => 'Action non valide: ' . $action]);
+        echo json_encode([
+            'success' => false, 
+            'message' => 'Action non valide: ' . $action,
+            'available_actions' => ['ajouter', 'supprimer', 'modifier', 'compter', 'vider', 'get', 'init_checkout', 'test']
+        ]);
+}
+
+/**
+ * Récupère le contenu du panier depuis la BDD
+ * Utilise la nouvelle fonction getCartItemsFromBDD() de session_verification.php
+ */
+function getPanier($pdo) {
+    $result = getCartItemsFromBDD($pdo);
+    echo json_encode($result);
+}
+
+/**
+ * Compte les articles dans le panier
+ */
+function compterArticles($pdo) {
+    $session_id = session_id();
+    $client_id = $_SESSION[SESSION_KEY_CLIENT_ID] ?? null;
+    
+    try {
+        if ($client_id) {
+            $stmt = $pdo->prepare("
+                SELECT COALESCE(SUM(pi.quantite), 0) as total 
+                FROM panier p
+                INNER JOIN panier_items pi ON p.id_panier = pi.id_panier
+                WHERE p.id_client = ? AND p.statut = 'actif'
+            ");
+            $stmt->execute([$client_id]);
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT COALESCE(SUM(pi.quantite), 0) as total 
+                FROM panier p
+                INNER JOIN panier_items pi ON p.id_panier = pi.id_panier
+                WHERE p.session_id = ? AND p.statut = 'actif'
+            ");
+            $stmt->execute([$session_id]);
+        }
+        
+        $total = (int)$stmt->fetchColumn();
+        
+        echo json_encode([
+            'success' => true,
+            'total' => $total
+        ]);
+        
+    } catch (Exception $e) {
+        error_log("Erreur compterArticles: " . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'total' => 0,
+            'message' => $e->getMessage()
+        ]);
+    }
 }
 
 /**
@@ -73,7 +163,7 @@ function ajouterAuPanier($pdo, $input) {
     if (!$quantite || $quantite < 1) $quantite = 1;
     
     $session_id = session_id();
-    $client_id = $_SESSION['id_client'] ?? null;
+    $client_id = $_SESSION[SESSION_KEY_CLIENT_ID] ?? null;
     
     try {
         $pdo->beginTransaction();
@@ -122,10 +212,10 @@ function ajouterAuPanier($pdo, $input) {
             ");
             $stmt->execute([$client_id, $session_id]);
             $id_panier = $pdo->lastInsertId();
-            $_SESSION['panier_id'] = $id_panier;
+            $_SESSION[SESSION_KEY_PANIER_ID] = $id_panier;
         } else {
             $id_panier = $panier['id_panier'];
-            $_SESSION['panier_id'] = $id_panier;
+            $_SESSION[SESSION_KEY_PANIER_ID] = $id_panier;
             
             $stmt = $pdo->prepare("UPDATE panier SET date_modification = NOW() WHERE id_panier = ?");
             $stmt->execute([$id_panier]);
@@ -152,6 +242,9 @@ function ajouterAuPanier($pdo, $input) {
             ");
             $stmt->execute([$nouvelle_quantite, $item['id_item']]);
             $quantite_finale = $nouvelle_quantite;
+            
+            // Mettre à jour la session également
+            addToCartSession($id_produit, $quantite, $produit['prix_ttc']);
         } else {
             $stmt = $pdo->prepare("
                 INSERT INTO panier_items (id_panier, id_produit, quantite, prix_unitaire, date_ajout, date_modification) 
@@ -159,26 +252,33 @@ function ajouterAuPanier($pdo, $input) {
             ");
             $stmt->execute([$id_panier, $id_produit, $quantite, $produit['prix_ttc']]);
             $quantite_finale = $quantite;
+            
+            // Ajouter à la session également
+            addToCartSession($id_produit, $quantite, $produit['prix_ttc']);
         }
         
-        // Journaliser l'action - CORRIGÉ : pas d'id_log manuel
-        $stmt = $pdo->prepare("
-            INSERT INTO panier_logs 
-            (id_panier, session_id, action, id_produit, nouvelle_quantite, ip_address, date_action) 
-            VALUES (?, ?, 'ajout', ?, ?, ?, NOW())
-        ");
-        $stmt->execute([
-            $id_panier, 
-            $session_id, 
-            $id_produit, 
-            $quantite_finale, 
-            $_SERVER['REMOTE_ADDR'] ?? null
-        ]);
+        // Journaliser l'action
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO panier_logs 
+                (id_panier, session_id, action, id_produit, nouvelle_quantite, ip_address, date_action) 
+                VALUES (?, ?, 'ajout', ?, ?, ?, NOW())
+            ");
+            $stmt->execute([
+                $id_panier, 
+                $session_id, 
+                $id_produit, 
+                $quantite_finale, 
+                $_SERVER['REMOTE_ADDR'] ?? null
+            ]);
+        } catch (Exception $e) {
+            // Ignorer les erreurs de log
+        }
         
         $pdo->commit();
         
         // Compter le total des articles
-        $stmt = $pdo->prepare("SELECT SUM(quantite) as total FROM panier_items WHERE id_panier = ?");
+        $stmt = $pdo->prepare("SELECT COALESCE(SUM(quantite), 0) as total FROM panier_items WHERE id_panier = ?");
         $stmt->execute([$id_panier]);
         $total_articles = (int)$stmt->fetchColumn();
         
@@ -214,119 +314,85 @@ function ajouterAuPanier($pdo, $input) {
     } catch (Exception $e) {
         $pdo->rollBack();
         error_log("Erreur ajout panier: " . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        echo json_encode([
+            'success' => false, 
+            'message' => $e->getMessage()
+        ]);
     }
-}
-
-/**
- * Récupère le contenu du panier
- */
-function getPanier($pdo) {
-    $result = getCartItems();
-    echo json_encode($result);
-}
-
-/**
- * Compte les articles
- */
-function compterArticles($pdo) {
-    $total = countCartItems(true); // Force refresh
-    
-    echo json_encode([
-        'success' => true,
-        'total' => $total,
-        'session_id' => session_id(),
-        'client_id' => $_SESSION['id_client'] ?? null
-    ]);
 }
 
 /**
  * Supprime un produit du panier
  */
 function supprimerDuPanier($pdo, $input) {
-    // Accepter soit id_item, soit id_produit
-    $id_item = filter_var($input['id_item'] ?? 0, FILTER_VALIDATE_INT);
     $id_produit = filter_var($input['id_produit'] ?? 0, FILTER_VALIDATE_INT);
     
+    if (!$id_produit || $id_produit <= 0) {
+        echo json_encode(['success' => false, 'message' => 'ID produit invalide']);
+        return;
+    }
+    
     $session_id = session_id();
-    $client_id = $_SESSION['id_client'] ?? null;
+    $client_id = $_SESSION[SESSION_KEY_CLIENT_ID] ?? null;
     
     try {
         $pdo->beginTransaction();
         
-        // Si on a reçu id_produit, il faut trouver l'id_item correspondant
-        if ($id_produit > 0 && $id_item == 0) {
-            if ($client_id) {
-                $stmt = $pdo->prepare("
-                    SELECT pi.id_item, pi.id_panier, pi.quantite
-                    FROM panier_items pi
-                    INNER JOIN panier p ON pi.id_panier = p.id_panier
-                    WHERE pi.id_produit = ? AND p.id_client = ? AND p.statut = 'actif'
-                    ORDER BY pi.date_ajout DESC LIMIT 1
-                ");
-                $stmt->execute([$id_produit, $client_id]);
-            } else {
-                $stmt = $pdo->prepare("
-                    SELECT pi.id_item, pi.id_panier, pi.quantite
-                    FROM panier_items pi
-                    INNER JOIN panier p ON pi.id_panier = p.id_panier
-                    WHERE pi.id_produit = ? AND p.session_id = ? AND p.statut = 'actif'
-                    ORDER BY pi.date_ajout DESC LIMIT 1
-                ");
-                $stmt->execute([$id_produit, $session_id]);
-            }
-            $item_info = $stmt->fetch();
-            
-            if ($item_info) {
-                $id_item = $item_info['id_item'];
-                $id_panier = $item_info['id_panier'];
-                $quantite = $item_info['quantite'];
-            } else {
-                throw new Exception("Produit non trouvé dans le panier");
-            }
-        } else {
-            // Récupérer les infos par id_item
+        // Trouver l'item et le panier
+        if ($client_id) {
             $stmt = $pdo->prepare("
-                SELECT pi.id_panier, pi.id_produit, pi.quantite
+                SELECT pi.id_item, pi.id_panier, pi.quantite
                 FROM panier_items pi
                 INNER JOIN panier p ON pi.id_panier = p.id_panier
-                WHERE pi.id_item = ? 
-                AND (
-                    (p.id_client = ? AND ? IS NOT NULL) 
-                    OR 
-                    (p.session_id = ? AND ? IS NULL)
-                )
-                AND p.statut = 'actif'
+                WHERE pi.id_produit = ? AND p.id_client = ? AND p.statut = 'actif'
+                ORDER BY pi.date_ajout DESC LIMIT 1
             ");
-            $stmt->execute([$id_item, $client_id, $client_id, $session_id, $client_id]);
-            $item_info = $stmt->fetch();
-            
-            if (!$item_info) {
-                throw new Exception("Article non trouvé ou non autorisé");
-            }
-            
-            $id_panier = $item_info['id_panier'];
-            $id_produit = $item_info['id_produit'];
-            $quantite = $item_info['quantite'];
+            $stmt->execute([$id_produit, $client_id]);
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT pi.id_item, pi.id_panier, pi.quantite
+                FROM panier_items pi
+                INNER JOIN panier p ON pi.id_panier = p.id_panier
+                WHERE pi.id_produit = ? AND p.session_id = ? AND p.statut = 'actif'
+                ORDER BY pi.date_ajout DESC LIMIT 1
+            ");
+            $stmt->execute([$id_produit, $session_id]);
         }
+        
+        $item_info = $stmt->fetch();
+        
+        if (!$item_info) {
+            throw new Exception("Produit non trouvé dans le panier");
+        }
+        
+        $id_item = $item_info['id_item'];
+        $id_panier = $item_info['id_panier'];
+        $quantite = $item_info['quantite'];
         
         // Supprimer l'article
         $stmt = $pdo->prepare("DELETE FROM panier_items WHERE id_item = ?");
         $stmt->execute([$id_item]);
         
-        // Journaliser - CORRIGÉ : pas d'id_log manuel
-        $stmt = $pdo->prepare("
-            INSERT INTO panier_logs 
-            (id_panier, session_id, action, id_produit, ancienne_quantite, ip_address, date_action) 
-            VALUES (?, ?, 'suppression', ?, ?, ?, NOW())
-        ");
-        $stmt->execute([
-            $id_panier,
-            $session_id,
-            $id_produit,
-            $quantite,
-            $_SERVER['REMOTE_ADDR'] ?? null
-        ]);
+        // Supprimer de la session également
+        removeFromCartSession($id_produit);
+        
+        // Journaliser
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO panier_logs 
+                (id_panier, session_id, action, id_produit, ancienne_quantite, ip_address, date_action) 
+                VALUES (?, ?, 'suppression', ?, ?, ?, NOW())
+            ");
+            $stmt->execute([
+                $id_panier,
+                $session_id,
+                $id_produit,
+                $quantite,
+                $_SERVER['REMOTE_ADDR'] ?? null
+            ]);
+        } catch (Exception $e) {
+            // Ignorer les erreurs de log
+        }
         
         $pdo->commit();
         
@@ -338,7 +404,10 @@ function supprimerDuPanier($pdo, $input) {
     } catch (Exception $e) {
         $pdo->rollBack();
         error_log("Erreur suppression panier: " . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        echo json_encode([
+            'success' => false, 
+            'message' => $e->getMessage()
+        ]);
     }
 }
 
@@ -346,10 +415,13 @@ function supprimerDuPanier($pdo, $input) {
  * Modifie la quantité d'un produit
  */
 function modifierQuantite($pdo, $input) {
-    // Accepter soit id_item, soit id_produit
-    $id_item = filter_var($input['id_item'] ?? 0, FILTER_VALIDATE_INT);
     $id_produit = filter_var($input['id_produit'] ?? 0, FILTER_VALIDATE_INT);
     $quantite = filter_var($input['quantite'] ?? 1, FILTER_VALIDATE_INT);
+    
+    if (!$id_produit || $id_produit <= 0) {
+        echo json_encode(['success' => false, 'message' => 'ID produit invalide']);
+        return;
+    }
     
     if ($quantite < 1) {
         echo json_encode(['success' => false, 'message' => 'Quantité invalide']);
@@ -357,90 +429,75 @@ function modifierQuantite($pdo, $input) {
     }
     
     $session_id = session_id();
-    $client_id = $_SESSION['id_client'] ?? null;
+    $client_id = $_SESSION[SESSION_KEY_CLIENT_ID] ?? null;
     
     try {
         $pdo->beginTransaction();
         
-        // Si on a reçu id_produit mais pas id_item, trouver l'item
-        if ($id_produit > 0 && $id_item == 0) {
-            if ($client_id) {
-                $stmt = $pdo->prepare("
-                    SELECT pi.id_item, pi.id_panier, pi.quantite as ancienne_quantite
-                    FROM panier_items pi
-                    INNER JOIN panier p ON pi.id_panier = p.id_panier
-                    WHERE pi.id_produit = ? AND p.id_client = ? AND p.statut = 'actif'
-                    ORDER BY pi.date_ajout DESC LIMIT 1
-                ");
-                $stmt->execute([$id_produit, $client_id]);
-            } else {
-                $stmt = $pdo->prepare("
-                    SELECT pi.id_item, pi.id_panier, pi.quantite as ancienne_quantite
-                    FROM panier_items pi
-                    INNER JOIN panier p ON pi.id_panier = p.id_panier
-                    WHERE pi.id_produit = ? AND p.session_id = ? AND p.statut = 'actif'
-                    ORDER BY pi.date_ajout DESC LIMIT 1
-                ");
-                $stmt->execute([$id_produit, $session_id]);
-            }
-            $item_info = $stmt->fetch();
-            
-            if ($item_info) {
-                $id_item = $item_info['id_item'];
-                $id_panier = $item_info['id_panier'];
-                $ancienne_quantite = $item_info['ancienne_quantite'];
-            } else {
-                throw new Exception("Produit non trouvé dans le panier");
-            }
-        } else {
-            // Vérifier le stock et récupérer les infos
+        // Trouver l'item et vérifier le stock
+        if ($client_id) {
             $stmt = $pdo->prepare("
-                SELECT p.quantite_stock, pi.id_panier, pi.id_produit, pi.quantite as ancienne_quantite
+                SELECT pi.id_item, pi.id_panier, pi.quantite as ancienne_quantite, p.quantite_stock
                 FROM panier_items pi
                 INNER JOIN panier pa ON pi.id_panier = pa.id_panier
                 INNER JOIN produits p ON pi.id_produit = p.id_produit
-                WHERE pi.id_item = ? 
-                AND (
-                    (pa.id_client = ? AND ? IS NOT NULL) 
-                    OR 
-                    (pa.session_id = ? AND ? IS NULL)
-                )
-                AND pa.statut = 'actif'
+                WHERE pi.id_produit = ? AND pa.id_client = ? AND pa.statut = 'actif'
+                ORDER BY pi.date_ajout DESC LIMIT 1
             ");
-            $stmt->execute([$id_item, $client_id, $client_id, $session_id, $client_id]);
-            $item_info = $stmt->fetch();
-            
-            if (!$item_info) {
-                throw new Exception("Article non trouvé ou non autorisé");
-            }
-            
-            $id_panier = $item_info['id_panier'];
-            $id_produit = $item_info['id_produit'];
-            $ancienne_quantite = $item_info['ancienne_quantite'];
-            
-            if ($item_info['quantite_stock'] < $quantite) {
-                throw new Exception("Stock insuffisant. Disponible: " . $item_info['quantite_stock']);
-            }
+            $stmt->execute([$id_produit, $client_id]);
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT pi.id_item, pi.id_panier, pi.quantite as ancienne_quantite, p.quantite_stock
+                FROM panier_items pi
+                INNER JOIN panier pa ON pi.id_panier = pa.id_panier
+                INNER JOIN produits p ON pi.id_produit = p.id_produit
+                WHERE pi.id_produit = ? AND pa.session_id = ? AND pa.statut = 'actif'
+                ORDER BY pi.date_ajout DESC LIMIT 1
+            ");
+            $stmt->execute([$id_produit, $session_id]);
         }
+        
+        $item_info = $stmt->fetch();
+        
+        if (!$item_info) {
+            throw new Exception("Produit non trouvé dans le panier");
+        }
+        
+        if ($item_info['quantite_stock'] < $quantite) {
+            throw new Exception("Stock insuffisant. Disponible: " . $item_info['quantite_stock']);
+        }
+        
+        $id_item = $item_info['id_item'];
+        $id_panier = $item_info['id_panier'];
+        $ancienne_quantite = $item_info['ancienne_quantite'];
         
         // Mettre à jour la quantité
         $stmt = $pdo->prepare("UPDATE panier_items SET quantite = ?, date_modification = NOW() WHERE id_item = ?");
         $stmt->execute([$quantite, $id_item]);
         
-        // Journaliser - CORRIGÉ : pas d'id_log manuel
-        $stmt = $pdo->prepare("
-            INSERT INTO panier_logs 
-            (id_panier, session_id, action, id_produit, ancienne_quantite, nouvelle_quantite, ip_address, date_action) 
-            VALUES (?, ?, 'modification', ?, ?, ?, ?, NOW())
-        ");
-        $stmt->execute([
-            $id_panier,
-            $session_id,
-            $id_produit,
-            $ancienne_quantite,
-            $quantite,
-            $_SERVER['REMOTE_ADDR'] ?? null
-        ]);
+        // Mettre à jour la session
+        // Pour la session, on doit d'abord supprimer l'ancien puis ajouter le nouveau
+        removeFromCartSession($id_produit);
+        addToCartSession($id_produit, $quantite, null); // Le prix sera récupéré plus tard
+        
+        // Journaliser
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO panier_logs 
+                (id_panier, session_id, action, id_produit, ancienne_quantite, nouvelle_quantite, ip_address, date_action) 
+                VALUES (?, ?, 'modification', ?, ?, ?, ?, NOW())
+            ");
+            $stmt->execute([
+                $id_panier,
+                $session_id,
+                $id_produit,
+                $ancienne_quantite,
+                $quantite,
+                $_SERVER['REMOTE_ADDR'] ?? null
+            ]);
+        } catch (Exception $e) {
+            // Ignorer les erreurs de log
+        }
         
         $pdo->commit();
         
@@ -452,7 +509,10 @@ function modifierQuantite($pdo, $input) {
     } catch (Exception $e) {
         $pdo->rollBack();
         error_log("Erreur modification panier: " . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        echo json_encode([
+            'success' => false, 
+            'message' => $e->getMessage()
+        ]);
     }
 }
 
@@ -461,7 +521,7 @@ function modifierQuantite($pdo, $input) {
  */
 function viderPanier($pdo) {
     $session_id = session_id();
-    $client_id = $_SESSION['id_client'] ?? null;
+    $client_id = $_SESSION[SESSION_KEY_CLIENT_ID] ?? null;
     
     try {
         $pdo->beginTransaction();
@@ -470,12 +530,14 @@ function viderPanier($pdo) {
             $stmt = $pdo->prepare("
                 SELECT id_panier FROM panier 
                 WHERE id_client = ? AND statut = 'actif'
+                ORDER BY date_creation DESC LIMIT 1
             ");
             $stmt->execute([$client_id]);
         } else {
             $stmt = $pdo->prepare("
                 SELECT id_panier FROM panier 
                 WHERE session_id = ? AND statut = 'actif'
+                ORDER BY date_creation DESC LIMIT 1
             ");
             $stmt->execute([$session_id]);
         }
@@ -483,13 +545,17 @@ function viderPanier($pdo) {
         $panier = $stmt->fetch();
         
         if ($panier) {
-            // Journaliser - CORRIGÉ : pas d'id_log manuel
-            $stmt = $pdo->prepare("
-                INSERT INTO panier_logs 
-                (id_panier, session_id, action, ip_address, date_action) 
-                VALUES (?, ?, 'vider', ?, NOW())
-            ");
-            $stmt->execute([$panier['id_panier'], $session_id, $_SERVER['REMOTE_ADDR'] ?? null]);
+            // Journaliser
+            try {
+                $stmt = $pdo->prepare("
+                    INSERT INTO panier_logs 
+                    (id_panier, session_id, action, ip_address, date_action) 
+                    VALUES (?, ?, 'vider', ?, NOW())
+                ");
+                $stmt->execute([$panier['id_panier'], $session_id, $_SERVER['REMOTE_ADDR'] ?? null]);
+            } catch (Exception $e) {
+                // Ignorer les erreurs de log
+            }
             
             $stmt = $pdo->prepare("DELETE FROM panier_items WHERE id_panier = ?");
             $stmt->execute([$panier['id_panier']]);
@@ -498,14 +564,23 @@ function viderPanier($pdo) {
             $stmt->execute([$panier['id_panier']]);
         }
         
+        // Vider la session également
+        clearCartSession();
+        
         $pdo->commit();
         
-        echo json_encode(['success' => true, 'message' => 'Panier vidé avec succès']);
+        echo json_encode([
+            'success' => true, 
+            'message' => 'Panier vidé avec succès'
+        ]);
         
     } catch (Exception $e) {
         $pdo->rollBack();
         error_log("Erreur vidage panier: " . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Erreur lors du vidage du panier']);
+        echo json_encode([
+            'success' => false, 
+            'message' => 'Erreur lors du vidage du panier'
+        ]);
     }
 }
 
@@ -513,21 +588,21 @@ function viderPanier($pdo) {
  * Initialise le checkout
  */
 function initCheckout($pdo) {
-    $session_id = session_id();
-    $client_id = $_SESSION['id_client'] ?? null;
-    
     try {
-        // Vérifier que le panier n'est pas vide
-        $result = getCartItems();
+        // Récupérer le panier depuis la BDD
+        $result = getCartItemsFromBDD($pdo);
         
         if (!$result['success'] || empty($result['panier'])) {
-            echo json_encode(['success' => false, 'message' => 'Panier vide']);
+            echo json_encode([
+                'success' => false, 
+                'message' => 'Panier vide'
+            ]);
             return;
         }
         
         // Vérifier la disponibilité des stocks
         foreach ($result['panier'] as $item) {
-            if (!$item['disponible']) {
+            if (isset($item['disponible']) && !$item['disponible']) {
                 echo json_encode([
                     'success' => false, 
                     'message' => 'Stock insuffisant pour: ' . $item['nom']
@@ -552,7 +627,10 @@ function initCheckout($pdo) {
         
     } catch (Exception $e) {
         error_log("Erreur initCheckout: " . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Erreur lors de l\'initialisation']);
+        echo json_encode([
+            'success' => false, 
+            'message' => 'Erreur lors de l\'initialisation'
+        ]);
     }
 }
 
@@ -565,7 +643,10 @@ function testAPI($pdo) {
         $count = $stmt->fetchColumn();
         
         $session_id = session_id();
-        $client_id = $_SESSION['id_client'] ?? null;
+        $client_id = $_SESSION[SESSION_KEY_CLIENT_ID] ?? null;
+        
+        // Tester la nouvelle fonction
+        $panier_test = getCartItemsFromBDD($pdo);
         
         echo json_encode([
             'success' => true,
@@ -579,6 +660,10 @@ function testAPI($pdo) {
             'database' => [
                 'connected' => true,
                 'produits_actifs' => (int)$count
+            ],
+            'panier_test' => [
+                'count' => count($panier_test['panier'] ?? []),
+                'total_items' => $panier_test['total_items'] ?? 0
             ]
         ]);
     } catch (Exception $e) {

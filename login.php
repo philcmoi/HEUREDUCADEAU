@@ -420,7 +420,7 @@ if (isset($_GET['message'])) {
                 </button>
             </form>
             
-            <div class="demo-credentials">
+            <!--<div class="demo-credentials">
                 <h4><i class="fas fa-key"></i> Identifiants de test</h4>
                 <div class="credential-item">
                     <i class="fas fa-user"></i>
@@ -438,8 +438,8 @@ if (isset($_GET['message'])) {
                     <i class="fas fa-exclamation-triangle"></i>
                     Ces identifiants sont pour le développement. Changez les en production!
                 </div>
-            </div>
-            
+            </div>-->
+
             <div class="login-footer">
                 <p><i class="fas fa-shield-alt"></i> Connexion sécurisée - © <?php echo date('Y'); ?> Heure du Cadeau</p>
             </div>
