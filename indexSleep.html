@@ -2,12 +2,19 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, user-scalable=yes"
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HEURE DU CADEAU - Boutique de cadeaux uniques</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
     />
-    <title>Youki and Co - Créations artisanales japonaises</title>
     <style>
+      /* ==============================================
+         STYLES GLOBAUX - HARMONISÉ AVEC PANIER.HTML
+         ============================================== */
+
+      /* Reset et base */
       * {
         margin: 0;
         padding: 0;
@@ -15,339 +22,687 @@
       }
 
       body {
-        font-family: "Helvetica Neue", Arial, sans-serif;
-        line-height: 1.6;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+          sans-serif;
+        background-color: #f8f9fa;
         color: #333;
-        background-color: #f9f9f9;
+        line-height: 1.6;
+        overflow-x: hidden;
       }
 
       .container {
         max-width: 1200px;
         margin: 0 auto;
         padding: 0 20px;
+        width: 100%;
       }
 
-      /* En-tête */
+      /* ==============================================
+         HEADER - IDENTIQUE À PANIER.HTML
+         ============================================== */
+
       header {
-        background-color: #f9f9f9;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-        position: fixed;
-        width: 100%;
+        background: linear-gradient(135deg, #2c3e50, #34495e);
+        color: white;
+        padding: 20px 0;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        position: sticky;
         top: 0;
         z-index: 1000;
+        width: 100%;
       }
 
-      .header-container {
+      .header-content {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 15px 0;
       }
 
       .logo {
-        font-family: "Georgia", serif;
-        font-size: 24px;
+        color: white;
+        text-decoration: none;
+        font-size: 1.8rem;
         font-weight: bold;
-        color: #d40000;
-        text-decoration: none;
-      }
-
-      .logo span {
-        color: #333;
-      }
-
-      nav ul {
         display: flex;
-        list-style: none;
+        align-items: center;
+        gap: 10px;
+        transition: transform 0.3s ease;
       }
 
-      nav ul li {
-        margin-left: 30px;
+      .logo:hover {
+        transform: scale(1.05);
       }
 
-      nav ul li a {
+      .logo i {
+        color: #e74c3c;
+      }
+
+      nav {
+        display: flex;
+        gap: 25px;
+        align-items: center;
+      }
+
+      nav a {
+        color: white;
         text-decoration: none;
-        color: #333;
-        font-size: 14px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        transition: color 0.3s;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        padding: 8px 12px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
 
-      nav ul li a:hover {
-        color: #d40000;
+      nav a:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        transform: translateY(-2px);
       }
 
-      /* Styles pour le panier */
-      #compteur-panier {
-        background: #d40000;
+      nav a.active {
+        background-color: rgba(255, 255, 255, 0.15);
+      }
+
+      .cart-link {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .cart-count {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        background-color: #e74c3c;
         color: white;
         border-radius: 50%;
-        width: 20px;
-        height: 20px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 12px;
-        margin-left: 5px;
-      }
-
-      /* Bannière principale */
-      .hero {
-        background:
-          linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)),
-          url("img/ai-generated-8662190_1280.png");
-        background-size: cover;
-        background-position: center;
-        height: 90vh;
+        width: 22px;
+        height: 22px;
+        font-size: 0.8rem;
         display: flex;
         align-items: center;
         justify-content: center;
-        text-align: center;
-        color: white;
-        margin-top: 60px;
+        font-weight: bold;
       }
 
-      .hero-content {
-        max-width: 800px;
-        padding: 0 20px;
-      }
-
-      .hero h1 {
-        font-size: 3.5rem;
-        margin-bottom: 20px;
-        font-weight: 300;
-        letter-spacing: 2px;
-      }
-
-      .hero p {
-        font-size: 1.2rem;
-        margin-bottom: 30px;
-        font-weight: 300;
-      }
-
-      .btn {
-        display: inline-block;
-        background-color: #d40000;
-        color: white;
-        padding: 12px 30px;
-        text-decoration: none;
-        border-radius: 2px;
-        font-size: 14px;
-        letter-spacing: 1px;
-        transition: all 0.3s ease;
+      /* Menu mobile toggle */
+      .menu-toggle {
+        display: none;
+        background: none;
         border: none;
+        color: white;
+        font-size: 1.8rem;
         cursor: pointer;
+        padding: 8px;
+        border-radius: 6px;
+        transition: all 0.3s ease;
       }
 
-      .btn:hover {
-        background-color: #b30000;
+      .menu-toggle:hover {
+        background-color: rgba(255, 255, 255, 0.1);
       }
 
-      .btn:active {
-        transform: scale(0.95);
+      /* Navigation mobile */
+      .nav-mobile {
+        display: none;
+        background: #34495e;
+        padding: 20px;
+        border-radius: 0 0 12px 12px;
+        margin-top: 15px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        animation: slideDown 0.3s ease;
       }
 
-      /* Section à propos */
-      .about {
-        padding: 80px 0;
-        background-color: #f9f9f9;
+      @keyframes slideDown {
+        from {
+          opacity: 0;
+          transform: translateY(-20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
 
-      .section-title {
-        text-align: center;
-        margin-bottom: 50px;
-        position: relative;
-      }
-
-      .section-title h2 {
-        font-size: 2rem;
-        font-weight: 300;
-        color: #333;
-        display: inline-block;
-        padding-bottom: 10px;
-      }
-
-      .section-title h2:after {
-        content: "";
-        position: absolute;
-        width: 50px;
-        height: 2px;
-        background-color: #d40000;
-        bottom: 0;
-        left: 50%;
-        transform: translateX(-50%);
-      }
-
-      .about-content {
-        display: flex;
-        align-items: center;
-        gap: 50px;
-      }
-
-      .about-text {
-        flex: 1;
-      }
-
-      .about-text h3 {
-        font-size: 1.5rem;
-        margin-bottom: 20px;
-        font-weight: 400;
-      }
-
-      .about-text p {
-        margin-bottom: 20px;
-        color: #666;
-      }
-
-      .about-image {
-        flex: 1;
-        border-radius: 2px;
-        overflow: hidden;
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-      }
-
-      .about-image img {
-        width: 100%;
-        height: auto;
+      .nav-mobile.show {
         display: block;
       }
 
-      /* Section produits */
-      .products {
-        padding: 80px 0;
+      .nav-mobile-list {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
       }
 
-      .products-grid {
+      .nav-mobile-link {
+        color: white;
+        text-decoration: none;
+        font-weight: 500;
+        padding: 15px 20px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        transition: all 0.3s ease;
+        background: rgba(255, 255, 255, 0.05);
+        font-size: 1.1rem;
+      }
+
+      .nav-mobile-link i {
+        width: 25px;
+        color: #e74c3c;
+      }
+
+      .nav-mobile-link:hover {
+        background: #e74c3c;
+        transform: translateX(5px);
+      }
+
+      .nav-mobile-link:hover i {
+        color: white;
+      }
+
+      /* ==============================================
+         SECTIONS - HARMONISÉES AVEC PANIER.HTML
+         ============================================== */
+
+      /* Hero Section */
+      .hero {
+        padding: 60px 0;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        animation: fadeIn 1s ease;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      .hero-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 50px;
+        align-items: center;
+      }
+
+      .hero-content {
+        animation: slideInLeft 1s ease;
+      }
+
+      @keyframes slideInLeft {
+        from {
+          opacity: 0;
+          transform: translateX(-30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+
+      .hero-title {
+        font-size: 2.8rem;
+        font-weight: 700;
+        color: #2c3e50;
+        line-height: 1.2;
+        margin-bottom: 20px;
+        background: linear-gradient(135deg, #2c3e50, #3498db);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .hero-subtitle {
+        font-size: 1.2rem;
+        color: #7f8c8d;
+        margin-bottom: 30px;
+        max-width: 90%;
+      }
+
+      .hero-buttons {
+        display: flex;
+        gap: 15px;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        padding: 15px 30px;
+        border-radius: 8px;
+        font-weight: 600;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        transition: all 0.3s ease;
+        font-size: 1rem;
+        border: none;
+        cursor: pointer;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, #27ae60, #219653);
+        color: white;
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 15px rgba(39, 174, 96, 0.3);
+        background: linear-gradient(135deg, #219653, #1e8449);
+      }
+
+      .btn-secondary {
+        background: linear-gradient(135deg, #3498db, #2980b9);
+        color: white;
+      }
+
+      .btn-secondary:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 15px rgba(52, 152, 219, 0.3);
+        background: linear-gradient(135deg, #2980b9, #2573a7);
+      }
+
+      .hero-image {
+        animation: slideInRight 1s ease;
+      }
+
+      @keyframes slideInRight {
+        from {
+          opacity: 0;
+          transform: translateX(30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+
+      .hero-image img {
+        width: 100%;
+        height: auto;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease;
+      }
+
+      .hero-image img:hover {
+        transform: scale(1.02);
+      }
+
+      /* Sections communes */
+      section {
+        padding: 60px 0;
+      }
+
+      .section-title {
+        font-size: 2.2rem;
+        color: #2c3e50;
+        text-align: center;
+        margin-bottom: 15px;
+        background: linear-gradient(135deg, #2c3e50, #3498db);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .section-subtitle {
+        text-align: center;
+        color: #7f8c8d;
+        font-size: 1.1rem;
+        margin-bottom: 40px;
+      }
+
+      /* Grilles responsives */
+      .categories-grid,
+      .services-grid,
+      .testimonials-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 30px;
+        margin-top: 30px;
+      }
+
+      .category-card,
+      .service-card,
+      .testimonial-card {
+        background: white;
+        padding: 30px;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        transition: all 0.3s ease;
+        text-align: center;
+        animation: fadeInUp 0.8s ease;
+      }
+
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .category-card:hover,
+      .service-card:hover,
+      .testimonial-card:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12);
+      }
+
+      .category-icon,
+      .service-icon {
+        width: 80px;
+        height: 80px;
+        background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 25px;
+      }
+
+      .category-icon i,
+      .service-icon i {
+        font-size: 2.5rem;
+        color: #3498db;
+      }
+
+      .category-card h3,
+      .service-card h3 {
+        font-size: 1.4rem;
+        color: #2c3e50;
+        margin-bottom: 15px;
+      }
+
+      .category-card p,
+      .service-card p {
+        color: #7f8c8d;
+        margin-bottom: 20px;
+        line-height: 1.6;
+      }
+
+      .category-link {
+        color: #3498db;
+        text-decoration: none;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        transition: all 0.3s ease;
+      }
+
+      .category-link:hover {
+        gap: 10px;
+        color: #2980b9;
+      }
+
+      /* Testimonials */
+      .testimonial-rating {
+        margin-bottom: 15px;
+      }
+
+      .testimonial-rating i {
+        color: #f1c40f;
+        margin: 0 2px;
+      }
+
+      .testimonial-text {
+        font-style: italic;
+        color: #555;
+        margin-bottom: 20px;
+        line-height: 1.8;
+      }
+
+      .testimonial-author {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        justify-content: center;
+      }
+
+      .author-avatar {
+        width: 50px;
+        height: 50px;
+        background: linear-gradient(135deg, #3498db, #2980b9);
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 1.2rem;
+      }
+
+      .author-info h4 {
+        color: #2c3e50;
+        margin-bottom: 5px;
+      }
+
+      .author-info p {
+        color: #7f8c8d;
+        font-size: 0.9rem;
+      }
+
+      /* Produits phares */
+      .featured-products {
+        background: #f8f9fa;
+      }
+
+      .featured-products .products-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
         gap: 30px;
-        min-height: 400px;
+        margin: 40px 0;
       }
 
       .product-card {
-        background-color: white;
-        border-radius: 2px;
+        background: white;
+        border-radius: 16px;
         overflow: hidden;
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
-        transition:
-          transform 0.3s,
-          box-shadow 0.3s;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        transition: all 0.3s ease;
+        position: relative;
+        animation: fadeInUp 0.8s ease;
       }
 
       .product-card:hover {
         transform: translateY(-5px);
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12);
       }
 
       .product-image {
+        position: relative;
         height: 250px;
         overflow: hidden;
+        background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
       .product-image img {
         width: 100%;
         height: 100%;
         object-fit: cover;
-        transition: transform 0.5s;
+        transition: transform 0.5s ease;
       }
 
       .product-card:hover .product-image img {
         transform: scale(1.05);
       }
 
+      .product-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(52, 152, 219, 0.9);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      .product-card:hover .product-overlay {
+        opacity: 1;
+      }
+
+      .product-overlay i {
+        color: white;
+        font-size: 2rem;
+        background: rgba(255, 255, 255, 0.2);
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .discount-badge {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        background: linear-gradient(135deg, #e74c3c, #c0392b);
+        color: white;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        z-index: 1;
+        box-shadow: 0 4px 10px rgba(231, 76, 60, 0.3);
+      }
+
+      .stock-badge {
+        position: absolute;
+        top: 15px;
+        left: 15px;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        z-index: 1;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      }
+
+      .stock-faible {
+        background: linear-gradient(135deg, #f39c12, #e67e22);
+        color: white;
+      }
+
+      .stock-rupture {
+        background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+        color: white;
+      }
+
       .product-info {
         padding: 20px;
       }
 
-      .product-info h3 {
-        font-size: 1.2rem;
-        margin-bottom: 10px;
-        font-weight: 400;
+      .product-category {
+        display: inline-block;
+        color: #7f8c8d;
+        font-size: 0.85rem;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
       }
 
-      .product-info p {
-        color: #666;
-        font-size: 0.9rem;
-        margin-bottom: 15px;
-        height: 60px;
+      .product-info h3 {
+        margin: 0 0 10px 0;
+        font-size: 1.2rem;
+        color: #2c3e50;
+        line-height: 1.4;
+        height: 50px;
         overflow: hidden;
         display: -webkit-box;
-        -webkit-line-clamp: 3;
+        -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
+        font-weight: 600;
       }
 
       .product-price {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: #e74c3c;
+        margin: 10px 0;
         display: flex;
-        justify-content: space-between;
         align-items: center;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
       }
 
-      .price {
-        font-weight: bold;
-        color: #d40000;
+      .product-rating {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin: 10px 0;
       }
 
-      /* Pagination */
-      .pagination {
+      .product-rating i {
+        color: #f1c40f;
+        font-size: 0.9rem;
+      }
+
+      .rating-count {
+        color: #7f8c8d;
+        font-size: 0.85rem;
+      }
+
+      .product-actions {
         display: flex;
-        justify-content: center;
-        align-items: center;
         gap: 10px;
-        margin-top: 50px;
-        flex-wrap: wrap;
+        margin-top: 15px;
       }
 
-      .pagination-btn {
-        padding: 10px 15px;
-        border: 1px solid #ddd;
-        background: white;
-        color: #333;
-        cursor: pointer;
-        border-radius: 4px;
-        transition: all 0.3s;
-        min-width: 40px;
-        text-align: center;
-      }
-
-      .pagination-btn:hover:not(:disabled) {
-        background: #f0f0f0;
-        border-color: #999;
-      }
-
-      .pagination-btn.active {
-        background: #d40000;
+      .btn-add-to-cart {
+        flex: 1;
+        background: linear-gradient(135deg, #27ae60, #219653);
         color: white;
-        border-color: #d40000;
+        border: none;
+        padding: 12px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: all 0.3s ease;
+        font-size: 0.95rem;
+        box-shadow: 0 4px 10px rgba(39, 174, 96, 0.2);
       }
 
-      .pagination-btn:disabled {
-        opacity: 0.5;
+      .btn-add-to-cart:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 15px rgba(39, 174, 96, 0.3);
+        background: linear-gradient(135deg, #219653, #1e8449);
+      }
+
+      .btn-add-to-cart:disabled {
+        background: linear-gradient(135deg, #95a5a6, #7f8c8d);
         cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
       }
 
-      .pagination-info {
-        margin: 0 15px;
-        color: #666;
+      .btn-add-to-cart.loading {
+        background: linear-gradient(135deg, #3498db, #2980b9);
       }
 
-      /* Loading spinner */
-      .loading-spinner {
-        text-align: center;
-        padding: 50px;
-        font-size: 18px;
-        color: #666;
-      }
-
-      .loading-spinner:after {
-        content: "";
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        margin-left: 10px;
-        border: 2px solid #f3f3f3;
-        border-top: 2px solid #d40000;
-        border-radius: 50%;
+      .btn-add-to-cart.loading i {
         animation: spin 1s linear infinite;
       }
 
@@ -360,692 +715,801 @@
         }
       }
 
-      /* Section valeurs */
-      .values {
-        padding: 80px 0;
-        background-color: #f9f9f9;
-      }
-
-      .values-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        gap: 40px;
-      }
-
-      .value-item {
-        text-align: center;
-        padding: 30px 20px;
-      }
-
-      .value-icon {
-        font-size: 2.5rem;
-        margin-bottom: 20px;
-        color: #d40000;
-      }
-
-      .value-item h3 {
-        font-size: 1.3rem;
-        margin-bottom: 15px;
-        font-weight: 400;
-      }
-
-      .value-item p {
-        color: #666;
-      }
-
-      /* Section témoignages */
-      .testimonials {
-        padding: 80px 0;
-      }
-
-      .testimonials-container {
-        max-width: 800px;
-        margin: 0 auto;
-      }
-
-      .testimonial {
-        background-color: white;
-        padding: 30px;
-        border-radius: 2px;
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
-        margin-bottom: 30px;
-      }
-
-      .testimonial-text {
-        font-style: italic;
-        margin-bottom: 20px;
-        color: #555;
-      }
-
-      .testimonial-author {
-        display: flex;
-        align-items: center;
-      }
-
-      .author-avatar {
-        width: 50px;
-        height: 50px;
-        border-radius: 50%;
-        overflow: hidden;
-        margin-right: 15px;
-      }
-
-      .author-avatar img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-      }
-
-      .author-info h4 {
-        font-size: 1rem;
-        margin-bottom: 5px;
-      }
-
-      .author-info p {
-        font-size: 0.8rem;
-        color: #888;
-      }
-
-      /* Section contact */
-      .contact {
-        padding: 80px 0;
-        background-color: #f9f9f9;
-      }
-
-      .contact-container {
-        display: flex;
-        gap: 50px;
-      }
-
-      .contact-info {
-        flex: 1;
-      }
-
-      .contact-info h3 {
-        font-size: 1.5rem;
-        margin-bottom: 20px;
-        font-weight: 400;
-        position: relative;
-      }
-
-      .contact-info p {
-        margin-bottom: 30px;
-        color: #666;
-      }
-
-      .contact-details {
-        margin-bottom: 30px;
-      }
-
-      .contact-detail {
-        display: flex;
-        align-items: center;
-        margin-bottom: 15px;
-      }
-
-      .contact-icon {
-        margin-right: 15px;
-        color: #d40000;
-      }
-
-      .contact-form {
-        flex: 1;
-      }
-
-      .form-group {
-        margin-bottom: 20px;
-      }
-
-      .form-group label {
-        display: block;
-        margin-bottom: 5px;
-        font-size: 0.9rem;
-        color: #555;
-      }
-
-      .form-control {
-        width: 100%;
-        padding: 10px;
-        border: 1px solid #ddd;
-        border-radius: 2px;
-        font-family: inherit;
-      }
-
-      textarea.form-control {
-        height: 150px;
-        resize: vertical;
-      }
-
-      /* Pied de page */
-      footer {
-        background-color: #333;
+      .btn-view {
+        background: linear-gradient(135deg, #3498db, #2980b9);
         color: white;
-        padding: 50px 0 20px;
+        text-decoration: none;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 10px rgba(52, 152, 219, 0.2);
       }
 
-      .footer-container {
+      .btn-view:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 15px rgba(52, 152, 219, 0.3);
+        background: linear-gradient(135deg, #2980b9, #2573a7);
+      }
+
+      /* Newsletter */
+      .newsletter {
+        background: linear-gradient(135deg, #2c3e50, #1a252f);
+        color: white;
+      }
+
+      .newsletter-container {
         display: flex;
         justify-content: space-between;
-        margin-bottom: 40px;
+        align-items: center;
+        gap: 40px;
+        flex-wrap: wrap;
       }
 
-      .footer-col {
-        flex: 1;
-        padding: 0 15px;
-      }
-
-      .footer-col h3 {
-        font-size: 1.2rem;
-        margin-bottom: 20px;
-        font-weight: 400;
-        position: relative;
-        padding-bottom: 10px;
-      }
-
-      .footer-col h3:after {
-        content: "";
-        position: absolute;
-        width: 30px;
-        height: 2px;
-        background-color: #d40000;
-        bottom: 0;
-        left: 0;
-      }
-
-      .footer-col ul {
-        list-style: none;
-      }
-
-      .footer-col ul li {
+      .newsletter-content h2 {
+        font-size: 2rem;
         margin-bottom: 10px;
       }
 
-      .footer-col ul li a {
-        color: #aaa;
-        text-decoration: none;
-        transition: color 0.3s;
-      }
-
-      .footer-col ul li a:hover {
-        color: white;
-      }
-
-      .social-links {
+      .newsletter-form {
         display: flex;
-        gap: 15px;
+        gap: 10px;
+        flex: 1;
+        max-width: 500px;
       }
 
-      .social-links a {
+      .newsletter-form input {
+        flex: 1;
+        padding: 15px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        outline: none;
+        min-width: 250px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .newsletter-form input:focus {
+        box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+      }
+
+      .newsletter-form .btn-primary {
+        padding: 15px 30px;
+        white-space: nowrap;
+      }
+
+      /* Footer - identique à panier.html */
+      footer {
+        background: linear-gradient(135deg, #2c3e50, #1a252f);
         color: white;
-        text-decoration: none;
-        display: inline-block;
-        width: 36px;
-        height: 36px;
-        background-color: #444;
-        border-radius: 50%;
-        text-align: center;
-        line-height: 36px;
-        transition: background-color 0.3s;
+        padding: 50px 0 30px;
+        margin-top: 60px;
       }
 
-      .social-links a:hover {
-        background-color: #d40000;
+      .footer-content {
+        text-align: center;
+        padding: 20px 0;
       }
 
-      .copyright {
-        text-align: center;
-        padding-top: 20px;
-        border-top: 1px solid #444;
-        color: #aaa;
+      .footer-content p {
+        margin-bottom: 10px;
+        color: #bdc3c7;
         font-size: 0.9rem;
       }
 
-      /* Responsive */
-      @media (max-width: 768px) {
-        .header-container {
-          flex-direction: column;
-          padding: 15px 0;
-        }
+      /* ==============================================
+         STYLES MODAL ET NOTIFICATIONS
+         ============================================== */
 
-        nav ul {
-          margin-top: 15px;
-          flex-wrap: wrap;
-          justify-content: center;
-        }
-
-        nav ul li {
-          margin-left: 10px;
-          margin-right: 10px;
-          margin-bottom: 10px;
-        }
-
-        .panier-mobile {
-          display: flex !important;
-          align-items: center;
-          justify-content: center;
-          background: #f8f8f8;
-          padding: 8px 15px;
-          border-radius: 20px;
-          margin-top: 10px;
-          border: 1px solid #e0e0e0;
-        }
-
-        .hero h1 {
-          font-size: 2.2rem;
-        }
-
-        .hero p {
-          font-size: 1rem;
-        }
-
-        .about-content {
-          flex-direction: column;
-        }
-
-        .contact-container {
-          flex-direction: column;
-        }
-
-        .footer-container {
-          flex-direction: column;
-        }
-
-        .footer-col {
-          margin-bottom: 30px;
-        }
-
-        .pagination-btn {
-          padding: 8px 12px;
-          font-size: 14px;
-        }
-      }
-
-      @media (max-width: 480px) {
-        nav ul {
-          flex-direction: column;
-          align-items: center;
-          width: 100%;
-        }
-
-        nav ul li {
-          margin: 5px 0;
-          width: 100%;
-          text-align: center;
-        }
-
-        .panier-mobile {
-          width: auto;
-          margin: 10px auto;
-          background: #d40000;
-          color: white;
-        }
-
-        .panier-mobile a {
-          color: white !important;
-          font-weight: bold;
-        }
-
-        #compteur-panier {
-          background: white;
-          color: #d40000;
-        }
-
-        .hero h1 {
-          font-size: 1.8rem;
-        }
-
-        .hero p {
-          font-size: 0.9rem;
-        }
-
-        .btn {
-          padding: 10px 20px;
-          font-size: 13px;
-        }
-
-        .products-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-
-      /* Styles pour la modal panier - VERSION CORRIGÉE POUR MOBILE */
-      #panier-modal {
+      .cart-modal {
+        display: none;
         position: fixed;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.5);
-        display: none;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 2000;
         justify-content: center;
         align-items: center;
-        z-index: 2000;
+        padding: 20px;
       }
 
-      #panier-modal > div {
-        max-height: 85vh;
+      .cart-modal.show {
+        display: flex;
+      }
+
+      .cart-modal-content {
+        background: white;
+        border-radius: 16px;
+        width: 90%;
+        max-width: 500px;
+        max-height: 90vh;
         overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+        animation: modalSlideIn 0.4s ease;
       }
 
-      /* Styles pour la modal commande */
-      #commande-modal {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.5);
-        display: none;
-        justify-content: center;
-        align-items: center;
-        z-index: 2000;
-      }
-
-      /* Styles pour les notifications */
-      .notification {
-        position: fixed;
-        top: 80px;
-        right: 20px;
-        padding: 15px 20px;
-        border-radius: 4px;
-        z-index: 10000;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        transform: translateX(400px);
-        transition: transform 0.3s ease;
-        max-width: 300px;
-      }
-
-      .notification.success {
-        background: #28a745;
-        color: white;
-      }
-
-      .notification.error {
-        background: #dc3545;
-        color: white;
-      }
-
-      .notification.info {
-        background: #17a2b8;
-        color: white;
-      }
-
-      .notification.warning {
-        background: #ffc107;
-        color: #856404;
-      }
-
-      /* CORRECTIONS SPÉCIFIQUES MOBILE */
-      @media (max-width: 768px) {
-        /* Forcer la visibilité du contenu de la modale */
-        #panier-modal > div {
-          max-height: 85vh !important;
-          overflow-y: auto !important;
-          -webkit-overflow-scrolling: touch !important;
-          padding-bottom: 90px !important;
-          width: 95% !important;
-          margin: 0 auto;
-        }
-
-        /* Zone des boutons en sticky en bas */
-        #panier-modal > div > div:last-child {
-          position: sticky;
-          bottom: 0;
-          background: white;
-          padding: 15px 0;
-          border-top: 1px solid #e0e0e0;
-          margin-top: 15px;
-          z-index: 15;
-          display: flex;
-          gap: 10px;
-          justify-content: flex-end;
-        }
-
-        /* S'assurer que le bouton est visible et cliquable */
-        #panier-modal button#btn-passer-commande,
-        #panier-modal button#btn-vider-panier {
-          display: inline-flex !important;
-          opacity: 1 !important;
-          visibility: visible !important;
-          pointer-events: auto !important;
-          z-index: 20 !important;
-        }
-
-        /* Augmenter la taille des boutons sur mobile pour faciliter le tap */
-        #panier-modal button {
-          min-height: 48px;
-          padding: 12px 20px !important;
-          font-size: 16px !important;
-        }
-
-        /* Message d'aide au scroll */
-        .mobile-scroll-hint {
-          display: none;
-          text-align: center;
-          font-size: 12px;
-          color: #999;
-          padding: 10px;
-          margin-top: 10px;
-          background: #f8f9fa;
-          border-radius: 8px;
-        }
-
-        /* Ajustements pour la modale de commande */
-        #commande-modal > div {
-          max-height: 85vh !important;
-          overflow-y: auto !important;
-          -webkit-overflow-scrolling: touch !important;
-          width: 95% !important;
-        }
-      }
-
-      /* Animation pour le bouton de commande */
-      @keyframes fadeInUp {
+      @keyframes modalSlideIn {
         from {
           opacity: 0;
-          transform: translateY(20px);
+          transform: translateY(-30px);
         }
         to {
           opacity: 1;
           transform: translateY(0);
         }
       }
+
+      .cart-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px;
+        border-bottom: 2px solid #f8f9fa;
+        position: sticky;
+        top: 0;
+        background: white;
+        border-radius: 16px 16px 0 0;
+        z-index: 1;
+      }
+
+      .cart-modal-header h3 {
+        margin: 0;
+        color: #2c3e50;
+        font-size: 1.3rem;
+      }
+
+      .cart-modal-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #7f8c8d;
+        padding: 0;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: all 0.3s ease;
+      }
+
+      .cart-modal-close:hover {
+        background: #f8f9fa;
+        color: #e74c3c;
+        transform: rotate(90deg);
+      }
+
+      .cart-modal-body {
+        padding: 20px;
+      }
+
+      .cart-modal-product {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        padding: 20px;
+      }
+
+      .modal-product-image {
+        width: 100px;
+        height: 100px;
+        border-radius: 12px;
+        overflow: hidden;
+        flex-shrink: 0;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .modal-product-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .modal-product-info {
+        flex: 1;
+      }
+
+      .modal-product-info h4 {
+        margin: 0 0 10px 0;
+        color: #2c3e50;
+        font-size: 1.1rem;
+        font-weight: 600;
+      }
+
+      .modal-product-ref {
+        color: #7f8c8d;
+        font-size: 0.85rem;
+        margin: 5px 0;
+      }
+
+      .modal-product-price {
+        font-weight: 700;
+        color: #e74c3c;
+        font-size: 1.2rem;
+        margin: 10px 0;
+      }
+
+      .modal-success-message {
+        color: #27ae60;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 500;
+      }
+
+      .cart-modal-footer {
+        padding: 20px;
+        background: #f8f9fa;
+        border-top: 2px solid #e9ecef;
+        display: flex;
+        gap: 12px;
+        position: sticky;
+        bottom: 0;
+      }
+
+      .cart-modal-footer .btn {
+        flex: 1;
+        padding: 12px;
+        border-radius: 8px;
+        text-align: center;
+        text-decoration: none;
+        border: none;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      .cart-modal-footer .btn-primary {
+        background: linear-gradient(135deg, #27ae60, #219653);
+        color: white;
+      }
+
+      .cart-modal-footer .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(39, 174, 96, 0.3);
+      }
+
+      .cart-modal-footer .btn-secondary {
+        background: linear-gradient(135deg, #3498db, #2980b9);
+        color: white;
+      }
+
+      .cart-modal-footer .btn-secondary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3);
+      }
+
+      /* Toast Notifications - identiques à panier.html */
+      .notification {
+        position: fixed;
+        top: 30px;
+        right: 30px;
+        background: linear-gradient(135deg, #27ae60, #219653);
+        color: white;
+        padding: 18px 25px;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        animation:
+          slideInRight 0.5s ease,
+          fadeOut 0.5s ease 2.5s forwards;
+        min-width: 300px;
+        max-width: 400px;
+      }
+
+      @keyframes slideInRight {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+
+      @keyframes fadeOut {
+        to {
+          opacity: 0;
+          transform: translateX(100%);
+        }
+      }
+
+      .notification.error {
+        background: linear-gradient(135deg, #e74c3c, #c0392b);
+      }
+
+      .notification.warning {
+        background: linear-gradient(135deg, #f39c12, #e67e22);
+      }
+
+      .notification i {
+        font-size: 1.5rem;
+      }
+
+      /* Loading states */
+      .products-loading,
+      .products-empty,
+      .products-api-error,
+      .products-network-error {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 60px;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+      }
+
+      .products-loading i,
+      .products-empty i,
+      .products-api-error i,
+      .products-network-error i {
+        font-size: 3rem;
+        margin-bottom: 20px;
+      }
+
+      .products-loading i {
+        color: #3498db;
+      }
+
+      .products-empty i {
+        color: #7f8c8d;
+      }
+
+      .products-api-error i,
+      .products-network-error i {
+        color: #e74c3c;
+      }
+
+      .text-center {
+        text-align: center;
+      }
+
+      /* Animation du compteur */
+      .cart-count.pulse {
+        animation: pulse 0.6s ease;
+      }
+
+      @keyframes pulse {
+        0% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.2);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+
+      /* ==============================================
+         MEDIA QUERIES - RESPONSIVE
+         ============================================== */
+
+      @media (max-width: 992px) {
+        .hero-container {
+          grid-template-columns: 1fr;
+          text-align: center;
+        }
+
+        .hero-content {
+          order: 2;
+        }
+
+        .hero-image {
+          order: 1;
+        }
+
+        .hero-subtitle {
+          max-width: 100%;
+          margin-left: auto;
+          margin-right: auto;
+        }
+
+        .hero-buttons {
+          justify-content: center;
+        }
+
+        .header-content {
+          flex-wrap: wrap;
+        }
+
+        nav {
+          display: none;
+        }
+
+        .menu-toggle {
+          display: block;
+        }
+
+        .cart-link {
+          margin-left: auto;
+          margin-right: 15px;
+        }
+
+        .categories-grid,
+        .services-grid,
+        .testimonials-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 768px) {
+        header {
+          padding: 15px 0;
+        }
+
+        .logo {
+          font-size: 1.5rem;
+        }
+
+        .hero-title {
+          font-size: 2.2rem;
+        }
+
+        .hero-subtitle {
+          font-size: 1rem;
+        }
+
+        .btn {
+          padding: 12px 25px;
+        }
+
+        section {
+          padding: 40px 0;
+        }
+
+        .section-title {
+          font-size: 1.8rem;
+        }
+
+        .categories-grid,
+        .services-grid,
+        .testimonials-grid,
+        .featured-products .products-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .product-actions {
+          flex-direction: column;
+        }
+
+        .btn-add-to-cart,
+        .btn-view {
+          width: 100%;
+        }
+
+        .newsletter-container {
+          flex-direction: column;
+          text-align: center;
+        }
+
+        .newsletter-form {
+          flex-direction: column;
+          width: 100%;
+        }
+
+        .newsletter-form input,
+        .newsletter-form button {
+          width: 100%;
+        }
+
+        .notification {
+          min-width: 280px;
+          max-width: 280px;
+          right: 20px;
+          left: 20px;
+          margin: 0 auto;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .logo {
+          font-size: 1.2rem;
+        }
+
+        .hero-title {
+          font-size: 1.8rem;
+        }
+
+        .hero-buttons {
+          flex-direction: column;
+        }
+
+        .hero-buttons .btn {
+          width: 100%;
+        }
+
+        .section-title {
+          font-size: 1.6rem;
+        }
+
+        .cart-modal-product {
+          flex-direction: column;
+          text-align: center;
+        }
+
+        .modal-product-image {
+          width: 100%;
+          height: 150px;
+        }
+
+        .cart-modal-footer {
+          flex-direction: column;
+        }
+      }
     </style>
   </head>
   <body>
-    <!-- En-tête -->
+    <!-- Header - identique à panier.html -->
     <header>
-      <div class="container header-container">
-        <a href="#" class="logo">Youki<span> And Co</span></a>
-        <nav>
-          <ul>
-            <li><a href="#">Accueil</a></li>
-            <li><a href="#nosCreations">Nos créations</a></li>
-            <li><a href="#about">À propos</a></li>
-            <li><a href="#values">Nos valeurs</a></li>
-            <li class="panier-mobile">
-              <a
-                href="#"
-                id="lien-panier"
-                style="display: flex; align-items: center; gap: 5px"
+      <div class="container">
+        <div class="header-content">
+          <a href="index.html" class="logo">
+            <i class="fas fa-gift"></i> HEURE DU CADEAU
+          </a>
+
+          <!-- Menu mobile toggle -->
+          <button class="menu-toggle" id="menuToggle" aria-label="Menu">
+            <i class="fas fa-bars"></i>
+          </button>
+
+          <!-- Navigation desktop -->
+          <nav>
+            <a href="index.html" class="active"
+              ><i class="fas fa-home"></i> Accueil</a
+            >
+            <a href="index.php"><i class="fas fa-box-open"></i> Cadeaux</a>
+            <a href="apropos.html"
+              ><i class="fas fa-info-circle"></i> À propos</a
+            >
+            <a href="contact.html"><i class="fas fa-envelope"></i> Contact</a>
+            <a href="panier.html" class="cart-link">
+              <i class="fas fa-shopping-cart"></i> Panier
+              <span class="cart-count" id="cartCount">0</span>
+            </a>
+          </nav>
+        </div>
+
+        <!-- Navigation mobile -->
+        <nav class="nav-mobile" id="navMobile">
+          <ul class="nav-mobile-list">
+            <li>
+              <a href="index.html" class="nav-mobile-link active"
+                ><i class="fas fa-home"></i> Accueil</a
               >
-                🛒 Panier (<span id="compteur-panier">0</span>)
-              </a>
+            </li>
+            <li>
+              <a href="index.php" class="nav-mobile-link"
+                ><i class="fas fa-box-open"></i> Cadeaux</a
+              >
+            </li>
+            <li>
+              <a href="apropos.html" class="nav-mobile-link"
+                ><i class="fas fa-info-circle"></i> À propos</a
+              >
+            </li>
+            <li>
+              <a href="contact.html" class="nav-mobile-link"
+                ><i class="fas fa-envelope"></i> Contact</a
+              >
             </li>
           </ul>
         </nav>
       </div>
     </header>
 
-    <!-- Bannière principale -->
+    <!-- Hero Section -->
     <section class="hero">
-      <div class="hero-content">
-        <h1>L'art délicat de l'origami</h1>
-        <p>
-          Découvrez des créations uniques pliées à la main avec passion et
-          précision
+      <div class="container hero-container">
+        <div class="hero-content">
+          <h1 class="hero-title">Des cadeaux qui marquent les esprits</h1>
+          <p class="hero-subtitle">
+            Découvrez notre sélection exclusive de cadeaux originaux pour toutes
+            les occasions
+          </p>
+          <div class="hero-buttons">
+            <a href="index.php" class="btn btn-primary"
+              ><i class="fas fa-gift"></i> Explorer la collection</a
+            >
+            <a href="#categories" class="btn btn-secondary"
+              ><i class="fas fa-tags"></i> Voir les catégories</a
+            >
+          </div>
+        </div>
+        <div class="hero-image">
+          <img src="img/hero-banner.jpg" alt="Collection de cadeaux élégants" />
+        </div>
+      </div>
+    </section>
+
+    <!-- Catégories -->
+    <section class="categories" id="categories">
+      <div class="container">
+        <h2 class="section-title">Nos catégories de cadeaux</h2>
+        <p class="section-subtitle">
+          Trouvez le cadeau parfait selon l'occasion
         </p>
-        <a href="#nosCreations" class="btn">Explorer la collection</a>
+
+        <div class="categories-grid">
+          <div class="category-card">
+            <div class="category-icon">
+              <i class="fas fa-birthday-cake"></i>
+            </div>
+            <h3>Anniversaires</h3>
+            <p>Cadeaux uniques pour célébrer les anniversaires</p>
+            <a href="index.php?categorie=1" class="category-link"
+              >Voir les produits →</a
+            >
+          </div>
+          <div class="category-card">
+            <div class="category-icon"><i class="fas fa-heart"></i></div>
+            <h3>Saint-Valentin</h3>
+            <p>Romantique et mémorable</p>
+            <a href="index.php?categorie=2" class="category-link"
+              >Voir les produits →</a
+            >
+          </div>
+          <div class="category-card">
+            <div class="category-icon"><i class="fas fa-glass-cheers"></i></div>
+            <h3>Mariage</h3>
+            <p>Cadeaux de mariage élégants</p>
+            <a href="index.php?categorie=3" class="category-link"
+              >Voir les produits →</a
+            >
+          </div>
+          <div class="category-card">
+            <div class="category-icon"><i class="fas fa-baby"></i></div>
+            <h3>Naissance</h3>
+            <p>Pour accueillir bébé</p>
+            <a href="index.php?categorie=4" class="category-link"
+              >Voir les produits →</a
+            >
+          </div>
+          <div class="category-card">
+            <div class="category-icon">
+              <i class="fas fa-graduation-cap"></i>
+            </div>
+            <h3>Diplômés</h3>
+            <p>Pour célébrer la réussite</p>
+            <a href="index.php?categorie=5" class="category-link"
+              >Voir les produits →</a
+            >
+          </div>
+          <div class="category-card">
+            <div class="category-icon">
+              <i class="fas fa-christmas-tree"></i>
+            </div>
+            <h3>Noël</h3>
+            <p>Magie des fêtes de fin d'année</p>
+            <a href="index.php?categorie=6" class="category-link"
+              >Voir les produits →</a
+            >
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- Section à propos -->
-    <section class="about" id="about">
+    <!-- Produits phares -->
+    <section class="featured-products">
       <div class="container">
-        <div class="section-title">
-          <h2>Notre histoire</h2>
+        <h2 class="section-title">Nos meilleures ventes</h2>
+        <p class="section-subtitle">Découvrez les cadeaux les plus appréciés</p>
+
+        <div class="products-grid" id="featuredProducts">
+          <div class="products-loading">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Chargement des produits...</p>
+          </div>
         </div>
-        <div class="about-content">
-          <div class="about-text">
-            <h3>L'artisanat au service de la beauté</h3>
-            <p>
-              Passionnée par l'art japonais, j'ai découvert l'origami. Depuis,
-              je consacre mon temps à créer des pièces uniques qui capturent
-              l'essence de cette tradition millénaire.
-            </p>
-            <p>
-              Chaque création est réalisée avec soin, en utilisant des papiers
-              de qualité sélectionnés pour leurs textures et leurs motifs. Mon
-              objectif est de partager la sérénité et la beauté de l'origami à
-              travers des œuvres qui inspirent et apaisent.
-            </p>
-            <a href="#" class="btn">En savoir plus</a>
-          </div>
-          <div class="about-image">
-            <img src="img/Cygne.jpg" alt="Origami Cygne" />
-          </div>
+
+        <div class="text-center">
+          <a href="index.php" class="btn btn-primary"
+            ><i class="fas fa-arrow-right"></i> Voir tous les produits</a
+          >
         </div>
       </div>
     </section>
 
-    <!-- Section produits avec pagination -->
-    <section class="products" id="nosCreations">
+    <!-- Services -->
+    <section class="services">
       <div class="container">
-        <div class="section-title">
-          <h2>Nos créations</h2>
-        </div>
-
-        <!-- Grille des produits -->
-        <div class="products-grid" id="produits-grid">
-          <div class="loading-spinner">Chargement des créations...</div>
-        </div>
-
-        <!-- Contrôles de pagination -->
-        <div class="pagination" id="pagination-controls">
-          <button
-            class="pagination-btn"
-            id="btn-premiere"
-            onclick="changerPage(1)"
-          >
-            ⏮️ Première
-          </button>
-          <button
-            class="pagination-btn"
-            id="btn-precedente"
-            onclick="changerPage(currentPage - 1)"
-          >
-            ◀️ Précédente
-          </button>
-          <span class="pagination-info" id="pagination-info"
-            >Page <span id="page-actuelle">1</span> sur
-            <span id="total-pages">1</span></span
-          >
-          <button
-            class="pagination-btn"
-            id="btn-suivante"
-            onclick="changerPage(currentPage + 1)"
-          >
-            Suivante ▶️
-          </button>
-          <button
-            class="pagination-btn"
-            id="btn-derniere"
-            onclick="changerPage(totalPages)"
-          >
-            Dernière ⏭️
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Section valeurs -->
-    <section class="values" id="values">
-      <div class="container">
-        <div class="section-title">
-          <h2>Nos valeurs</h2>
-        </div>
-        <div class="values-grid">
-          <div class="value-item">
-            <div class="value-icon">🎨</div>
-            <h3>Artisanat authentique</h3>
-            <p>
-              Chaque pièce est créée à la main avec une attention particulière
-              aux détails et aux techniques traditionnelles.
-            </p>
+        <h2 class="section-title">Pourquoi choisir Cadeaux Élégance ?</h2>
+        <div class="services-grid">
+          <div class="service-card">
+            <div class="service-icon"><i class="fas fa-gift"></i></div>
+            <h3>Emballage cadeau offert</h3>
+            <p>Chaque cadeau est emballé avec soin dans un papier élégant</p>
           </div>
-          <div class="value-item">
-            <div class="value-icon">🌱</div>
-            <h3>Matériaux durables</h3>
-            <p>
-              Nous sélectionnons soigneusement nos papiers, en privilégiant les
-              sources écologiques et responsables.
-            </p>
+          <div class="service-card">
+            <div class="service-icon"><i class="fas fa-shipping-fast"></i></div>
+            <h3>Livraison rapide</h3>
+            <p>Expédition sous 24-48h en France métropolitaine</p>
           </div>
-          <div class="value-item">
-            <div class="value-icon">💝</div>
-            <h3>Créations personnalisées</h3>
-            <p>
-              Nous proposons des origami sur mesure pour des occasions
-              spéciales, adaptés à vos souhaits.
-            </p>
+          <div class="service-card">
+            <div class="service-icon"><i class="fas fa-undo-alt"></i></div>
+            <h3>Retour facile</h3>
+            <p>30 jours pour changer d'avis, retour gratuit</p>
+          </div>
+          <div class="service-card">
+            <div class="service-icon"><i class="fas fa-headset"></i></div>
+            <h3>Service client</h3>
+            <p>Une équipe à votre écoute du lundi au vendredi</p>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Section témoignages -->
+    <!-- Témoignages -->
     <section class="testimonials">
       <div class="container">
-        <div class="section-title">
-          <h2>Témoignages</h2>
-        </div>
-        <div class="testimonials-container">
-          <div class="testimonial">
+        <h2 class="section-title">Ce que disent nos clients</h2>
+        <div class="testimonials-grid">
+          <div class="testimonial-card">
+            <div class="testimonial-rating">
+              <i class="fas fa-star"></i><i class="fas fa-star"></i
+              ><i class="fas fa-star"></i><i class="fas fa-star"></i
+              ><i class="fas fa-star"></i>
+            </div>
             <p class="testimonial-text">
-              "J'ai offert la grue en origami à ma mère pour son anniversaire.
-              Elle a été tellement touchée par la beauté et le symbolisme de
-              cette création. Un travail d'une finesse incroyable !"
+              "Le cadeau pour l'anniversaire de ma femme était parfait !
+              L'emballage était magnifique et la livraison ultra-rapide."
             </p>
             <div class="testimonial-author">
-              <div class="author-avatar">
-                <img
-                  src="https://randomuser.me/api/portraits/women/32.jpg"
-                  alt="Sophie Martin"
-                />
-              </div>
+              <div class="author-avatar">PD</div>
               <div class="author-info">
-                <h4>Sophie Martin</h4>
+                <h4>Pierre D.</h4>
                 <p>Paris</p>
               </div>
             </div>
           </div>
-          <div class="testimonial">
+          <div class="testimonial-card">
+            <div class="testimonial-rating">
+              <i class="fas fa-star"></i><i class="fas fa-star"></i
+              ><i class="fas fa-star"></i><i class="fas fa-star"></i
+              ><i class="fas fa-star-half-alt"></i>
+            </div>
             <p class="testimonial-text">
-              "Le dragon que j'ai commandé dépasse toutes mes attentes. La
-              complexité des pliages et la qualité du papier sont remarquables.
-              Une véritable œuvre d'art qui trône maintenant dans mon bureau."
+              "J'ai trouvé exactement ce qu'il me fallait pour le mariage de mes
+              amis. Service client très réactif !"
             </p>
             <div class="testimonial-author">
-              <div class="author-avatar">
-                <img
-                  src="https://randomuser.me/api/portraits/men/54.jpg"
-                  alt="Thomas Lefebvre"
-                />
-              </div>
+              <div class="author-avatar">MS</div>
               <div class="author-info">
-                <h4>Thomas Lefebvre</h4>
+                <h4>Marie S.</h4>
                 <p>Lyon</p>
+              </div>
+            </div>
+          </div>
+          <div class="testimonial-card">
+            <div class="testimonial-rating">
+              <i class="fas fa-star"></i><i class="fas fa-star"></i
+              ><i class="fas fa-star"></i><i class="fas fa-star"></i
+              ><i class="fas fa-star"></i>
+            </div>
+            <p class="testimonial-text">
+              "La qualité des produits est exceptionnelle. Je recommande
+              vivement pour tous vos cadeaux !"
+            </p>
+            <div class="testimonial-author">
+              <div class="author-avatar">TL</div>
+              <div class="author-info">
+                <h4>Thomas L.</h4>
+                <p>Bordeaux</p>
               </div>
             </div>
           </div>
@@ -1053,1052 +1517,568 @@
       </div>
     </section>
 
-    <!-- Pied de page -->
+    <!-- Newsletter -->
+    <section class="newsletter">
+      <div class="container newsletter-container">
+        <div class="newsletter-content">
+          <h2>Restez informé</h2>
+          <p>
+            Inscrivez-vous à notre newsletter pour recevoir nos nouveautés et
+            offres spéciales
+          </p>
+        </div>
+        <form class="newsletter-form" id="newsletterForm">
+          <input type="email" placeholder="Votre adresse email" required />
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-paper-plane"></i> S'inscrire
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Footer - identique à panier.html -->
     <footer>
       <div class="container">
-        <div class="footer-container">
-          <div class="footer-col">
-            <h3>Youki and Co</h3>
-            <p>
-              Créations artisanales d'origami inspirées par l'esthétique
-              japonaise et réalisées avec passion.
-            </p>
-          </div>
-          <div class="footer-col">
-            <h3>Liens rapides</h3>
-            <ul>
-              <li><a href="#">Accueil</a></li>
-              <li><a href="#nosCreations">Nos créations</a></li>
-              <li><a href="#about">À propos</a></li>
-              <li><a href="#values">Nos valeurs</a></li>
-            </ul>
-          </div>
-          <div class="footer-col">
-            <h3>Informations</h3>
-            <ul>
-              <li><a href="#">Conditions générales</a></li>
-              <li><a href="#">Politique de confidentialité</a></li>
-              <li><a href="#">Livraison et retours</a></li>
-              <li><a href="#">FAQ</a></li>
-            </ul>
-          </div>
-          <div class="footer-col">
-            <h3>Newsletter</h3>
-            <p>
-              Inscrivez-vous pour recevoir nos dernières créations et
-              actualités.
-            </p>
-            <form
-              onsubmit="
-                event.preventDefault();
-                alert('Fonctionnalité à venir !');
-              "
-            >
-              <div class="form-group">
-                <input
-                  type="email"
-                  class="form-control"
-                  placeholder="Votre email"
-                  id="newsletter-email"
-                />
-              </div>
-              <button type="submit" class="btn">S'inscrire</button>
-            </form>
-          </div>
-        </div>
-        <div class="copyright">
-          <p>&copy; 2023 Youki and Co. Tous droits réservés.</p>
+        <div class="footer-content">
+          <p>&copy; 2025 HEURE DU CADEAU - Tous droits réservés</p>
+          <p>Votre boutique de cadeaux élégants en ligne</p>
+          <p style="margin-top: 15px">
+            <i class="fab fa-cc-visa"></i>
+            <i class="fab fa-cc-mastercard"></i>
+            <i class="fab fa-cc-paypal"></i>
+          </p>
         </div>
       </div>
     </footer>
 
-    <!-- Modal Panier - VERSION CORRIGÉE AVEC HINT MOBILE -->
-    <div id="panier-modal">
-      <div
-        style="
-          background: white;
-          padding: 25px;
-          border-radius: 8px;
-          max-width: 800px;
-          width: 90%;
-          max-height: 80vh;
-          overflow-y: auto;
-          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-        "
-      >
-        <div
-          style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-          "
-        >
-          <h2 style="margin: 0; color: #333">Votre Panier</h2>
-          <button
-            onclick="fermerPanierModal()"
-            style="
-              background: none;
-              border: none;
-              font-size: 24px;
-              cursor: pointer;
-              color: #666;
-            "
-          >
-            &times;
-          </button>
+    <!-- Modal Panier -->
+    <div class="cart-modal" id="cartModal">
+      <div class="cart-modal-content">
+        <div class="cart-modal-header">
+          <h3>Article ajouté au panier</h3>
+          <button class="cart-modal-close" id="closeCartModal">&times;</button>
         </div>
-        <div id="panier-content"></div>
-        <div
-          style="
-            margin-top: 20px;
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-          "
-        >
-          <button
-            onclick="viderPanier()"
-            id="btn-vider-panier"
-            style="
-              padding: 10px 15px;
-              background: #6c757d;
-              color: white;
-              border: none;
-              border-radius: 4px;
-              cursor: pointer;
-            "
-          >
-            Vider le panier
+        <div class="cart-modal-body" id="cartModalBody"></div>
+        <div class="cart-modal-footer">
+          <a href="panier.html" class="btn btn-primary">Voir le panier</a>
+          <button class="btn btn-secondary" id="continueShopping">
+            Continuer mes achats
           </button>
-          <button
-            onclick="verifierEtPasserCommande()"
-            id="btn-passer-commande"
-            style="
-              padding: 10px 20px;
-              background: #d40000;
-              color: white;
-              border: none;
-              border-radius: 4px;
-              cursor: pointer;
-              transition: all 0.3s ease;
-            "
-          >
-            Passer la commande
-          </button>
-        </div>
-        <div
-          class="mobile-scroll-hint"
-          style="
-            text-align: center;
-            font-size: 12px;
-            color: #999;
-            padding: 10px;
-            margin-top: 10px;
-          "
-        >
-          ⬇️ Scrollez vers le bas pour valider ⬇️
         </div>
       </div>
     </div>
 
-    <!-- Modal Commande -->
-    <div id="commande-modal">
-      <div
-        style="
-          background: white;
-          padding: 25px;
-          border-radius: 8px;
-          max-width: 500px;
-          width: 90%;
-          max-height: 80vh;
-          overflow-y: auto;
-          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-        "
-      >
-        <div
-          style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-          "
-        >
-          <h2 style="margin: 0; color: #333">Finaliser votre commande</h2>
-          <button
-            onclick="fermerCommandeModal()"
-            style="
-              background: none;
-              border: none;
-              font-size: 24px;
-              cursor: pointer;
-              color: #666;
-            "
-          >
-            &times;
-          </button>
-        </div>
-
-        <!-- Étape 1: Choix du type de compte -->
-        <div id="etape-choix-compte">
-          <h3 style="margin-bottom: 15px">
-            Comment souhaitez-vous continuer ?
-          </h3>
-          <p style="margin-bottom: 20px; color: #666; font-size: 14px">
-            Choisissez une option pour finaliser votre commande
-          </p>
-
-          <div style="display: flex; flex-direction: column; gap: 15px">
-            <button
-              onclick="choisirEmailExistant()"
-              style="
-                text-align: left;
-                padding: 20px;
-                background: #f8f9fa;
-                border: 2px solid #dee2e6;
-                border-radius: 8px;
-                cursor: pointer;
-                transition: all 0.3s;
-              "
-            >
-              <div style="font-size: 18px; margin-bottom: 5px">📧</div>
-              <strong>Utiliser mon email</strong><br />
-              <small style="color: #666"
-                >Je recevrai un lien de confirmation par email</small
-              >
-            </button>
-            <button
-              onclick="choisirNouveauCompte()"
-              style="
-                text-align: left;
-                padding: 20px;
-                background: #f8f9fa;
-                border: 2px solid #dee2e6;
-                border-radius: 8px;
-                cursor: pointer;
-                transition: all 0.3s;
-              "
-            >
-              <div style="font-size: 18px; margin-bottom: 5px">👤</div>
-              <strong>Créer un nouveau compte</strong><br />
-              <small style="color: #666">Inscription rapide avec email</small>
-            </button>
-          </div>
-        </div>
-
-        <!-- Étape 2: Saisie email -->
-        <div id="etape-saisie-email" style="display: none">
-          <h3 style="margin-bottom: 15px">Vos coordonnées</h3>
-          <form
-            onsubmit="
-              event.preventDefault();
-              soumettreEmail();
-            "
-          >
-            <div style="margin-bottom: 15px">
-              <label
-                style="display: block; margin-bottom: 5px; font-weight: bold"
-                >Email*</label
-              >
-              <input
-                type="email"
-                id="email-saisi"
-                style="
-                  width: 100%;
-                  padding: 10px;
-                  border: 1px solid #ddd;
-                  border-radius: 4px;
-                "
-                required
-                placeholder="votre@email.com"
-              />
-            </div>
-            <div style="margin-bottom: 15px">
-              <label
-                style="display: block; margin-bottom: 5px; font-weight: bold"
-                >Nom (optionnel)</label
-              >
-              <input
-                type="text"
-                id="nom-saisi"
-                style="
-                  width: 100%;
-                  padding: 10px;
-                  border: 1px solid #ddd;
-                  border-radius: 4px;
-                "
-                placeholder="Votre nom"
-              />
-            </div>
-            <div style="display: flex; gap: 10px; margin-top: 20px">
-              <button
-                type="button"
-                onclick="retourChoixCompte()"
-                style="
-                  padding: 10px 15px;
-                  background: #6c757d;
-                  color: white;
-                  border: none;
-                  border-radius: 4px;
-                  cursor: pointer;
-                "
-              >
-                Retour
-              </button>
-              <button
-                type="submit"
-                style="
-                  padding: 10px 20px;
-                  background: #d40000;
-                  color: white;
-                  border: none;
-                  border-radius: 4px;
-                  cursor: pointer;
-                  flex: 1;
-                "
-              >
-                Envoyer le lien de confirmation
-              </button>
-            </div>
-          </form>
-        </div>
-
-        <!-- Étape 3: Confirmation par lien -->
-        <div id="etape-confirmation-lien" style="display: none">
-          <div style="text-align: center; padding: 20px">
-            <div style="font-size: 48px; margin-bottom: 20px">📧</div>
-            <h3 style="margin-bottom: 15px">Vérifiez votre email</h3>
-            <p style="margin-bottom: 15px; color: #666">
-              Nous avons envoyé un lien de confirmation à<br /><strong
-                id="email-a-verifier"
-              ></strong>
-            </p>
-            <p style="margin-bottom: 20px; color: #666; font-size: 14px">
-              Cliquez sur le lien reçu par email pour confirmer votre identité.
-            </p>
-            <div
-              style="
-                background: #f8f9fa;
-                padding: 15px;
-                border-radius: 8px;
-                margin: 20px 0;
-              "
-            >
-              <p style="margin: 0; color: #666; font-size: 14px">
-                <strong>Important :</strong> Le lien est valable pendant 15
-                minutes
-              </p>
-            </div>
-            <div
-              style="
-                display: flex;
-                gap: 10px;
-                justify-content: center;
-                margin-top: 20px;
-              "
-            >
-              <button
-                onclick="retourSaisieEmail()"
-                style="
-                  padding: 10px 15px;
-                  background: #6c757d;
-                  color: white;
-                  border: none;
-                  border-radius: 4px;
-                  cursor: pointer;
-                "
-              >
-                Changer d'email
-              </button>
-              <button
-                onclick="renvoyerLienConfirmation()"
-                style="
-                  padding: 10px 20px;
-                  background: #28a745;
-                  color: white;
-                  border: none;
-                  border-radius: 4px;
-                  cursor: pointer;
-                "
-              >
-                Renvoyer le lien
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
+    <!-- Scripts -->
     <script>
-      // Variables globales
-      let panierData = null;
-      let emailEnCours = "";
-      let typeProcessus = "";
-      let currentPage = 1;
-      let totalPages = 1;
-      let produitsParPage = 8;
+      // ==============================================
+      // GESTIONNAIRE DE PANIER - HARMONISÉ
+      // ==============================================
 
-      class OrigamiAPI {
+      const API_PRODUITS_URL = "api/produits.php?action=featured&limit=4";
+      const API_PANIER_URL = "panier.php";
+
+      // Gestion du menu mobile
+      document.addEventListener("DOMContentLoaded", function () {
+        const menuToggle = document.getElementById("menuToggle");
+        const navMobile = document.getElementById("navMobile");
+
+        if (menuToggle && navMobile) {
+          menuToggle.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            navMobile.classList.toggle("show");
+
+            const icon = menuToggle.querySelector("i");
+            if (navMobile.classList.contains("show")) {
+              icon.classList.remove("fa-bars");
+              icon.classList.add("fa-times");
+            } else {
+              icon.classList.remove("fa-times");
+              icon.classList.add("fa-bars");
+            }
+          });
+
+          document.addEventListener("click", function (e) {
+            if (
+              !navMobile.contains(e.target) &&
+              !menuToggle.contains(e.target) &&
+              navMobile.classList.contains("show")
+            ) {
+              navMobile.classList.remove("show");
+              const icon = menuToggle.querySelector("i");
+              icon.classList.remove("fa-times");
+              icon.classList.add("fa-bars");
+            }
+          });
+        }
+      });
+
+      // Classe PanierManager
+      class PanierManager {
         constructor() {
-          this.baseUrl = "acheter.php";
+          this.apiUrl = API_PANIER_URL;
+          this.cartModal = document.getElementById("cartModal");
+          this.cartModalBody = document.getElementById("cartModalBody");
+          this.cartCountElements = document.querySelectorAll(".cart-count");
+          this.initEvents();
+          this.updateCartCount();
         }
 
-        async getProduitsPagines(page = 1, limit = 8) {
+        initEvents() {
+          document
+            .getElementById("closeCartModal")
+            ?.addEventListener("click", () => {
+              this.cartModal.classList.remove("show");
+            });
+
+          document
+            .getElementById("continueShopping")
+            ?.addEventListener("click", () => {
+              this.cartModal.classList.remove("show");
+            });
+
+          this.cartModal?.addEventListener("click", (e) => {
+            if (e.target === this.cartModal) {
+              this.cartModal.classList.remove("show");
+            }
+          });
+        }
+
+        async ajouterAuPanier(id_produit, quantite = 1, button = null) {
+          if (!id_produit || id_produit <= 0) {
+            this.showNotification("Erreur: Produit invalide", "error");
+            return false;
+          }
+
+          let originalHTML = "";
+          let originalDisabled = false;
+
+          if (button) {
+            originalHTML = button.innerHTML;
+            originalDisabled = button.disabled;
+            button.disabled = true;
+            button.innerHTML =
+              '<i class="fas fa-spinner fa-spin"></i> Ajout...';
+            button.classList.add("loading");
+          }
+
           try {
-            const response = await fetch(this.baseUrl, {
+            const response = await fetch(this.apiUrl, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+              },
               body: JSON.stringify({
-                action: "get_produits_pagines",
-                page: page,
-                limit: limit,
+                action: "ajouter",
+                id_produit: parseInt(id_produit),
+                quantite: parseInt(quantite),
               }),
             });
-            return await response.json();
+
+            const data = await response.json();
+
+            if (data.success) {
+              await this.updateCartCount();
+              const productInfo = await this.getProductInfo(id_produit);
+              this.showCartModal(productInfo);
+              this.showNotification(
+                `"${data.produit_nom || productInfo.nom}" ajouté au panier !`,
+              );
+              return true;
+            } else {
+              this.showNotification(
+                data.message || "Erreur lors de l'ajout",
+                "error",
+              );
+              return false;
+            }
           } catch (error) {
-            console.error("Erreur chargement produits:", error);
-            return { status: 500, error: "Erreur réseau" };
+            console.error("Erreur ajout panier:", error);
+            this.showNotification("Erreur de connexion au serveur", "error");
+            return false;
+          } finally {
+            if (button) {
+              setTimeout(() => {
+                button.disabled = originalDisabled;
+                button.innerHTML = originalHTML;
+                button.classList.remove("loading");
+              }, 1000);
+            }
           }
         }
 
-        async envoyerLienConfirmation(email, nom) {
+        async getProductInfo(id_produit) {
           try {
-            const response = await fetch(this.baseUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "envoyer_lien_confirmation",
-                email: email,
+            const response = await fetch(
+              `api/produits.php?action=get&id=${id_produit}&_=${Date.now()}`,
+            );
+            if (response.ok) {
+              const data = await response.json();
+              if (data.success && data.produit) {
+                return data.produit;
+              }
+            }
+
+            const productCard = document.querySelector(
+              `.product-card[data-id="${id_produit}"]`,
+            );
+            if (productCard) {
+              const nom =
+                productCard.querySelector("h3")?.textContent ||
+                `Produit #${id_produit}`;
+              const prixElement = productCard.querySelector(".product-price");
+              let prix = "19,99";
+
+              if (prixElement) {
+                const priceText =
+                  prixElement.textContent || prixElement.innerHTML;
+                const priceMatch = priceText.match(/(\d+[\.,]\d+)/);
+                if (priceMatch) {
+                  prix = priceMatch[1];
+                }
+              }
+
+              const image =
+                productCard.querySelector("img")?.src ||
+                "img/default-product.jpg";
+
+              return {
                 nom: nom,
-              }),
-            });
-            return await response.json();
+                prix_ttc: prix.replace(",", "."),
+                image: image,
+                reference: `REF${id_produit}`,
+                id_produit: id_produit,
+              };
+            }
+
+            return {
+              nom: `Produit #${id_produit}`,
+              prix_ttc: "19.99",
+              image: "img/default-product.jpg",
+              reference: `REF${id_produit}`,
+              id_produit: id_produit,
+            };
           } catch (error) {
-            console.error("Erreur envoi lien:", error);
-            return { status: 500, error: "Erreur réseau" };
+            console.error("Erreur récupération produit:", error);
+            return {
+              nom: `Produit #${id_produit}`,
+              prix_ttc: "19.99",
+              image: "img/default-product.jpg",
+              reference: `REF${id_produit}`,
+              id_produit: id_produit,
+            };
           }
         }
 
-        async ajouterAuPanier(idOrigami, quantite = 1) {
+        showCartModal(product) {
+          if (!product || !this.cartModalBody) return;
+
+          const prix = product.prix_ttc
+            ? parseFloat(product.prix_ttc).toFixed(2).replace(".", ",")
+            : "0,00";
+
+          this.cartModalBody.innerHTML = `
+            <div class="cart-modal-product">
+              <div class="modal-product-image">
+                <img src="${product.image}" 
+                     alt="${product.nom}"
+                     onerror="this.src='img/default-product.jpg'">
+              </div>
+              <div class="modal-product-info">
+                <h4>${product.nom}</h4>
+                <p class="modal-product-ref">Réf: ${
+                  product.reference || product.id_produit
+                }</p>
+                <p class="modal-product-price">${prix} €</p>
+                <p class="modal-success-message">
+                  <i class="fas fa-check-circle"></i>
+                  Article ajouté avec succès !
+                </p>
+              </div>
+            </div>
+          `;
+
+          this.cartModal.classList.add("show");
+        }
+
+        async updateCartCount() {
           try {
-            const response = await fetch(this.baseUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "ajouter_au_panier",
-                idOrigami: parseInt(idOrigami),
-                quantite: parseInt(quantite),
-              }),
-            });
-            return await response.json();
+            const response = await fetch(
+              `${this.apiUrl}?action=compter&_=${Date.now()}`,
+            );
+
+            if (response.ok) {
+              const data = await response.json();
+
+              if (data.success) {
+                const count = data.total || 0;
+                this.updateCartCountDisplay(count);
+                return count;
+              }
+            }
+
+            this.updateCartCountDisplay(0);
+            return 0;
           } catch (error) {
-            console.error("Erreur:", error);
-            return { status: 500, error: "Erreur réseau" };
+            console.error("Erreur mise à jour compteur:", error);
+            this.updateCartCountDisplay(0);
+            return 0;
           }
         }
 
-        async getPanier() {
-          try {
-            const response = await fetch(`${this.baseUrl}?action=get_panier`);
-            return await response.json();
-          } catch (error) {
-            console.error("Erreur:", error);
-            return { status: 500, error: "Erreur réseau" };
-          }
+        updateCartCountDisplay(count) {
+          this.cartCountElements.forEach((element) => {
+            if (count > 0) {
+              element.textContent = count > 99 ? "99+" : count;
+              element.style.display = "flex";
+              element.classList.add("pulse");
+              setTimeout(() => element.classList.remove("pulse"), 600);
+            } else {
+              element.textContent = "0";
+              element.style.display = "flex";
+            }
+          });
         }
 
-        async modifierQuantite(idLignePanier, quantite) {
-          try {
-            const response = await fetch(this.baseUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "modifier_quantite",
-                idLignePanier: parseInt(idLignePanier),
-                quantite: parseInt(quantite),
-              }),
-            });
-            return await response.json();
-          } catch (error) {
-            console.error("Erreur:", error);
-            return { status: 500, error: "Erreur réseau" };
-          }
-        }
+        showNotification(message, type = "success") {
+          document.querySelectorAll(".notification").forEach((toast) => {
+            toast.remove();
+          });
 
-        async supprimerDuPanier(idLignePanier) {
-          try {
-            const response = await fetch(this.baseUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "supprimer_du_panier",
-                idLignePanier: parseInt(idLignePanier),
-              }),
-            });
-            return await response.json();
-          } catch (error) {
-            console.error("Erreur:", error);
-            return { status: 500, error: "Erreur réseau" };
-          }
-        }
+          const notification = document.createElement("div");
+          notification.className = `notification ${type}`;
 
-        async viderPanier() {
-          try {
-            const response = await fetch(this.baseUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "vider_panier" }),
-            });
-            return await response.json();
-          } catch (error) {
-            console.error("Erreur:", error);
-            return { status: 500, error: "Erreur réseau" };
-          }
+          const icon =
+            type === "success"
+              ? "check-circle"
+              : type === "error"
+                ? "exclamation-triangle"
+                : "info-circle";
+
+          notification.innerHTML = `
+            <i class="fas fa-${icon}"></i>
+            <span>${message}</span>
+          `;
+
+          document.body.appendChild(notification);
+
+          setTimeout(() => {
+            if (notification.parentElement) {
+              notification.remove();
+            }
+          }, 3000);
         }
       }
 
-      // Initialisation de l'API
-      const origamiAPI = new OrigamiAPI();
-
-      // FONCTIONS DE PAGINATION
-      async function chargerProduits(page = 1) {
-        const grid = document.getElementById("produits-grid");
-        grid.innerHTML =
-          '<div class="loading-spinner">Chargement des créations...</div>';
-
-        try {
-          const result = await origamiAPI.getProduitsPagines(
-            page,
-            produitsParPage,
-          );
-          if (result.status === 200 && result.data) {
-            afficherProduits(result.data.produits);
-            currentPage = result.data.page;
-            totalPages = result.data.total_pages;
-            mettreAJourPagination();
+      // Fonctions de gestion des produits
+      function generateRatingStars(rating) {
+        if (!rating || rating == 0) return "";
+        let stars = "";
+        const fullStars = Math.floor(rating);
+        const hasHalfStar = rating % 1 >= 0.5;
+        for (let i = 1; i <= 5; i++) {
+          if (i <= fullStars) {
+            stars += '<i class="fas fa-star"></i>';
+          } else if (hasHalfStar && i === fullStars + 1) {
+            stars += '<i class="fas fa-star-half-alt"></i>';
           } else {
-            grid.innerHTML =
-              '<div style="text-align: center; padding: 50px; color: #666;">Erreur de chargement des produits</div>';
+            stars += '<i class="far fa-star"></i>';
+          }
+        }
+        return stars;
+      }
+
+      async function loadFeaturedProducts() {
+        try {
+          const container = document.getElementById("featuredProducts");
+          container.innerHTML = `
+            <div class="products-loading">
+              <i class="fas fa-spinner fa-spin"></i>
+              <p>Chargement des produits...</p>
+            </div>
+          `;
+
+          const response = await fetch(API_PRODUITS_URL + "&_=" + Date.now());
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          if (data.success && data.products && data.products.length > 0) {
+            displayProductsFromDatabase(data.products);
+          } else {
+            displayNoProductsMessage();
           }
         } catch (error) {
-          console.error("Erreur:", error);
-          grid.innerHTML =
-            '<div style="text-align: center; padding: 50px; color: #666;">Erreur de connexion</div>';
+          console.error("Erreur chargement produits:", error);
+          displayNetworkError(error);
         }
       }
 
-      function afficherProduits(produits) {
-        const grid = document.getElementById("produits-grid");
-        if (!produits || produits.length === 0) {
-          grid.innerHTML =
-            '<div style="text-align: center; padding: 50px; color: #666;">Aucun produit disponible</div>';
-          return;
-        }
+      function displayProductsFromDatabase(products) {
+        const container = document.getElementById("featuredProducts");
         let html = "";
-        produits.forEach((produit) => {
+
+        products.forEach((product) => {
+          const prix = product.prix_ttc
+            ? parseFloat(product.prix_ttc).toFixed(2).replace(".", ",")
+            : "0,00";
+
+          const ratingStars = generateRatingStars(
+            parseFloat(product.note_moyenne || 0),
+          );
+          const productImage = product.image || "img/default-product.jpg";
+          const stockQuantity = product.quantite_stock || 0;
+
+          let stockBadge = "";
+          let isDisabled = false;
+
+          if (stockQuantity <= 0) {
+            stockBadge =
+              '<span class="stock-badge stock-rupture">Épuisé</span>';
+            isDisabled = true;
+          } else if (stockQuantity <= 5) {
+            stockBadge =
+              '<span class="stock-badge stock-faible">Stock faible</span>';
+          }
+
           html += `
-            <div class="product-card" data-id="${produit.idOrigami}">
+            <div class="product-card" data-id="${product.id_produit}">
+              ${stockBadge}
               <div class="product-image">
-                <img src="${produit.photo}" alt="${produit.nom}" onerror="this.src='img/placeholder.jpg'">
+                <img src="${productImage}"
+                     alt="${product.nom}"
+                     onerror="this.onerror=null;this.src='img/default-product.jpg'">
+                <div class="product-overlay">
+                  <i class="fas fa-eye"></i>
+                </div>
               </div>
               <div class="product-info">
-                <h3>${produit.nom}</h3>
-                <p>${produit.description || "Description non disponible"}</p>
-                <div class="product-price">
-                  <span class="price">${produit.prixHorsTaxe}€</span>
-                  <a href="#" class="btn" onclick="ajouterAuPanierDepuisBouton(event, ${produit.idOrigami}, '${produit.nom.replace(/'/g, "\\'")}')">Commander</a>
+                <span class="product-category">${
+                  product.categorie_nom || "Cadeau"
+                }</span>
+                <h3>${product.nom}</h3>
+                <p class="product-price">${prix} €</p>
+                
+                ${
+                  product.description_courte
+                    ? `
+                <p style="color: #7f8c8d; font-size: 0.9rem; margin: 8px 0;">
+                    ${product.description_courte}
+                </p>
+                `
+                    : ""
+                }
+                
+                ${
+                  product.note_moyenne && parseFloat(product.note_moyenne) > 0
+                    ? `
+                <div class="product-rating">
+                    ${ratingStars}
+                    <span class="rating-count">(${
+                      product.nombre_avis || 0
+                    })</span>
+                </div>
+                `
+                    : ""
+                }
+                
+                <div class="product-actions">
+                  <button class="btn-add-to-cart"
+                          data-id="${product.id_produit}"
+                          title="Ajouter au panier"
+                          ${isDisabled ? "disabled" : ""}>
+                    <i class="fas fa-cart-plus"></i> 
+                    ${isDisabled ? "Épuisé" : "Ajouter"}
+                  </button>
+                  <a href="index.php?categorie=${product.id_categorie || ""}" 
+                     class="btn-view">
+                    <i class="fas fa-eye"></i> Voir
+                  </a>
                 </div>
               </div>
             </div>
           `;
         });
-        grid.innerHTML = html;
+
+        container.innerHTML = html;
       }
 
-      function mettreAJourPagination() {
-        document.getElementById("page-actuelle").textContent = currentPage;
-        document.getElementById("total-pages").textContent = totalPages;
-        document.getElementById("btn-premiere").disabled = currentPage === 1;
-        document.getElementById("btn-precedente").disabled = currentPage === 1;
-        document.getElementById("btn-suivante").disabled =
-          currentPage === totalPages;
-        document.getElementById("btn-derniere").disabled =
-          currentPage === totalPages;
+      function displayNoProductsMessage() {
+        const container = document.getElementById("featuredProducts");
+        container.innerHTML = `
+          <div class="products-empty">
+            <i class="fas fa-gift fa-3x" style="color: #7f8c8d; margin-bottom: 20px;"></i>
+            <h3>Aucun produit disponible</h3>
+            <p>La boutique est actuellement en cours de configuration.</p>
+            <button onclick="loadFeaturedProducts()" class="btn btn-secondary" style="margin-top: 20px;">
+              <i class="fas fa-redo"></i> Actualiser
+            </button>
+          </div>
+        `;
       }
 
-      function changerPage(page) {
-        if (page < 1 || page > totalPages) return;
-        chargerProduits(page);
-        window.location.href = "#nosCreations";
+      function displayNetworkError(error) {
+        const container = document.getElementById("featuredProducts");
+        container.innerHTML = `
+          <div class="products-network-error">
+            <i class="fas fa-wifi fa-3x" style="color: #e74c3c; margin-bottom: 20px;"></i>
+            <h3>Problème de connexion</h3>
+            <p>Impossible de contacter le serveur.</p>
+            <p><small>${error.message}</small></p>
+            <button onclick="loadFeaturedProducts()" class="btn btn-secondary" style="margin-top: 20px;">
+              <i class="fas fa-redo"></i> Réessayer
+            </button>
+          </div>
+        `;
       }
 
-      // FONCTION POUR AJOUTER AU PANIER DEPUIS UN BOUTON
-      async function ajouterAuPanierDepuisBouton(event, idProduit, nomProduit) {
-        event.preventDefault();
-        event.stopPropagation();
-        const bouton = event.target;
-        const originalText = bouton.textContent;
-        bouton.textContent = "Ajout...";
-        bouton.disabled = true;
-        try {
-          const result = await origamiAPI.ajouterAuPanier(idProduit);
-          if (result.status === 200) {
-            bouton.textContent = "✓ Ajouté !";
-            bouton.style.backgroundColor = "#28a745";
-            setTimeout(() => {
-              bouton.textContent = originalText;
-              bouton.style.backgroundColor = "";
-              bouton.disabled = false;
-            }, 1500);
-            updateAffichagePanier();
-            showNotification(`"${nomProduit}" ajouté au panier !`, "success");
-          } else {
-            bouton.textContent = originalText;
-            bouton.disabled = false;
-            showNotification(
-              "Erreur: " + (result.error || "Impossible d'ajouter au panier"),
-              "error",
-            );
-          }
-        } catch (error) {
-          console.error("Erreur:", error);
-          bouton.textContent = originalText;
-          bouton.disabled = false;
-          showNotification("Erreur réseau", "error");
-        }
-      }
+      // Initialisation
+      document.addEventListener("DOMContentLoaded", async () => {
+        window.panierManager = new PanierManager();
 
-      // FONCTIONS POUR LE PANIER
-      async function updateAffichagePanier() {
-        try {
-          const panier = await origamiAPI.getPanier();
-          panierData = panier;
-          if (panier.status === 200) {
-            const compteurPanier = document.getElementById("compteur-panier");
-            if (compteurPanier)
-              compteurPanier.textContent = panier.data.totalQuantites || 0;
-          }
-          await updateEtatBoutonCommande();
-          updateEtatBoutonVider();
-        } catch (error) {
-          console.error("Erreur mise à jour panier:", error);
-        }
-      }
-
-      // VERSION CORRIGÉE de updateEtatBoutonCommande - plus robuste sur mobile
-      async function updateEtatBoutonCommande() {
-        const bouton = document.getElementById("btn-passer-commande");
-        if (!bouton) return;
-
-        try {
-          const panier = await origamiAPI.getPanier();
-          panierData = panier;
-
-          if (
-            panier.status === 200 &&
-            panier.data.articles &&
-            panier.data.articles.length > 0
-          ) {
-            bouton.disabled = false;
-            bouton.style.backgroundColor = "#d40000";
-            bouton.style.cursor = "pointer";
-            bouton.style.opacity = "1";
-            bouton.title = "Cliquer pour passer commande";
-          } else {
-            bouton.disabled = true;
-            bouton.style.backgroundColor = "#cccccc";
-            bouton.style.cursor = "not-allowed";
-            bouton.style.opacity = "0.6";
-            bouton.title = "Votre panier est vide";
-          }
-        } catch (error) {
-          console.error("Erreur mise à jour bouton:", error);
-          // CORRECTION CLÉ : En cas d'erreur réseau, ne pas bloquer l'utilisateur
-          // On suppose que le panier n'est pas vide pour ne pas le pénaliser
-          bouton.disabled = false;
-          bouton.style.backgroundColor = "#d40000";
-          bouton.style.cursor = "pointer";
-          bouton.style.opacity = "1";
-          bouton.title = "Passer commande (vérification manuelle)";
-          showNotification(
-            "Vérification du panier impossible, vous pouvez toujours essayer.",
-            "warning",
-          );
-        }
-      }
-
-      async function updateEtatBoutonVider() {
-        const btnVider = document.getElementById("btn-vider-panier");
-        if (!btnVider) return;
-        try {
-          const panier = await origamiAPI.getPanier();
-          panierData = panier;
-          if (
-            panier.status === 200 &&
-            panier.data.articles &&
-            panier.data.articles.length > 0
-          ) {
-            btnVider.disabled = false;
-            btnVider.style.background = "#6c757d";
-            btnVider.style.cursor = "pointer";
-          } else {
-            btnVider.disabled = true;
-            btnVider.style.background = "#cccccc";
-            btnVider.style.cursor = "not-allowed";
-          }
-        } catch (error) {
-          console.error("Erreur mise à jour bouton vider:", error);
-          btnVider.disabled = true;
-          btnVider.style.background = "#cccccc";
-          btnVider.style.cursor = "not-allowed";
-        }
-      }
-
-      function showNotification(message, type = "info", duree = 3000) {
-        const notification = document.createElement("div");
-        notification.className = `notification ${type}`;
-        notification.innerHTML = `<div style="display: flex; align-items: center; gap: 10px;"><span style="font-size: 18px;">${getIconeType(type)}</span><span>${message}</span></div>`;
-        document.body.appendChild(notification);
-        setTimeout(() => {
-          notification.style.transform = "translateX(0)";
-        }, 100);
-        setTimeout(() => {
-          notification.style.transform = "translateX(400px)";
-          setTimeout(() => {
-            if (notification.parentNode)
-              notification.parentNode.removeChild(notification);
-          }, 300);
-        }, duree);
-      }
-
-      function getIconeType(type) {
-        const icones = {
-          success: "✅",
-          error: "❌",
-          info: "ℹ️",
-          warning: "⚠️",
-        };
-        return icones[type] || "ℹ️";
-      }
-
-      // FONCTIONS POUR LA MODAL PANIER
-      function afficherPanierModal() {
-        let modal = document.getElementById("panier-modal");
-        if (!modal) {
-          modal = document.createElement("div");
-          modal.id = "panier-modal";
-          modal.style.cssText = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 2000;`;
-          modal.innerHTML = `
-            <div style="background: white; padding: 25px; border-radius: 8px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2 style="margin: 0; color: #333;">Votre Panier</h2>
-                <button onclick="fermerPanierModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #666;">&times;</button>
-              </div>
-              <div id="panier-content"></div>
-              <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
-                <button onclick="viderPanier()" id="btn-vider-panier" style="padding: 10px 15px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">Vider le panier</button>
-                <button onclick="verifierEtPasserCommande()" id="btn-passer-commande" style="padding: 10px 20px; background: #d40000; color: white; border: none; border-radius: 4px; cursor: pointer;">Passer la commande</button>
-              </div>
-              <div class="mobile-scroll-hint" style="text-align: center; font-size: 12px; color: #999; padding: 10px; margin-top: 10px;">⬇️ Scrollez vers le bas pour valider ⬇️</div>
-            </div>
-          `;
-          document.body.appendChild(modal);
-        }
-        modal.style.display = "flex";
-        chargerContenuPanier();
-        // Afficher le hint mobile après un délai
-        setTimeout(() => {
-          if (window.innerWidth <= 768) {
-            const hint = document.querySelector(".mobile-scroll-hint");
-            if (hint) hint.style.display = "block";
-            setTimeout(() => {
-              if (hint) hint.style.display = "none";
-            }, 5000);
-          }
-        }, 500);
-      }
-
-      function fermerPanierModal() {
-        const modal = document.getElementById("panier-modal");
-        if (modal) modal.style.display = "none";
-      }
-
-      async function chargerContenuPanier() {
-        try {
-          const panier = await origamiAPI.getPanier();
-          panierData = panier;
-          const content = document.getElementById("panier-content");
-          await updateEtatBoutonCommande();
-          updateEtatBoutonVider();
-
-          if (
-            panier.status === 200 &&
-            panier.data.articles &&
-            panier.data.articles.length > 0
-          ) {
-            let html = `<div style="max-height: 400px; overflow-y: auto;"><table style="width: 100%; border-collapse: collapse;">
-              <thead><tr style="border-bottom: 2px solid #eee;"><th style="text-align: left; padding: 10px;">Produit</th><th style="text-align: center; padding: 10px;">Prix</th><th style="text-align: center; padding: 10px;">Quantité</th><th style="text-align: center; padding: 10px;">Total</th><th style="text-align: center; padding: 10px;">Action</th></tr></thead><tbody>`;
-            panier.data.articles.forEach((article) => {
-              html += `
-                <tr style="border-bottom: 1px solid #f0f0f0;">
-                  <td style="padding: 15px 10px;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                      <div style="width: 50px; height: 50px; background: #f0f0f0; border-radius: 4px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-                        <img src="${article.photo}" alt="${article.nom}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'">
-                      </div>
-                      <div><strong>${article.nom}</strong><br><small style="color: #666;">${article.description ? article.description.substring(0, 50) + "..." : ""}</small></div>
-                    </div>
-                  </td>
-                  <td style="text-align: center; padding: 10px;">${article.prixUnitaire}€</td>
-                  <td style="text-align: center; padding: 10px;">
-                    <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
-                      <button onclick="modifierQuantite(${article.idLignePanier}, ${article.quantite - 1})" style="width: 30px; height: 30px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer;">-</button>
-                      <span style="min-width: 30px; display: inline-block;">${article.quantite}</span>
-                      <button onclick="modifierQuantite(${article.idLignePanier}, ${article.quantite + 1})" style="width: 30px; height: 30px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer;">+</button>
-                    </div>
-                  </td>
-                  <td style="text-align: center; padding: 10px; font-weight: bold;">${article.totalLigne}€</td>
-                  <td style="text-align: center; padding: 10px;">
-                    <button onclick="supprimerArticle(${article.idLignePanier})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer;">×</button>
-                  </td>
-                </tr>`;
-            });
-            html += `</tbody></table></div>
-              <div style="border-top: 2px solid #333; padding-top: 15px; margin-top: 15px; font-weight: bold; display: flex; justify-content: space-between;">
-                <span>Total:</span><span>${panier.data.total}€</span>
-              </div>`;
-            content.innerHTML = html;
-          } else {
-            content.innerHTML = `<div style="text-align: center; padding: 40px; color: #666;">
-              <div style="font-size: 48px; margin-bottom: 20px;">🛒</div>
-              <h3>Votre panier est vide</h3>
-              <p>Ajoutez des articles pour commencer vos achats</p>
-              <button onclick="fermerPanierModal()" style="margin-top: 20px; padding: 10px 20px; background: #d40000; color: white; border: none; border-radius: 4px; cursor: pointer;">Découvrir nos produits</button>
-            </div>`;
-          }
-        } catch (error) {
-          console.error("Erreur chargement panier:", error);
-          const content = document.getElementById("panier-content");
-          content.innerHTML = `<div style="text-align: center; padding: 40px; color: #666;">
-            <div style="font-size: 48px; margin-bottom: 20px;">❌</div>
-            <h3>Erreur de chargement</h3>
-            <p>Impossible de charger le panier</p>
-            <button onclick="fermerPanierModal()" style="margin-top: 20px; padding: 10px 20px; background: #d40000; color: white; border: none; border-radius: 4px; cursor: pointer;">Fermer</button>
-          </div>`;
-        }
-      }
-
-      async function modifierQuantite(idLignePanier, nouvelleQuantite) {
-        if (nouvelleQuantite < 1) {
-          await supprimerArticle(idLignePanier);
-          return;
-        }
-        try {
-          const result = await origamiAPI.modifierQuantite(
-            idLignePanier,
-            nouvelleQuantite,
-          );
-          if (result.status === 200) {
-            await chargerContenuPanier();
-            await updateAffichagePanier();
-            showNotification("Quantité modifiée", "success");
-          } else {
-            showNotification("Erreur lors de la modification", "error");
-          }
-        } catch (error) {
-          console.error("Erreur modification quantité:", error);
-          showNotification("Erreur réseau", "error");
-        }
-      }
-
-      async function supprimerArticle(idLignePanier) {
-        try {
-          const result = await origamiAPI.supprimerDuPanier(idLignePanier);
-          if (result.status === 200) {
-            await chargerContenuPanier();
-            await updateAffichagePanier();
-            showNotification("Article supprimé du panier", "success");
-          } else {
-            showNotification("Erreur lors de la suppression", "error");
-          }
-        } catch (error) {
-          console.error("Erreur suppression article:", error);
-          showNotification("Erreur réseau", "error");
-        }
-      }
-
-      async function viderPanier() {
-        if (!confirm("Êtes-vous sûr de vouloir vider votre panier ?")) return;
-        try {
-          const result = await origamiAPI.viderPanier();
-          if (result.status === 200) {
-            await chargerContenuPanier();
-            await updateAffichagePanier();
-            showNotification("Panier vidé", "success");
-          } else {
-            showNotification("Erreur lors du vidage du panier", "error");
-          }
-        } catch (error) {
-          console.error("Erreur vidage panier:", error);
-          showNotification("Erreur réseau", "error");
-        }
-      }
-
-      function verifierEtPasserCommande() {
-        if (
-          !panierData ||
-          !panierData.data.articles ||
-          panierData.data.articles.length === 0
-        ) {
-          showNotification("Votre panier est vide", "error");
-          return;
-        }
-        fermerPanierModal();
-        afficherCommandeModal();
-      }
-
-      // FONCTIONS POUR LA MODAL DE COMMANDE
-      function afficherCommandeModal() {
-        const modal = document.getElementById("commande-modal");
-        if (modal) {
-          modal.style.display = "flex";
-          resetCommandeModal();
-        }
-      }
-
-      function fermerCommandeModal() {
-        const modal = document.getElementById("commande-modal");
-        if (modal) modal.style.display = "none";
-      }
-
-      function resetCommandeModal() {
-        document.getElementById("etape-choix-compte").style.display = "block";
-        document.getElementById("etape-saisie-email").style.display = "none";
-        document.getElementById("etape-confirmation-lien").style.display =
-          "none";
-      }
-
-      function choisirEmailExistant() {
-        document.getElementById("etape-choix-compte").style.display = "none";
-        document.getElementById("etape-saisie-email").style.display = "block";
-        typeProcessus = "existant";
-      }
-
-      function choisirNouveauCompte() {
-        document.getElementById("etape-choix-compte").style.display = "none";
-        document.getElementById("etape-saisie-email").style.display = "block";
-        typeProcessus = "nouveau";
-      }
-
-      function retourChoixCompte() {
-        document.getElementById("etape-saisie-email").style.display = "none";
-        document.getElementById("etape-choix-compte").style.display = "block";
-      }
-
-      function retourSaisieEmail() {
-        document.getElementById("etape-confirmation-lien").style.display =
-          "none";
-        document.getElementById("etape-saisie-email").style.display = "block";
-      }
-
-      function soumettreEmail() {
-        const email = document.getElementById("email-saisi").value;
-        const nom = document.getElementById("nom-saisi").value || "Client";
-        if (!email || !email.includes("@")) {
-          showNotification("Veuillez saisir un email valide", "error");
-          return;
-        }
-        localStorage.setItem("email_confirmation", email);
-        sessionStorage.setItem("email_confirmation", email);
-        const btn = document.querySelector(
-          '#etape-saisie-email button[type="submit"]',
-        );
-        const texteOriginal = btn.textContent;
-        btn.textContent = "Envoi en cours...";
-        btn.disabled = true;
-        envoyerEmailConfirmation(email, nom).then((result) => {
-          btn.textContent = texteOriginal;
-          btn.disabled = false;
-          if (result.success) {
-            emailEnCours = email;
-            document.getElementById("etape-saisie-email").style.display =
-              "none";
-            document.getElementById("etape-confirmation-lien").style.display =
-              "block";
-            document.getElementById("email-a-verifier").textContent = email;
-            document.querySelector("#etape-confirmation-lien p").innerHTML =
-              `Nous avons envoyé un lien de confirmation à<br><strong>${email}</strong><br><br><em>Cliquez sur le lien reçu par email pour finaliser votre commande.</em>`;
-          }
-        });
-      }
-
-      async function envoyerEmailConfirmation(email, nom) {
-        try {
-          const result = await origamiAPI.envoyerLienConfirmation(email, nom);
-          if (result.status === 200) {
-            showNotification(
-              `Lien de confirmation envoyé à ${email}` +
-                (result.data.client_existant
-                  ? " (client existant)"
-                  : " (nouveau client)"),
-              "success",
-            );
-            return {
-              success: true,
-              client_existant: result.data.client_existant,
-            };
-          } else {
-            showNotification("Erreur: " + result.error, "error");
-            return { success: false, message: result.error };
-          }
-        } catch (error) {
-          console.error("Erreur envoi email:", error);
-          showNotification(
-            "Erreur de connexion au serveur: " + error.message,
-            "error",
-          );
-          return {
-            success: false,
-            message: "Erreur de connexion: " + error.message,
-          };
-        }
-      }
-
-      function renvoyerLienConfirmation() {
-        const nom = document.getElementById("nom-saisi").value || "Client";
-        envoyerEmailConfirmation(emailEnCours, nom).then((result) => {
-          if (result.success)
-            showNotification("Lien de confirmation renvoyé", "success");
-        });
-      }
-
-      // Fermer les modals en cliquant à l'extérieur
-      document.addEventListener("click", function (e) {
-        const panierModal = document.getElementById("panier-modal");
-        const commandeModal = document.getElementById("commande-modal");
-        if (panierModal && e.target === panierModal) fermerPanierModal();
-        if (commandeModal && e.target === commandeModal) fermerCommandeModal();
-      });
-
-      document
-        .querySelectorAll("#panier-modal > div, #commande-modal > div")
-        .forEach((modalContent) => {
-          modalContent.addEventListener("click", function (e) {
-            e.stopPropagation();
-          });
-        });
-
-      // INITIALISATION
-      document.addEventListener("DOMContentLoaded", function () {
-        chargerProduits(1);
-        updateAffichagePanier();
-        document
-          .getElementById("lien-panier")
-          .addEventListener("click", function (e) {
+        document.addEventListener("click", async (e) => {
+          const addToCartBtn = e.target.closest(".btn-add-to-cart");
+          if (addToCartBtn && !addToCartBtn.disabled) {
             e.preventDefault();
-            afficherPanierModal();
-          });
+            e.stopPropagation();
+
+            const id_produit = addToCartBtn.dataset.id
+              ? parseInt(addToCartBtn.dataset.id)
+              : null;
+
+            if (id_produit) {
+              await window.panierManager.ajouterAuPanier(
+                id_produit,
+                1,
+                addToCartBtn,
+              );
+            }
+          }
+        });
+
+        await loadFeaturedProducts();
       });
+
+      // Fonctions globales
+      window.ajouterAuPanier = function (
+        id_produit,
+        quantite = 1,
+        button = null,
+      ) {
+        if (!window.panierManager) {
+          window.panierManager = new PanierManager();
+        }
+        return window.panierManager.ajouterAuPanier(
+          id_produit,
+          quantite,
+          button,
+        );
+      };
+
+      window.loadFeaturedProducts = loadFeaturedProducts;
     </script>
   </body>
 </html>

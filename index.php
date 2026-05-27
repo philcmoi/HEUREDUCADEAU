@@ -1,6 +1,7 @@
 <?php
-// index.php - Page d'accueil avec gestion panier et pagination
-// VERSION CORRIGÉE - Pagination réparée et URLs d'images uniformisées
+// index.php - Page d'accueil avec gestion panier, pagination ET PROMOTIONS
+// VERSION COMPLÈTE CORRIGÉE
+
 require_once 'session_verification.php';
 
 // Configuration de la pagination
@@ -16,24 +17,131 @@ $total_pages = 1;
 $erreur_bdd = false;
 $message_erreur = '';
 
+// ==============================================
+// FONCTIONS DE GESTION DES PROMOTIONS
+// ==============================================
+
+/**
+ * Récupère la meilleure promotion active pour un produit
+ */
+function getBestActivePromotionForProduct($pdo, $product_id) {
+    // 1. Vérifier les promotions spécifiques au produit
+    $sql = "SELECT p.*, pp.reduction_personnalisee 
+            FROM promotions p
+            INNER JOIN promotions_produits pp ON p.id_promotion = pp.id_promotion
+            WHERE pp.id_produit = :product_id
+              AND p.actif = 1 
+              AND p.date_debut <= NOW() 
+              AND p.date_fin >= NOW()
+            ORDER BY 
+                CASE 
+                    WHEN p.type_promotion = 'pourcentage' AND pp.reduction_personnalisee IS NOT NULL 
+                        THEN pp.reduction_personnalisee
+                    WHEN p.type_promotion = 'pourcentage' THEN p.valeur
+                    WHEN p.type_promotion = 'montant_fixe' THEN 100
+                    ELSE 0
+                END DESC
+            LIMIT 1";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(['product_id' => $product_id]);
+    $promo = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($promo) {
+        return $promo;
+    }
+    
+    // 2. Vérifier les promotions par catégorie
+    $sql = "SELECT p.* 
+            FROM promotions p
+            INNER JOIN promotions_categories pc ON p.id_promotion = pc.id_promotion
+            INNER JOIN produits pr ON pr.id_categorie = pc.id_categorie
+            WHERE pr.id_produit = :product_id
+              AND p.actif = 1 
+              AND p.date_debut <= NOW() 
+              AND p.date_fin >= NOW()
+              AND p.type_promotion != 'livraison_gratuite'
+            ORDER BY 
+                CASE 
+                    WHEN p.type_promotion = 'pourcentage' THEN p.valeur
+                    WHEN p.type_promotion = 'montant_fixe' THEN 100
+                    ELSE 0
+                END DESC
+            LIMIT 1";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(['product_id' => $product_id]);
+    $promo = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    return $promo ?: null;
+}
+
+/**
+ * Calcule le prix après réduction
+ */
+function calculateDiscountedPrice($original_price, $promotion) {
+    if (!$promotion) {
+        return [
+            'price' => $original_price,
+            'original_price' => $original_price,
+            'reduction_amount' => 0,
+            'reduction_percent' => 0,
+            'has_promotion' => false
+        ];
+    }
+    
+    $discounted_price = $original_price;
+    $reduction_percent = 0;
+    $reduction_amount = 0;
+    
+    // Priorité à la réduction personnalisée sur ce produit
+    $reduction_value = $promotion['reduction_personnalisee'] ?? $promotion['valeur'];
+    
+    if ($promotion['type_promotion'] == 'pourcentage') {
+        $reduction_percent = floatval($reduction_value);
+        $reduction_amount = $original_price * ($reduction_percent / 100);
+        $discounted_price = $original_price - $reduction_amount;
+        $reduction_amount = round($reduction_amount, 2);
+        $discounted_price = round($discounted_price, 2);
+    } elseif ($promotion['type_promotion'] == 'montant_fixe') {
+        $reduction_amount = floatval($reduction_value);
+        $discounted_price = max(0, $original_price - $reduction_amount);
+        $reduction_percent = ($reduction_amount / $original_price) * 100;
+        $discounted_price = round($discounted_price, 2);
+    }
+    
+    return [
+        'price' => $discounted_price,
+        'original_price' => $original_price,
+        'reduction_amount' => $reduction_amount,
+        'reduction_percent' => round($reduction_percent),
+        'has_promotion' => true,
+        'type' => $promotion['type_promotion'],
+        'code' => $promotion['code_promotion']
+    ];
+}
+
+// ==============================================
+// RÉCUPÉRATION DES PRODUITS AVEC LEURS PROMOTIONS
+// ==============================================
+
 if ($pdo) {
     try {
-        // 1. Compter le nombre total de produits actifs
+        // Compter le nombre total de produits actifs
         $stmt_count = $pdo->query("SELECT COUNT(*) FROM produits WHERE statut = 'actif'");
         $total_produits = $stmt_count->fetchColumn();
         $total_pages = ceil($total_produits / $produits_par_page);
         
-        // CORRECTION: S'assurer que la page demandée n'est pas supérieure au total
+        // S'assurer que la page demandée n'est pas supérieure au total
         if ($total_pages > 0 && $page > $total_pages) {
             $page = $total_pages;
             $offset = ($page - 1) * $produits_par_page;
         }
         
-        // 2. Récupérer les produits avec pagination
+        // Récupérer les produits avec pagination
         $sql = "
             SELECT p.*, 
-                   c.nom as categorie_nom,
-                   NULL as image
+                   c.nom as categorie_nom
             FROM produits p
             LEFT JOIN categories c ON p.id_categorie = c.id_categorie
             WHERE p.statut = 'actif'
@@ -47,19 +155,14 @@ if ($pdo) {
         $stmt->execute();
         $produits = $stmt->fetchAll();
         
-        // ==============================================
-        // RÉCUPÉRATION ROBUSTE DES IMAGES - VERSION CORRIGÉE
-        // ==============================================
-        $produits_js = [];
+        // Récupération des images et des promotions pour chaque produit
         $images = [];
         
         if (!empty($produits)) {
-            // Récupérer tous les IDs des produits
             $ids = array_column($produits, 'id_produit');
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
             
-            // Récupérer TOUTES les images, pas seulement les principales
-            // Et pour chaque produit, on prend la première image (priorité à principale)
+            // Récupérer les images
             $stmt_imgs = $pdo->prepare("
                 SELECT id_produit, url_image, principale 
                 FROM images_produits 
@@ -68,30 +171,40 @@ if ($pdo) {
             ");
             $stmt_imgs->execute($ids);
             
-            // Créer un tableau associatif [id_produit => url_image]
-            // On ne garde que la PREMIÈRE image pour chaque produit
             while ($img = $stmt_imgs->fetch()) {
-                // CORRECTION: Nettoyer l'URL si nécessaire (enlever les /sean/ en double)
-                $clean_url = $img['url_image'];
-                if (strpos($clean_url, '/sean/') !== false) {
-                    $clean_url = preg_replace('#/sean/+#', '/', $clean_url);
-                    error_log("URL nettoyée dans index: " . $img['url_image'] . " -> " . $clean_url);
-                }
-                
-                // Si on n'a pas encore d'image pour ce produit, on la prend
                 if (!isset($images[$img['id_produit']])) {
-                    $images[$img['id_produit']] = $clean_url;
+                    $images[$img['id_produit']] = $img['url_image'];
+                }
+            }
+            
+            // Calculer les promotions pour chaque produit
+            foreach ($produits as &$p) {
+                $promo = getBestActivePromotionForProduct($pdo, $p['id_produit']);
+                if ($promo) {
+                    $price_info = calculateDiscountedPrice(floatval($p['prix_ttc']), $promo);
+                    $p['has_promotion'] = $price_info['has_promotion'];
+                    $p['reduction_percent'] = $price_info['reduction_percent'];
+                    $p['prix_promo'] = $price_info['price'];
+                    $p['prix_original'] = $price_info['original_price'];
+                    $p['reduction_amount'] = $price_info['reduction_amount'];
+                    $p['promo_code'] = $price_info['code'];
+                } else {
+                    $p['has_promotion'] = false;
+                    $p['reduction_percent'] = 0;
+                    $p['prix_promo'] = $p['prix_ttc'];
+                    $p['prix_original'] = $p['prix_ttc'];
+                    $p['reduction_amount'] = 0;
+                    $p['promo_code'] = null;
                 }
             }
         }
         
-        // Construire le tableau des produits pour JavaScript
+        // Construire le tableau des produits pour JavaScript (avec prix promotionnels)
+        $produits_js = [];
         foreach ($produits as $p) {
-            // CORRECTION: Utiliser l'image nettoyée si disponible
-            if (isset($images[$p['id_produit']]) && !empty($images[$p['id_produit']])) {
-                $image_url = $images[$p['id_produit']];
-            } else {
-                // Image par défaut selon l'ID ou générique
+            // Récupérer l'image
+            $image_url = $images[$p['id_produit']] ?? null;
+            if (!$image_url) {
                 $default_images = [
                     1 => 'https://via.placeholder.com/300x300/2c3e50/ffffff?text=Bougie',
                     2 => 'https://via.placeholder.com/300x300/27ae60/ffffff?text=Coffret',
@@ -105,7 +218,10 @@ if ($pdo) {
                 'id' => $p['id_produit'],
                 'nom' => $p['nom'],
                 'reference' => $p['reference'],
-                'prix_ttc' => floatval($p['prix_ttc']),
+                'prix_ttc' => floatval($p['prix_promo']), // Prix après réduction
+                'prix_original' => floatval($p['prix_original']),
+                'reduction_percent' => $p['reduction_percent'],
+                'has_promotion' => $p['has_promotion'],
                 'description_courte' => $p['description_courte'],
                 'image' => $image_url
             ];
@@ -135,10 +251,9 @@ $nb_articles = countCartItems();
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <style>
         /* ==============================================
-           STYLES GLOBAUX - CHARTE GRAPHIQUE INDEX.HTML
+           STYLES GLOBAUX - CHARTE GRAPHIQUE
            ============================================== */
 
-        /* Reset et base */
         * {
             margin: 0;
             padding: 0;
@@ -161,7 +276,7 @@ $nb_articles = countCartItems();
         }
 
         /* ==============================================
-           HEADER - STYLE INDEX.HTML AVEC PANIER TOUJOURS VISIBLE
+           HEADER - STYLE AVEC PANIER TOUJOURS VISIBLE
            ============================================== */
 
         header {
@@ -202,7 +317,6 @@ $nb_articles = countCartItems();
             color: #e74c3c;
         }
 
-        /* Navigation desktop */
         nav {
             display: flex;
             gap: 25px;
@@ -232,7 +346,6 @@ $nb_articles = countCartItems();
             background-color: rgba(255, 255, 255, 0.15);
         }
 
-        /* Lien panier - TOUJOURS VISIBLE */
         .cart-link {
             position: relative;
             display: flex;
@@ -246,6 +359,7 @@ $nb_articles = countCartItems();
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: white;
             text-decoration: none;
+            transition: all 0.3s ease;
         }
 
         .cart-link:hover {
@@ -272,7 +386,6 @@ $nb_articles = countCartItems();
             color: #e74c3c;
         }
 
-        /* Menu mobile toggle */
         .menu-toggle {
             display: none;
             background: none;
@@ -290,7 +403,6 @@ $nb_articles = countCartItems();
             background-color: rgba(255, 255, 255, 0.1);
         }
 
-        /* Navigation mobile */
         .nav-mobile {
             display: none;
             background: #34495e;
@@ -353,10 +465,9 @@ $nb_articles = countCartItems();
         }
 
         /* ==============================================
-           SECTIONS - STYLE INDEX.HTML
+           SECTIONS - STYLE INDEX
            ============================================== */
 
-        /* Hero Section */
         .hero {
             padding: 60px 0;
             background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
@@ -364,12 +475,8 @@ $nb_articles = countCartItems();
         }
 
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-            to {
-                opacity: 1;
-            }
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
 
         .hero-container {
@@ -483,7 +590,6 @@ $nb_articles = countCartItems();
             transform: scale(1.02);
         }
 
-        /* Sections communes */
         section {
             padding: 60px 0;
         }
@@ -506,7 +612,6 @@ $nb_articles = countCartItems();
             margin-bottom: 40px;
         }
 
-        /* Grilles responsives */
         .categories-grid,
         .services-grid,
         .testimonials-grid {
@@ -593,7 +698,6 @@ $nb_articles = countCartItems();
             color: #2980b9;
         }
 
-        /* Testimonials */
         .testimonial-rating {
             margin-bottom: 15px;
         }
@@ -640,7 +744,6 @@ $nb_articles = countCartItems();
             font-size: 0.9rem;
         }
 
-        /* Produits */
         .featured-products {
             background: #f8f9fa;
         }
@@ -651,7 +754,6 @@ $nb_articles = countCartItems();
             gap: 30px;
             margin: 40px 0;
             min-height: 500px;
-            opacity: 1;
         }
 
         .product-card {
@@ -663,8 +765,6 @@ $nb_articles = countCartItems();
             position: relative;
             animation: fadeInProduct 0.5s ease forwards;
             opacity: 0;
-            will-change: transform, opacity;
-            backface-visibility: hidden;
         }
 
         @keyframes fadeInProduct {
@@ -701,9 +801,6 @@ $nb_articles = countCartItems();
             height: 250px;
             overflow: hidden;
             background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
         .product-image img {
@@ -711,7 +808,6 @@ $nb_articles = countCartItems();
             height: 100%;
             object-fit: cover;
             transition: transform 0.5s ease;
-            background-color: #f8f9fa;
         }
 
         .product-card:hover .product-image img {
@@ -748,40 +844,48 @@ $nb_articles = countCartItems();
             justify-content: center;
         }
 
+        /* BADGE DE RÉDUCTION - STYLE MODERNE */
         .discount-badge {
             position: absolute;
             top: 15px;
             right: 15px;
             background: linear-gradient(135deg, #e74c3c, #c0392b);
             color: white;
-            padding: 5px 12px;
-            border-radius: 20px;
+            padding: 6px 14px;
+            border-radius: 25px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            z-index: 2;
+            box-shadow: 0 4px 12px rgba(231, 76, 60, 0.4);
+            letter-spacing: 0.5px;
+        }
+
+        /* PRIX AVEC RÉDUCTION */
+        .product-price-wrapper {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 10px 0;
+        }
+
+        .old-price {
             font-size: 0.9rem;
-            font-weight: 600;
-            z-index: 1;
-            box-shadow: 0 4px 10px rgba(231, 76, 60, 0.3);
+            color: #95a5a6;
+            text-decoration: line-through;
         }
 
-        .stock-badge {
-            position: absolute;
-            top: 15px;
-            left: 15px;
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            z-index: 1;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        .new-price {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: #e74c3c;
         }
 
-        .stock-faible {
-            background: linear-gradient(135deg, #f39c12, #e67e22);
-            color: white;
-        }
-
-        .stock-rupture {
-            background: linear-gradient(135deg, #95a5a6, #7f8c8d);
-            color: white;
+        .product-price {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: #2c3e50;
+            margin: 10px 0;
         }
 
         .product-info {
@@ -808,16 +912,6 @@ $nb_articles = countCartItems();
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             font-weight: 600;
-        }
-
-        .product-price {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: #e74c3c;
-            margin: 10px 0;
-            display: flex;
-            align-items: center;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
         }
 
         .product-rating {
@@ -883,12 +977,8 @@ $nb_articles = countCartItems();
         }
 
         @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
-            100% {
-                transform: rotate(360deg);
-            }
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         .btn-view {
@@ -912,7 +1002,6 @@ $nb_articles = countCartItems();
             background: linear-gradient(135deg, #2980b9, #2573a7);
         }
 
-        /* Pagination - CORRECTION APPLIQUÉE ICI */
         .pagination {
             display: flex;
             justify-content: center;
@@ -991,7 +1080,6 @@ $nb_articles = countCartItems();
             color: #7f8c8d;
         }
 
-        /* Newsletter */
         .newsletter {
             background: linear-gradient(135deg, #2c3e50, #1a252f);
             color: white;
@@ -1037,7 +1125,6 @@ $nb_articles = countCartItems();
             white-space: nowrap;
         }
 
-        /* Footer */
         footer {
             background: linear-gradient(135deg, #2c3e50, #1a252f);
             color: white;
@@ -1047,7 +1134,6 @@ $nb_articles = countCartItems();
 
         .footer-content {
             text-align: center;
-            padding: 20px 0;
         }
 
         .footer-content p {
@@ -1056,10 +1142,18 @@ $nb_articles = countCartItems();
             font-size: 0.9rem;
         }
 
-        /* ==============================================
-           STYLES MODAL ET NOTIFICATIONS
-           ============================================== */
+        .footer-content i {
+            margin: 0 5px;
+            font-size: 1.5rem;
+            color: #bdc3c7;
+            transition: color 0.3s ease;
+        }
 
+        .footer-content i:hover {
+            color: #e74c3c;
+        }
+
+        /* MODAL ET NOTIFICATIONS */
         .cart-modal {
             display: none;
             position: fixed;
@@ -1160,9 +1254,6 @@ $nb_articles = countCartItems();
             flex-shrink: 0;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
         .modal-product-image img {
@@ -1225,27 +1316,6 @@ $nb_articles = countCartItems();
             transition: all 0.3s ease;
         }
 
-        .cart-modal-footer .btn-primary {
-            background: linear-gradient(135deg, #27ae60, #219653);
-            color: white;
-        }
-
-        .cart-modal-footer .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(39, 174, 96, 0.3);
-        }
-
-        .cart-modal-footer .btn-secondary {
-            background: linear-gradient(135deg, #3498db, #2980b9);
-            color: white;
-        }
-
-        .cart-modal-footer .btn-secondary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3);
-        }
-
-        /* Toast Notifications */
         .notification {
             position: fixed;
             top: 30px;
@@ -1286,15 +1356,29 @@ $nb_articles = countCartItems();
             background: linear-gradient(135deg, #e74c3c, #c0392b);
         }
 
-        .notification.warning {
-            background: linear-gradient(135deg, #f39c12, #e67e22);
-        }
-
         .notification i {
             font-size: 1.5rem;
         }
 
-        /* Loading states */
+        .cart-count.pulse {
+            animation: pulse 0.6s ease;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+
+        .products-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            color: #7f8c8d;
+            font-size: 0.95rem;
+        }
+
         .products-loading,
         .products-empty,
         .products-error {
@@ -1309,261 +1393,77 @@ $nb_articles = countCartItems();
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            opacity: 1;
         }
 
-        .products-loading i {
-            font-size: 3rem;
-            color: #3498db;
-            margin-bottom: 20px;
-        }
-
-        .products-empty i {
-            font-size: 3rem;
-            color: #7f8c8d;
-            margin-bottom: 20px;
-        }
-
+        .products-loading i,
+        .products-empty i,
         .products-error i {
             font-size: 3rem;
-            color: #e74c3c;
             margin-bottom: 20px;
         }
 
-        .loading-spinner {
-            animation: spin 1s linear infinite;
-        }
+        .products-loading i { color: #3498db; }
+        .products-empty i { color: #7f8c8d; }
+        .products-error i { color: #e74c3c; }
 
         .text-center {
             text-align: center;
         }
 
-        /* Animation du compteur */
-        .cart-count.pulse {
-            animation: pulse 0.6s ease;
-        }
-
-        @keyframes pulse {
-            0% {
-                transform: scale(1);
-            }
-            50% {
-                transform: scale(1.2);
-            }
-            100% {
-                transform: scale(1);
-            }
-        }
-
-        /* Info pagination */
-        .products-info {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            color: #7f8c8d;
-            font-size: 0.95rem;
-        }
-
-        /* Styles supplémentaires pour les produits */
-        .debug-info {
-            background: #f8f9fa;
-            border: 1px solid #ddd;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 8px;
-            font-family: monospace;
-            font-size: 14px;
-        }
-        
-        .debug-info h4 {
-            margin-top: 0;
-            color: #e74c3c;
-        }
-
-        /* ==============================================
-           MEDIA QUERIES - RESPONSIVE
-           ============================================== */
-
         @media (max-width: 992px) {
             .header-content {
                 flex-wrap: wrap;
             }
-
-            nav {
-                display: none;
-            }
-
-            .menu-toggle {
-                display: block;
-            }
-
-            .cart-link {
-                margin-left: auto;
-                margin-right: 15px;
-            }
-
-            .hero-container {
-                grid-template-columns: 1fr;
-                text-align: center;
-            }
-
-            .hero-content {
-                order: 2;
-            }
-
-            .hero-image {
-                order: 1;
-            }
-
-            .hero-subtitle {
-                max-width: 100%;
-                margin-left: auto;
-                margin-right: auto;
-            }
-
-            .hero-buttons {
-                justify-content: center;
-            }
-
+            nav { display: none; }
+            .menu-toggle { display: block; }
+            .cart-link { margin-left: auto; margin-right: 15px; }
+            .hero-container { grid-template-columns: 1fr; text-align: center; }
+            .hero-content { order: 2; }
+            .hero-image { order: 1; }
+            .hero-subtitle { max-width: 100%; margin: 0 auto 30px; }
+            .hero-buttons { justify-content: center; }
             .categories-grid,
             .services-grid,
-            .testimonials-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
+            .testimonials-grid { grid-template-columns: repeat(2, 1fr); }
         }
 
         @media (max-width: 768px) {
-            header {
-                padding: 15px 0;
-            }
-
-            .logo {
-                font-size: 1.5rem;
-            }
-
-            .cart-link span:not(.cart-count) {
-                display: none;
-            }
-
-            .cart-link {
-                padding: 8px 12px;
-            }
-
-            .hero-title {
-                font-size: 2.2rem;
-            }
-
-            .hero-subtitle {
-                font-size: 1rem;
-            }
-
-            .btn {
-                padding: 12px 25px;
-            }
-
-            section {
-                padding: 40px 0;
-            }
-
-            .section-title {
-                font-size: 1.8rem;
-            }
-
+            header { padding: 15px 0; }
+            .logo { font-size: 1.5rem; }
+            .cart-link span:not(.cart-count) { display: none; }
+            .cart-link { padding: 8px 12px; }
+            .hero-title { font-size: 2.2rem; }
+            .hero-subtitle { font-size: 1rem; }
+            .btn { padding: 12px 25px; }
+            section { padding: 40px 0; }
+            .section-title { font-size: 1.8rem; }
             .categories-grid,
             .services-grid,
             .testimonials-grid,
-            .featured-products .products-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .product-actions {
-                flex-direction: column;
-            }
-
+            .featured-products .products-grid { grid-template-columns: 1fr; }
+            .product-actions { flex-direction: column; }
             .btn-add-to-cart,
-            .btn-view {
-                width: 100%;
-            }
-
-            .newsletter-container {
-                flex-direction: column;
-                text-align: center;
-            }
-
-            .newsletter-form {
-                flex-direction: column;
-                width: 100%;
-            }
-
+            .btn-view { width: 100%; }
+            .newsletter-container { flex-direction: column; text-align: center; }
+            .newsletter-form { flex-direction: column; width: 100%; }
             .newsletter-form input,
-            .newsletter-form button {
-                width: 100%;
-            }
-
-            .notification {
-                min-width: 280px;
-                max-width: 280px;
-                right: 20px;
-                left: 20px;
-                margin: 0 auto;
-            }
-            
-            .pagination {
-                gap: 5px;
-            }
-            
-            .pagination-btn {
-                padding: 8px 12px;
-            }
+            .newsletter-form button { width: 100%; }
+            .notification { min-width: 280px; max-width: 280px; right: 20px; left: 20px; margin: 0 auto; }
+            .pagination { gap: 5px; }
+            .pagination-btn { padding: 8px 12px; }
         }
 
         @media (max-width: 480px) {
-            .logo {
-                font-size: 1.2rem;
-            }
-
-            .hero-title {
-                font-size: 1.8rem;
-            }
-
-            .hero-buttons {
-                flex-direction: column;
-            }
-
-            .hero-buttons .btn {
-                width: 100%;
-            }
-
-            .section-title {
-                font-size: 1.6rem;
-            }
-
-            .cart-modal-product {
-                flex-direction: column;
-                text-align: center;
-            }
-
-            .modal-product-image {
-                width: 100%;
-                height: 150px;
-            }
-
-            .cart-modal-footer {
-                flex-direction: column;
-            }
-            
-            .pagination-numbers {
-                order: -1;
-                width: 100%;
-                justify-content: center;
-                margin-bottom: 10px;
-            }
-            
-            .page-number {
-                min-width: 35px;
-                height: 35px;
-            }
+            .logo { font-size: 1.2rem; }
+            .hero-title { font-size: 1.8rem; }
+            .hero-buttons { flex-direction: column; }
+            .hero-buttons .btn { width: 100%; }
+            .section-title { font-size: 1.6rem; }
+            .cart-modal-product { flex-direction: column; text-align: center; }
+            .modal-product-image { width: 100%; height: 150px; }
+            .cart-modal-footer { flex-direction: column; }
+            .pagination-numbers { order: -1; width: 100%; justify-content: center; margin-bottom: 10px; }
+            .page-number { min-width: 35px; height: 35px; }
         }
     </style>
 </head>
@@ -1576,7 +1476,6 @@ $nb_articles = countCartItems();
                     <i class="fas fa-gift"></i> HEURE DU CADEAU
                 </a>
 
-                <!-- Navigation desktop -->
                 <nav>
                     <a href="index.php" class="active"><i class="fas fa-home"></i> Accueil</a>
                     <a href="catalogue.php"><i class="fas fa-box-open"></i> Cadeaux</a>
@@ -1584,20 +1483,17 @@ $nb_articles = countCartItems();
                     <a href="contact.html"><i class="fas fa-envelope"></i> Contact</a>
                 </nav>
 
-                <!-- Panier toujours visible -->
                 <a href="panier.html" class="cart-link">
                     <i class="fas fa-shopping-cart"></i>
                     <span>Panier</span>
                     <span class="cart-count" id="cartCount"><?= $nb_articles ?></span>
                 </a>
 
-                <!-- Menu mobile toggle -->
                 <button class="menu-toggle" id="menuToggle" aria-label="Menu">
                     <i class="fas fa-bars"></i>
                 </button>
             </div>
 
-            <!-- Navigation mobile -->
             <nav class="nav-mobile" id="navMobile">
                 <ul class="nav-mobile-list">
                     <li><a href="index.php" class="nav-mobile-link active"><i class="fas fa-home"></i> Accueil</a></li>
@@ -1673,13 +1569,12 @@ $nb_articles = countCartItems();
         </div>
     </section>
 
-    <!-- Tous les produits avec pagination -->
+    <!-- Tous les produits avec pagination ET promotions -->
     <section class="featured-products">
         <div class="container">
             <h2 class="section-title">Tous nos produits</h2>
             <p class="section-subtitle"><?= $total_produits ?> produits disponibles</p>
 
-            <!-- Informations pagination -->
             <div class="products-info">
                 <span>Page <?= $page ?> sur <?= $total_pages ?></span>
                 <span><?= count($produits) ?> produits affichés</span>
@@ -1703,31 +1598,23 @@ $nb_articles = countCartItems();
                     </div>
                 <?php else: ?>
                     <?php foreach ($produits as $produit): 
-                        $prix = number_format($produit['prix_ttc'] ?? 0, 2, ',', ' ');
+                        $prix_original = $produit['prix_original'] ?? $produit['prix_ttc'];
+                        $prix_promo = $produit['prix_promo'] ?? $prix_original;
+                        $reduction_percent = $produit['reduction_percent'] ?? 0;
+                        $has_promotion = $produit['has_promotion'] ?? false;
                         
-                        // CORRECTION: Utiliser l'image nettoyée depuis le tableau $images
-                        if (isset($images[$produit['id_produit']]) && !empty($images[$produit['id_produit']])) {
-                            $image_url = $images[$produit['id_produit']];
-                        } else {
-                            // Images par défaut
-                            $default_images = [
-                                1 => 'https://via.placeholder.com/300x300/2c3e50/ffffff?text=Bougie',
-                                2 => 'https://via.placeholder.com/300x300/27ae60/ffffff?text=Coffret',
-                                3 => 'https://via.placeholder.com/300x300/3498db/ffffff?text=Montre',
-                                4 => 'https://via.placeholder.com/300x300/e74c3c/ffffff?text=Bijoux'
-                            ];
-                            $image_url = $default_images[$produit['id_produit']] ?? 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
-                        }
+                        $prix_affiche = number_format($prix_promo, 2, ',', ' ');
+                        $prix_original_affiche = number_format($prix_original, 2, ',', ' ');
                         
-                        // Référence courte
-                        $ref_short = substr($produit['reference'] ?? 'REF' . $produit['id_produit'], 0, 8);
+                        $image_url = $images[$produit['id_produit']] ?? 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
                     ?>
                     <div class="product-card" data-id="<?= $produit['id_produit'] ?>">
-                        <?php if (($produit['id_produit'] ?? 0) == 4): ?>
-                        <span class="discount-badge">-20%</span>
+                        <?php if ($has_promotion && $reduction_percent > 0): ?>
+                            <span class="discount-badge">-<?= round($reduction_percent) ?>%</span>
                         <?php endif; ?>
+                        
                         <div class="product-image">
-                            <img src="<?= $image_url ?>" 
+                            <img src="<?= htmlspecialchars($image_url) ?>" 
                                  alt="<?= htmlspecialchars($produit['nom'] ?? 'Produit') ?>" 
                                  loading="lazy"
                                  onerror="this.src='https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit'">
@@ -1738,7 +1625,16 @@ $nb_articles = countCartItems();
                         <div class="product-info">
                             <span class="product-category"><?= htmlspecialchars($produit['categorie_nom'] ?? 'Cadeau') ?></span>
                             <h3><?= htmlspecialchars($produit['nom'] ?? 'Produit sans nom') ?></h3>
-                            <p class="product-price"><?= $prix ?> €</p>
+                            
+                            <?php if ($has_promotion && $prix_promo < $prix_original): ?>
+                                <div class="product-price-wrapper">
+                                    <span class="old-price"><?= $prix_original_affiche ?> €</span>
+                                    <span class="new-price"><?= $prix_affiche ?> €</span>
+                                </div>
+                            <?php else: ?>
+                                <div class="product-price"><?= $prix_affiche ?> €</div>
+                            <?php endif; ?>
+                            
                             <div class="product-rating">
                                 <?php for($i = 1; $i <= 5; $i++): ?>
                                     <i class="fas fa-star"></i>
@@ -1746,10 +1642,13 @@ $nb_articles = countCartItems();
                                 <span class="rating-count">(<?= rand(5, 50) ?>)</span>
                             </div>
                             <div class="product-actions">
-                                <button class="btn-add-to-cart" data-id="<?= $produit['id_produit'] ?>" title="Ajouter au panier">
+                                <button class="btn-add-to-cart" data-id="<?= $produit['id_produit'] ?>" 
+                                        data-nom="<?= htmlspecialchars($produit['nom']) ?>"
+                                        data-prix="<?= $prix_promo ?>"
+                                        data-image="<?= $image_url ?>">
                                     <i class="fas fa-cart-plus"></i> Ajouter
                                 </button>
-                                <a href="catalogue.php?id=<?= $produit['id_produit'] ?>" class="btn-view">
+                                <a href="produit.php?id=<?= $produit['id_produit'] ?>" class="btn-view">
                                     <i class="fas fa-eye"></i> Voir
                                 </a>
                             </div>
@@ -1759,7 +1658,7 @@ $nb_articles = countCartItems();
                 <?php endif; ?>
             </div>
 
-            <!-- PAGINATION CORRIGÉE - Logique simplifiée et fiable -->
+            <!-- PAGINATION -->
             <?php if ($total_pages > 1): ?>
             <div class="pagination">
                 <?php if ($page > 1): ?>
@@ -1774,14 +1673,11 @@ $nb_articles = countCartItems();
 
                 <div class="pagination-numbers">
                     <?php
-                    // CORRECTION: Logique de pagination simplifiée et fiable
-                    // Afficher la première page si on n'est pas proche du début
                     if ($page > 3) {
                         echo '<a href="?page=1" class="page-number">1</a>';
                         if ($page > 4) echo '<span class="page-dots">...</span>';
                     }
                     
-                    // Afficher jusqu'à 5 pages autour de la page courante
                     $start = max(1, $page - 2);
                     $end = min($total_pages, $page + 2);
                     
@@ -1791,7 +1687,6 @@ $nb_articles = countCartItems();
                     <?php endfor; ?>
                     
                     <?php
-                    // Afficher la dernière page si on n'est pas proche de la fin
                     if ($page < $total_pages - 2) {
                         if ($page < $total_pages - 3) echo '<span class="page-dots">...</span>';
                         echo '<a href="?page=' . $total_pages . '" class="page-number">' . $total_pages . '</a>';
@@ -1940,12 +1835,12 @@ $nb_articles = countCartItems();
 
     <script>
         // ==============================================
-        // DONNÉES DES PRODUITS - EXTRAITES DE LA BDD
+        // DONNÉES DES PRODUITS (AVEC PRIX PROMOTIONNELS)
         // ==============================================
-        const produitsData = <?= json_encode($produits_js, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) ?>;
+        const produitsData = <?= json_encode($produits_js ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) ?>;
 
         // ==============================================
-        // GESTIONNAIRE DE PANIER - VERSION CORRIGÉE
+        // GESTIONNAIRE DE PANIER
         // ==============================================
 
         const API_PANIER_URL = "panier.php";
@@ -1982,7 +1877,6 @@ $nb_articles = countCartItems();
             }
         });
 
-        // Classe PanierManager
         class PanierManager {
             constructor() {
                 this.apiUrl = API_PANIER_URL;
@@ -1990,7 +1884,7 @@ $nb_articles = countCartItems();
                 this.cartModalBody = document.getElementById("cartModalBody");
                 this.cartCountElements = document.querySelectorAll(".cart-count");
                 this.updateInProgress = false;
-                this.produitsData = produitsData; // Stocker les données des produits
+                this.produitsData = produitsData;
                 this.initEvents();
                 this.updateCartCount();
             }
@@ -2017,13 +1911,30 @@ $nb_articles = countCartItems();
                     return false;
                 }
 
-                // Récupérer les infos du produit depuis les données PHP
                 const produitInfo = this.produitsData[id_produit];
                 
-                if (!produitInfo) {
-                    this.showNotification("Erreur: Produit non trouvé", "error");
-                    return false;
+                if (!produitInfo && button) {
+                    const produitInfoFallback = {
+                        id: id_produit,
+                        nom: button.dataset.nom || 'Produit',
+                        reference: 'REF' + id_produit,
+                        prix_ttc: parseFloat(button.dataset.prix) || 0,
+                        image: button.dataset.image || 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit'
+                    };
+                    
+                    if (!produitInfo && !produitInfoFallback) {
+                        this.showNotification("Erreur: Produit non trouvé", "error");
+                        return false;
+                    }
                 }
+
+                const finalProduitInfo = produitInfo || {
+                    id: id_produit,
+                    nom: button?.dataset.nom || 'Produit',
+                    reference: 'REF' + id_produit,
+                    prix_ttc: parseFloat(button?.dataset.prix) || 0,
+                    image: button?.dataset.image || 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit'
+                };
 
                 let originalHTML = "";
                 let originalDisabled = false;
@@ -2051,17 +1962,8 @@ $nb_articles = countCartItems();
 
                     if (data.success) {
                         await this.updateCartCount();
-
-                        // Utiliser les données du produit récupérées depuis la BDD
-                        this.showCartModal({
-                            id: produitInfo.id,
-                            nom: produitInfo.nom,
-                            reference: produitInfo.reference,
-                            prix_ttc: produitInfo.prix_ttc,
-                            image: produitInfo.image
-                        });
-                        
-                        this.showNotification(`"${produitInfo.nom}" ajouté au panier !`);
+                        this.showCartModal(finalProduitInfo);
+                        this.showNotification(`"${finalProduitInfo.nom}" ajouté au panier !`);
                         return true;
                     } else {
                         this.showNotification(data.message || "Erreur lors de l'ajout", "error");
@@ -2115,7 +2017,6 @@ $nb_articles = countCartItems();
 
                 try {
                     const response = await fetch(`${this.apiUrl}?action=compter&_=${Date.now()}`);
-
                     if (response.ok) {
                         const data = await response.json();
                         if (data.success) {
@@ -2172,10 +2073,9 @@ $nb_articles = countCartItems();
         document.addEventListener("DOMContentLoaded", async () => {
             window.panierManager = new PanierManager();
 
-            // Délégation d'événement pour les boutons d'ajout au panier
             document.addEventListener("click", async (e) => {
                 const addToCartBtn = e.target.closest(".btn-add-to-cart");
-                if (addToCartBtn && !addToCartBtn.disabled) {
+                if (addToCartBtn && !addToCartBtn.disabled && !addToCartBtn.closest('.pagination') && !addToCartBtn.closest('.empty-state')) {
                     e.preventDefault();
                     e.stopPropagation();
 
