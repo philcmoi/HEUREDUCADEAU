@@ -1,8 +1,55 @@
 <?php
 // catalogue.php - Version corrigée avec accès au panier fonctionnel ET PROMOTIONS
-// VERSION COMPLÈTE CORRIGÉE - AFFICHAGE DES PROMOTIONS FIXÉ
+// VERSION COMPLÈTE CORRIGÉE
 
 require_once 'session_verification.php';
+
+// ========== DEBUG PROMOTIONS ==========
+error_log("=== DÉBUT DEBUG CATALOGUE ===");
+
+// 1. Vérifier la connexion BDD
+if (!$pdo) {
+    error_log("ERREUR: Pas de connexion BDD");
+} else {
+    error_log("Connexion BDD OK");
+}
+
+// 2. Tester la fonction getBestActivePromotionForProduct directement
+$test_promo = getBestActivePromotionForProduct($pdo, 31);
+error_log("Promo pour produit 31: " . ($test_promo ? json_encode($test_promo) : "AUCUNE"));
+
+// 3. Tester la fonction calculateDiscountedPrice
+if ($test_promo) {
+    $price_info = calculateDiscountedPrice(12.00, $test_promo);
+    error_log("Price info: " . json_encode($price_info));
+} else {
+    error_log("Aucune promo trouvée pour le produit 31");
+}
+
+// 4. Tester la requête SQL directement
+$sql_test = "SELECT p.*, pp.reduction_personnalisee 
+             FROM promotions p
+             INNER JOIN promotions_produits pp ON p.id_promotion = pp.id_promotion
+             WHERE pp.id_produit = 31
+               AND p.actif = 1 
+               AND p.date_debut <= NOW() 
+               AND p.date_fin >= NOW()";
+$stmt_test = $pdo->query($sql_test);
+$result_test = $stmt_test->fetchAll(PDO::FETCH_ASSOC);
+error_log("Résultat requête directe: " . json_encode($result_test));
+
+// 5. Vérifier les dates
+$sql_dates = "SELECT id_promotion, code_promotion, actif, 
+                     date_debut, date_fin, 
+                     NOW() as current_date,
+                     CASE WHEN NOW() BETWEEN date_debut AND date_fin THEN 'ACTIVE' ELSE 'INACTIVE' END as status
+              FROM promotions WHERE id_promotion = 1";
+$stmt_dates = $pdo->query($sql_dates);
+$dates_result = $stmt_dates->fetchAll(PDO::FETCH_ASSOC);
+error_log("Vérification dates: " . json_encode($dates_result));
+
+error_log("=== FIN DEBUG CATALOGUE ===");
+// ========== FIN DEBUG ==========
 
 // Configuration de la pagination
 $produits_par_page = 12;
@@ -233,7 +280,6 @@ if ($pdo) {
                         $p['prix_original'] = $price_info['original_price'];
                         $p['reduction_amount'] = $price_info['reduction_amount'];
                         $p['promo_code'] = $price_info['code'];
-                        $p['promo_type'] = $price_info['type'] ?? null;
                     } else {
                         $p['has_promotion'] = false;
                         $p['reduction_percent'] = 0;
@@ -241,7 +287,6 @@ if ($pdo) {
                         $p['prix_original'] = $p['prix_ttc'];
                         $p['reduction_amount'] = 0;
                         $p['promo_code'] = null;
-                        $p['promo_type'] = null;
                     }
                 }
             }
@@ -272,8 +317,7 @@ if ($pdo) {
                     'has_promotion' => $p['has_promotion'],
                     'description_courte' => $p['description_courte'],
                     'quantite_stock' => (int)$p['quantite_stock'],
-                    'image' => $image_url,
-                    'categorie_nom' => $p['categorie_nom'] ?? 'Cadeau'
+                    'image' => $image_url
                 ];
             }
         }
@@ -1652,7 +1696,7 @@ if ($is_all_categories) {
                     <?php endif; ?>
                     
                     <div class="product-image">
-                        <img src="<?= htmlspecialchars($image_url) ?>" 
+                        <img src="<?= $image_url ?>" 
                              alt="<?= htmlspecialchars($produit['nom'] ?? 'Produit') ?>" 
                              loading="lazy"
                              onerror="this.src='https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit'">
