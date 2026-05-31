@@ -1,0 +1,1 @@
+echo '<?php echo "PHP fonctionne !"; ?>' | sudo tee /var/www/sean/test_php.php
