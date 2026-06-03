@@ -1,6 +1,7 @@
 <?php
 // ============================================
 // PAIEMENT PAR CARTE BANCAIRE VIA API PAYPAL - VERSION CORRIGÉE AVEC ENVOI FACTURE
+// ET SAUVEGARDE DES PRIX PROMOTIONNELS
 // ============================================
 
 error_reporting(E_ALL);
@@ -353,7 +354,7 @@ function createPayPalOrderWithCard($commande_id, $montant, $card_details, $retur
 /**
  * Capture un paiement PayPal avec gestion d'erreur "already captured"
  */
-function capturePayPalOrder($pdo, $commande_id, $order_id) {
+function capturePayPalOrderForCarte($pdo, $commande_id, $order_id) {
     // Vérifier d'abord si la commande a déjà été capturée
     if (checkPayPalIdDejaUtilise($pdo, $order_id)) {
         return [
@@ -438,7 +439,7 @@ function capturePayPalOrder($pdo, $commande_id, $order_id) {
 /**
  * Crée une commande à partir du panier
  */
-function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
+function creerCommandeDepuisPanierCarte($pdo, $mode_paiement = 'carte') {
     try {
         $checkout = $_SESSION[SESSION_KEY_CHECKOUT] ?? [];
         $client_id = $checkout['client_id'] ?? null;
@@ -499,17 +500,29 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
         
         foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
             $produit = getProductDetails($item['id_produit'], $pdo);
-            $prix_ttc = floatval($produit['prix_ttc'] ?? $item['prix'] ?? 0);
+            if (!$produit) {
+                throw new \Exception("Produit ID " . $item['id_produit'] . " introuvable");
+            }
+            
+            // Prix avec promotion déjà calculé
+            $prix_unitaire_ttc = floatval($item['prix'] ?? $produit['prix_ttc'] ?? 0);
+            $prix_original_ttc = floatval($produit['prix_ttc'] ?? $prix_unitaire_ttc);
             $quantite = intval($item['quantite'] ?? 1);
-            $sous_total += $prix_ttc * $quantite;
+            
+            if (($produit['quantite_stock'] ?? 0) < $quantite) {
+                throw new \Exception("Stock insuffisant pour: " . ($produit['nom'] ?? ''));
+            }
+            
+            $sous_total += $prix_unitaire_ttc * $quantite;
             
             $items_data[] = [
                 'id_produit' => $item['id_produit'],
                 'reference' => $produit['reference'] ?? 'REF' . $item['id_produit'],
                 'nom' => $produit['nom'] ?? 'Produit',
                 'quantite' => $quantite,
-                'prix_unitaire_ttc' => $prix_ttc,
-                'prix_unitaire_ht' => round($prix_ttc / 1.2, 2),
+                'prix_unitaire_ttc' => $prix_unitaire_ttc,
+                'prix_original_ttc' => $prix_original_ttc,
+                'prix_unitaire_ht' => round($prix_unitaire_ttc / 1.2, 2),
                 'tva' => 20.00
             ];
         }
@@ -578,15 +591,25 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
             throw new \Exception("Échec de la récupération de l'ID de la commande après insertion.");
         }
         
-        // Insérer les articles
+        // ========== INSERTION DES ARTICLES AVEC OPTIONS PROMOTIONS ==========
         $stmt_item = $pdo->prepare("
             INSERT INTO commande_items (
                 id_commande, id_produit, reference_produit, nom_produit,
-                quantite, prix_unitaire_ht, prix_unitaire_ttc, tva
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                quantite, prix_unitaire_ht, prix_unitaire_ttc, tva, options
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         
         foreach ($items_data as $item) {
+            // Préparer les options avec info promotion
+            $options = [];
+            if ($item['prix_original_ttc'] > $item['prix_unitaire_ttc']) {
+                $options['prix_original'] = $item['prix_original_ttc'];
+                $options['reduction_percent'] = round((1 - $item['prix_unitaire_ttc'] / $item['prix_original_ttc']) * 100);
+                $options['promotion_appliquee'] = true;
+            }
+            
+            $options_json = !empty($options) ? json_encode($options, JSON_UNESCAPED_UNICODE) : null;
+            
             $result_item = $stmt_item->execute([
                 $id_commande,
                 $item['id_produit'],
@@ -595,7 +618,8 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
                 $item['quantite'],
                 $item['prix_unitaire_ht'],
                 $item['prix_unitaire_ttc'],
-                $item['tva']
+                $item['tva'],
+                $options_json
             ]);
             
             if (!$result_item) {
@@ -641,7 +665,7 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'carte') {
 /**
  * Ajoute une transaction après paiement réussi
  */
-function ajouterTransaction($pdo, $commande_id, $client_id, $montant, $reference, $details = []) {
+function ajouterTransactionCarte($pdo, $commande_id, $client_id, $montant, $reference, $details = []) {
     try {
         $numero_transaction = 'CB_' . date('Ymd') . '_' . uniqid();
         $ip_client = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
@@ -653,7 +677,7 @@ function ajouterTransaction($pdo, $commande_id, $client_id, $montant, $reference
             VALUES (?, ?, ?, ?, 'carte', ?, 'paye', NOW(), ?, ?)
         ");
         
-        $details_json = json_encode($details);
+        $details_json = json_encode($details, JSON_UNESCAPED_UNICODE);
         
         return $stmt_trans->execute([
             $numero_transaction,
@@ -674,7 +698,7 @@ function ajouterTransaction($pdo, $commande_id, $client_id, $montant, $reference
 /**
  * Met à jour les stocks après paiement
  */
-function mettreAJourStocks($pdo, $commande_id) {
+function mettreAJourStocksCarte($pdo, $commande_id) {
     try {
         $stmt = $pdo->prepare("
             UPDATE produits p
@@ -751,7 +775,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             // Étape 1: Créer la commande en base de données
-            $commande = creerCommandeDepuisPanier($pdo, 'carte');
+            $commande = creerCommandeDepuisPanierCarte($pdo, 'carte');
             $commande_id = $commande['id'];
             
             // Étape 2: Préparer les détails de la carte pour PayPal
@@ -792,7 +816,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             // Étape 5: Capturer le paiement avec gestion "already captured"
-            $capture_result = capturePayPalOrder($pdo, $commande_id, $paypal_order['id']);
+            $capture_result = capturePayPalOrderForCarte($pdo, $commande_id, $paypal_order['id']);
             
             if (isset($capture_result['error'])) {
                 throw new \Exception("Erreur capture: " . $capture_result['error'] . ($capture_result['details'] ?? ''));
@@ -849,7 +873,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'full_response' => $capture_result
                     ];
                     
-                    ajouterTransaction(
+                    ajouterTransactionCarte(
                         $pdo, 
                         $commande_id, 
                         $commande['client_id'], 
@@ -859,7 +883,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
                     
                     // Mettre à jour les stocks
-                    mettreAJourStocks($pdo, $commande_id);
+                    mettreAJourStocksCarte($pdo, $commande_id);
                     
                     $pdo->commit();
                     

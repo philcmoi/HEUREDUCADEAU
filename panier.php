@@ -1,7 +1,6 @@
 <?php
 // panier.php - API de gestion du panier
-// VERSION CORRIGÉE - Utilise les nouvelles fonctions de session_verification.php
-// Tout en conservant les acquis du passé
+// VERSION CORRIGÉE - PREND EN COMPTE LES PRIX PROMOTIONNELS
 
 require_once 'session_verification.php';
 
@@ -96,13 +95,227 @@ switch ($action) {
         ]);
 }
 
+// ============================================
+// FONCTIONS DE PROMOTIONS
+// ============================================
+
 /**
- * Récupère le contenu du panier depuis la BDD
- * Utilise la nouvelle fonction getCartItemsFromBDD() de session_verification.php
+ * Récupère la meilleure promotion active pour un produit
+ */
+function getBestActivePromotionForProduct($pdo, $product_id) {
+    $sql = "SELECT p.*, pp.reduction_personnalisee 
+            FROM promotions p
+            INNER JOIN promotions_produits pp ON p.id_promotion = pp.id_promotion
+            WHERE pp.id_produit = :product_id
+              AND p.actif = 1 
+              AND p.date_debut <= NOW() 
+              AND p.date_fin >= NOW()
+            ORDER BY 
+                CASE 
+                    WHEN p.type_promotion = 'pourcentage' AND pp.reduction_personnalisee IS NOT NULL 
+                        THEN pp.reduction_personnalisee
+                    WHEN p.type_promotion = 'pourcentage' THEN p.valeur
+                    WHEN p.type_promotion = 'montant_fixe' THEN 100
+                    ELSE 0
+                END DESC
+            LIMIT 1";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(['product_id' => $product_id]);
+    $promo = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($promo) {
+        return $promo;
+    }
+    
+    // Vérifier les promotions par catégorie
+    $sql = "SELECT p.* 
+            FROM promotions p
+            INNER JOIN promotions_categories pc ON p.id_promotion = pc.id_promotion
+            INNER JOIN produits pr ON pr.id_categorie = pc.id_categorie
+            WHERE pr.id_produit = :product_id
+              AND p.actif = 1 
+              AND p.date_debut <= NOW() 
+              AND p.date_fin >= NOW()
+              AND p.type_promotion != 'livraison_gratuite'
+            ORDER BY 
+                CASE 
+                    WHEN p.type_promotion = 'pourcentage' THEN p.valeur
+                    WHEN p.type_promotion = 'montant_fixe' THEN 100
+                    ELSE 0
+                END DESC
+            LIMIT 1";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(['product_id' => $product_id]);
+    $promo = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    return $promo ?: null;
+}
+
+/**
+ * Calcule le prix avec réduction
+ */
+function calculateDiscountedPrice($original_price, $promotion) {
+    if (!$promotion) {
+        return [
+            'price' => $original_price,
+            'original_price' => $original_price,
+            'reduction_amount' => 0,
+            'reduction_percent' => 0,
+            'has_promotion' => false
+        ];
+    }
+    
+    $discounted_price = $original_price;
+    $reduction_percent = 0;
+    $reduction_amount = 0;
+    
+    $reduction_value = $promotion['reduction_personnalisee'] ?? $promotion['valeur'];
+    
+    if ($promotion['type_promotion'] == 'pourcentage') {
+        $reduction_percent = floatval($reduction_value);
+        $reduction_amount = $original_price * ($reduction_percent / 100);
+        $discounted_price = $original_price - $reduction_amount;
+        $discounted_price = round($discounted_price, 2);
+    } elseif ($promotion['type_promotion'] == 'montant_fixe') {
+        $reduction_amount = floatval($reduction_value);
+        $discounted_price = max(0, $original_price - $reduction_amount);
+        $reduction_percent = ($reduction_amount / $original_price) * 100;
+        $discounted_price = round($discounted_price, 2);
+    }
+    
+    return [
+        'price' => $discounted_price,
+        'original_price' => $original_price,
+        'reduction_amount' => $reduction_amount,
+        'reduction_percent' => round($reduction_percent),
+        'has_promotion' => true,
+        'type' => $promotion['type_promotion'],
+        'code' => $promotion['code_promotion']
+    ];
+}
+
+/**
+ * Récupère le contenu du panier depuis la BDD avec prix promotionnels
  */
 function getPanier($pdo) {
-    $result = getCartItemsFromBDD($pdo);
-    echo json_encode($result);
+    $session_id = session_id();
+    $client_id = $_SESSION[SESSION_KEY_CLIENT_ID] ?? null;
+    
+    $panier_items = [];
+    $total_items = 0;
+    $sous_total = 0;
+    
+    try {
+        // Récupérer le panier actif
+        if ($client_id) {
+            $stmt = $pdo->prepare("
+                SELECT id_panier FROM panier 
+                WHERE id_client = ? AND statut = 'actif'
+                ORDER BY date_creation DESC LIMIT 1
+            ");
+            $stmt->execute([$client_id]);
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT id_panier FROM panier 
+                WHERE session_id = ? AND statut = 'actif'
+                ORDER BY date_creation DESC LIMIT 1
+            ");
+            $stmt->execute([$session_id]);
+        }
+        
+        $panier = $stmt->fetch();
+        
+        if ($panier) {
+            $_SESSION[SESSION_KEY_PANIER_ID] = $panier['id_panier'];
+            
+            // Récupérer les items
+            $stmt_items = $pdo->prepare("
+                SELECT pi.id_item, pi.id_produit, pi.quantite, pi.prix_unitaire,
+                       p.nom, p.reference, p.prix_ttc, p.quantite_stock, p.statut
+                FROM panier_items pi
+                INNER JOIN produits p ON pi.id_produit = p.id_produit
+                WHERE pi.id_panier = ?
+            ");
+            $stmt_items->execute([$panier['id_panier']]);
+            $items = $stmt_items->fetchAll();
+            
+            foreach ($items as $item) {
+                $prix_original = floatval($item['prix_ttc']);
+                $quantite = intval($item['quantite']);
+                
+                // Vérifier la promotion
+                $promo = getBestActivePromotionForProduct($pdo, $item['id_produit']);
+                $discount = calculateDiscountedPrice($prix_original, $promo);
+                $prix_unitaire = $discount['price'];
+                $prix_total = $prix_unitaire * $quantite;
+                
+                $total_items += $quantite;
+                $sous_total += $prix_total;
+                
+                // Récupérer l'image
+                $stmt_img = $pdo->prepare("
+                    SELECT url_image FROM images_produits 
+                    WHERE id_produit = ? AND principale = 1 
+                    LIMIT 1
+                ");
+                $stmt_img->execute([$item['id_produit']]);
+                $image = $stmt_img->fetchColumn();
+                
+                $panier_items[] = [
+                    'id_item' => (int)$item['id_item'],
+                    'id_produit' => (int)$item['id_produit'],
+                    'nom' => $item['nom'],
+                    'reference' => $item['reference'],
+                    'quantite' => $quantite,
+                    'prix_unitaire' => $prix_unitaire,
+                    'prix_original' => $prix_original,
+                    'prix_total' => $prix_total,
+                    'has_promotion' => $discount['has_promotion'],
+                    'reduction_percent' => $discount['reduction_percent'],
+                    'image' => $image ?: $this->getDefaultImage($item['id_produit']),
+                    'stock' => (int)$item['quantite_stock'],
+                    'disponible' => $item['quantite_stock'] >= $quantite && $item['statut'] === 'actif'
+                ];
+            }
+        }
+        
+        // Mettre à jour la session
+        $_SESSION[SESSION_KEY_PANIER] = [];
+        foreach ($panier_items as $item) {
+            addToCartSession($item['id_produit'], $item['quantite'], $item['prix_unitaire']);
+        }
+        
+        echo json_encode([
+            'success' => true,
+            'panier' => $panier_items,
+            'total_items' => $total_items,
+            'sous_total' => round($sous_total, 2),
+            'timestamp' => time()
+        ]);
+        
+    } catch (Exception $e) {
+        error_log("Erreur getPanier: " . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'Erreur lors du chargement du panier',
+            'panier' => [],
+            'total_items' => 0,
+            'sous_total' => 0
+        ]);
+    }
+}
+
+/**
+ * Image par défaut
+ */
+function getDefaultImage($productId) {
+    $images = [
+        31 => '/uploads/produits/69fec8e82a0c3_20260509_054056.jpg',
+        42 => '/uploads/produits/6a190930be4a3_20260529_033408.png',
+    ];
+    return $images[$productId] ?? 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
 }
 
 /**
@@ -168,7 +381,7 @@ function ajouterAuPanier($pdo, $input) {
     try {
         $pdo->beginTransaction();
         
-        // Vérifier le produit
+        // Vérifier le produit avec son prix
         $stmt = $pdo->prepare("
             SELECT p.id_produit, p.nom, p.reference, p.prix_ttc, 
                    p.description_courte, p.quantite_stock
@@ -185,6 +398,11 @@ function ajouterAuPanier($pdo, $input) {
         if ($produit['quantite_stock'] < $quantite) {
             throw new Exception("Stock insuffisant. Disponible: " . $produit['quantite_stock']);
         }
+        
+        // Vérifier la promotion pour avoir le prix correct
+        $promo = getBestActivePromotionForProduct($pdo, $id_produit);
+        $discount = calculateDiscountedPrice(floatval($produit['prix_ttc']), $promo);
+        $prix_promo = $discount['price'];
         
         // Récupérer ou créer le panier
         if ($client_id) {
@@ -237,24 +455,24 @@ function ajouterAuPanier($pdo, $input) {
             
             $stmt = $pdo->prepare("
                 UPDATE panier_items 
-                SET quantite = ?, date_modification = NOW() 
+                SET quantite = ?, date_modification = NOW(), prix_unitaire = ? 
                 WHERE id_item = ?
             ");
-            $stmt->execute([$nouvelle_quantite, $item['id_item']]);
+            $stmt->execute([$nouvelle_quantite, $prix_promo, $item['id_item']]);
             $quantite_finale = $nouvelle_quantite;
             
-            // Mettre à jour la session également
-            addToCartSession($id_produit, $quantite, $produit['prix_ttc']);
+            // Mettre à jour la session
+            addToCartSession($id_produit, $quantite, $prix_promo);
         } else {
             $stmt = $pdo->prepare("
                 INSERT INTO panier_items (id_panier, id_produit, quantite, prix_unitaire, date_ajout, date_modification) 
                 VALUES (?, ?, ?, ?, NOW(), NOW())
             ");
-            $stmt->execute([$id_panier, $id_produit, $quantite, $produit['prix_ttc']]);
+            $stmt->execute([$id_panier, $id_produit, $quantite, $prix_promo]);
             $quantite_finale = $quantite;
             
-            // Ajouter à la session également
-            addToCartSession($id_produit, $quantite, $produit['prix_ttc']);
+            // Ajouter à la session
+            addToCartSession($id_produit, $quantite, $prix_promo);
         }
         
         // Journaliser l'action
@@ -282,14 +500,10 @@ function ajouterAuPanier($pdo, $input) {
         $stmt->execute([$id_panier]);
         $total_articles = (int)$stmt->fetchColumn();
         
-        // Image par défaut
-        $images_defaut = [
-            1 => 'https://via.placeholder.com/300x300/2c3e50/ffffff?text=Bougie',
-            2 => 'https://via.placeholder.com/300x300/27ae60/ffffff?text=Coffret',
-            3 => 'https://via.placeholder.com/300x300/3498db/ffffff?text=Montre',
-            4 => 'https://via.placeholder.com/300x300/e74c3c/ffffff?text=Bijoux'
-        ];
-        $image_url = $images_defaut[$id_produit] ?? 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
+        // Récupérer l'image
+        $stmt_img = $pdo->prepare("SELECT url_image FROM images_produits WHERE id_produit = ? AND principale = 1 LIMIT 1");
+        $stmt_img->execute([$id_produit]);
+        $image_url = $stmt_img->fetchColumn() ?: getDefaultImage($id_produit);
         
         echo json_encode([
             'success' => true,
@@ -298,7 +512,10 @@ function ajouterAuPanier($pdo, $input) {
                 'id' => (int)$produit['id_produit'],
                 'nom' => $produit['nom'],
                 'reference' => $produit['reference'],
-                'prix_ttc' => floatval($produit['prix_ttc']),
+                'prix_ttc' => $prix_promo,
+                'prix_original' => floatval($produit['prix_ttc']),
+                'has_promotion' => $discount['has_promotion'],
+                'reduction_percent' => $discount['reduction_percent'],
                 'description_courte' => $produit['description_courte'],
                 'image' => $image_url,
                 'quantite_stock' => (int)$produit['quantite_stock']
@@ -437,7 +654,8 @@ function modifierQuantite($pdo, $input) {
         // Trouver l'item et vérifier le stock
         if ($client_id) {
             $stmt = $pdo->prepare("
-                SELECT pi.id_item, pi.id_panier, pi.quantite as ancienne_quantite, p.quantite_stock
+                SELECT pi.id_item, pi.id_panier, pi.quantite as ancienne_quantite, 
+                       p.quantite_stock, p.prix_ttc
                 FROM panier_items pi
                 INNER JOIN panier pa ON pi.id_panier = pa.id_panier
                 INNER JOIN produits p ON pi.id_produit = p.id_produit
@@ -447,7 +665,8 @@ function modifierQuantite($pdo, $input) {
             $stmt->execute([$id_produit, $client_id]);
         } else {
             $stmt = $pdo->prepare("
-                SELECT pi.id_item, pi.id_panier, pi.quantite as ancienne_quantite, p.quantite_stock
+                SELECT pi.id_item, pi.id_panier, pi.quantite as ancienne_quantite,
+                       p.quantite_stock, p.prix_ttc
                 FROM panier_items pi
                 INNER JOIN panier pa ON pi.id_panier = pa.id_panier
                 INNER JOIN produits p ON pi.id_produit = p.id_produit
@@ -471,14 +690,22 @@ function modifierQuantite($pdo, $input) {
         $id_panier = $item_info['id_panier'];
         $ancienne_quantite = $item_info['ancienne_quantite'];
         
-        // Mettre à jour la quantité
-        $stmt = $pdo->prepare("UPDATE panier_items SET quantite = ?, date_modification = NOW() WHERE id_item = ?");
-        $stmt->execute([$quantite, $id_item]);
+        // Vérifier la promotion pour le prix
+        $promo = getBestActivePromotionForProduct($pdo, $id_produit);
+        $discount = calculateDiscountedPrice(floatval($item_info['prix_ttc']), $promo);
+        $prix_promo = $discount['price'];
+        
+        // Mettre à jour la quantité et le prix
+        $stmt = $pdo->prepare("
+            UPDATE panier_items 
+            SET quantite = ?, date_modification = NOW(), prix_unitaire = ? 
+            WHERE id_item = ?
+        ");
+        $stmt->execute([$quantite, $prix_promo, $id_item]);
         
         // Mettre à jour la session
-        // Pour la session, on doit d'abord supprimer l'ancien puis ajouter le nouveau
         removeFromCartSession($id_produit);
-        addToCartSession($id_produit, $quantite, null); // Le prix sera récupéré plus tard
+        addToCartSession($id_produit, $quantite, $prix_promo);
         
         // Journaliser
         try {
@@ -590,7 +817,7 @@ function viderPanier($pdo) {
 function initCheckout($pdo) {
     try {
         // Récupérer le panier depuis la BDD
-        $result = getCartItemsFromBDD($pdo);
+        $result = json_decode(getPanierData($pdo), true);
         
         if (!$result['success'] || empty($result['panier'])) {
             echo json_encode([
@@ -646,7 +873,7 @@ function testAPI($pdo) {
         $client_id = $_SESSION[SESSION_KEY_CLIENT_ID] ?? null;
         
         // Tester la nouvelle fonction
-        $panier_test = getCartItemsFromBDD($pdo);
+        $panier_test = json_decode(getPanierData($pdo), true);
         
         echo json_encode([
             'success' => true,
@@ -672,5 +899,14 @@ function testAPI($pdo) {
             'message' => 'Erreur test API: ' . $e->getMessage()
         ]);
     }
+}
+
+/**
+ * Récupère les données du panier (helper)
+ */
+function getPanierData($pdo) {
+    ob_start();
+    getPanier($pdo);
+    return ob_get_clean();
 }
 ?>
