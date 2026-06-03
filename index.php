@@ -1,6 +1,6 @@
 <?php
 // index.php - Page d'accueil avec gestion panier, pagination ET PROMOTIONS
-// VERSION CORRIGÉE - Affiche les produits avec leur stock comme catalogue.php
+// VERSION CORRIGÉE - Avec modal message modifiable
 // Date: 2026-06-03
 
 require_once 'session_verification.php';
@@ -17,6 +17,44 @@ $total_produits = 0;
 $total_pages = 1;
 $erreur_bdd = false;
 $message_erreur = '';
+
+// ==============================================
+// CONFIGURATION DE LA MODAL (MESSAGE MODIFIABLE)
+// ==============================================
+// Vous pouvez modifier ces variables pour changer le message de la modal
+$modal_titre = "Bienvenue chez HEURE DU CADEAU !";
+$modal_message = "Vous pouvez utiliser ce site dans toute sa puissance. Effectuer des achats sans paiement réel. Des identifiants de paiement, vous seront fournis lorsque vous effectuerez un paiement fictif.";
+$modal_afficher = true; // Mettre à false pour désactiver la modal
+$modal_icone = "fa-gift"; // Icône Font Awesome à afficher
+
+// Vous pouvez également stocker ces valeurs dans la base de données
+// Décommentez le code ci-dessous pour les récupérer depuis la table configuration
+
+/*
+try {
+    $stmt_modal = $pdo->prepare("SELECT valeur FROM configuration WHERE cle = 'modal_titre'");
+    $stmt_modal->execute();
+    $modal_titre_db = $stmt_modal->fetchColumn();
+    if ($modal_titre_db) $modal_titre = $modal_titre_db;
+    
+    $stmt_modal = $pdo->prepare("SELECT valeur FROM configuration WHERE cle = 'modal_message'");
+    $stmt_modal->execute();
+    $modal_message_db = $stmt_modal->fetchColumn();
+    if ($modal_message_db) $modal_message = $modal_message_db;
+    
+    $stmt_modal = $pdo->prepare("SELECT valeur FROM configuration WHERE cle = 'modal_active'");
+    $stmt_modal->execute();
+    $modal_active_db = $stmt_modal->fetchColumn();
+    if ($modal_active_db !== false) $modal_afficher = ($modal_active_db == '1');
+    
+    $stmt_modal = $pdo->prepare("SELECT valeur FROM configuration WHERE cle = 'modal_icone'");
+    $stmt_modal->execute();
+    $modal_icone_db = $stmt_modal->fetchColumn();
+    if ($modal_icone_db) $modal_icone = $modal_icone_db;
+} catch (Exception $e) {
+    // Ignorer les erreurs de configuration, utiliser les valeurs par défaut
+}
+*/
 
 // ==============================================
 // FONCTIONS DE GESTION DES PROMOTIONS
@@ -631,14 +669,6 @@ $nb_articles = countCartItems();
         
         .product-info { padding: 20px; }
         
-        .product-category {
-            display: inline-block;
-            color: #7f8c8d;
-            font-size: 0.85rem;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-        }
-        
         .product-info h3 {
             font-size: 1.2rem;
             color: #2c3e50;
@@ -808,7 +838,7 @@ $nb_articles = countCartItems();
         .footer-content i { margin: 0 5px; font-size: 1.5rem; color: #bdc3c7; transition: color 0.3s; }
         .footer-content i:hover { color: #e74c3c; }
         
-        /* MODAL */
+        /* MODAL PANIER */
         .cart-modal {
             display: none;
             position: fixed;
@@ -893,6 +923,96 @@ $nb_articles = countCartItems();
             text-decoration: none;
             border: none;
             cursor: pointer;
+        }
+        
+        /* MODAL BIENVENUE (MESSAGE MODIFIABLE) */
+        .welcome-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            z-index: 3000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            backdrop-filter: blur(3px);
+        }
+        
+        .welcome-modal.show { display: flex; }
+        
+        .welcome-modal-content {
+            background: white;
+            border-radius: 24px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.3);
+            animation: modalFadeIn 0.4s ease;
+        }
+        
+        @keyframes modalFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.9) translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+        
+        .welcome-modal-header {
+            background: linear-gradient(135deg, #2c3e50, #3498db);
+            color: white;
+            padding: 25px;
+            text-align: center;
+            border-radius: 24px 24px 0 0;
+        }
+        
+        .welcome-modal-header i {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            display: inline-block;
+        }
+        
+        .welcome-modal-header h2 {
+            font-size: 1.8rem;
+            margin: 0;
+        }
+        
+        .welcome-modal-body {
+            padding: 30px;
+            text-align: center;
+            font-size: 1.1rem;
+            line-height: 1.6;
+            color: #555;
+        }
+        
+        .welcome-modal-footer {
+            padding: 20px 30px 30px;
+            text-align: center;
+            border-top: 1px solid #eee;
+        }
+        
+        .welcome-modal-footer .btn {
+            background: linear-gradient(135deg, #27ae60, #219653);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 50px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .welcome-modal-footer .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(39,174,96,0.3);
         }
         
         /* NOTIFICATIONS */
@@ -997,6 +1117,8 @@ $nb_articles = countCartItems();
             .toast-notification { min-width: 280px; max-width: 280px; right: 20px; left: 20px; margin: 0 auto; }
             .pagination { gap: 5px; }
             .pagination-btn { padding: 8px 12px; }
+            .welcome-modal-header h2 { font-size: 1.4rem; }
+            .welcome-modal-body { padding: 20px; font-size: 1rem; }
         }
         
         @media (max-width: 480px) {
@@ -1010,6 +1132,8 @@ $nb_articles = countCartItems();
             .cart-modal-footer { flex-direction: column; }
             .pagination-numbers { order: -1; width: 100%; justify-content: center; margin-bottom: 10px; }
             .page-number { min-width: 35px; height: 35px; }
+            .welcome-modal-header i { font-size: 2rem; }
+            .welcome-modal-header h2 { font-size: 1.2rem; }
         }
     </style>
 </head>
@@ -1041,6 +1165,24 @@ $nb_articles = countCartItems();
             </nav>
         </div>
     </header>
+
+    <!-- MODAL BIENVENUE (MESSAGE MODIFIABLE) -->
+    <?php if ($modal_afficher): ?>
+    <div class="welcome-modal" id="welcomeModal">
+        <div class="welcome-modal-content">
+            <div class="welcome-modal-header">
+                <i class="fas <?= htmlspecialchars($modal_icone) ?>"></i>
+                <h2><?= htmlspecialchars($modal_titre) ?></h2>
+            </div>
+            <div class="welcome-modal-body">
+                <p><?= nl2br(htmlspecialchars($modal_message)) ?></p>
+            </div>
+            <div class="welcome-modal-footer">
+                <button class="btn" id="closeWelcomeModal"><i class="fas fa-check-circle"></i> Commencer</button>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <section class="hero">
         <div class="container hero-container">
@@ -1414,9 +1556,39 @@ $nb_articles = countCartItems();
             }
         }
 
+        // Gestion de la modal de bienvenue
+        function initWelcomeModal() {
+            const welcomeModal = document.getElementById("welcomeModal");
+            const closeWelcomeModal = document.getElementById("closeWelcomeModal");
+            
+            if (welcomeModal && closeWelcomeModal) {
+                // Vérifier si la modal a déjà été fermée pendant cette session
+                const modalClosed = sessionStorage.getItem("welcomeModalClosed");
+                
+                if (!modalClosed) {
+                    setTimeout(() => {
+                        welcomeModal.classList.add("show");
+                    }, 500);
+                }
+                
+                closeWelcomeModal.addEventListener("click", () => {
+                    welcomeModal.classList.remove("show");
+                    sessionStorage.setItem("welcomeModalClosed", "true");
+                });
+                
+                welcomeModal.addEventListener("click", (e) => {
+                    if (e.target === welcomeModal) {
+                        welcomeModal.classList.remove("show");
+                        sessionStorage.setItem("welcomeModalClosed", "true");
+                    }
+                });
+            }
+        }
+
         // Initialisation
         document.addEventListener("DOMContentLoaded", function() {
             window.panierManager = new PanierManager();
+            initWelcomeModal();
             
             // Menu mobile
             const menuToggle = document.getElementById("menuToggle");
