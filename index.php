@@ -1,7 +1,7 @@
 <?php
-// index.php - Page d'accueil avec gestion panier, pagination ET PROMOTIONS
-// VERSION ULTRA SIMPLIFIÉE - SANS ANIMATIONS PROBLÉMATIQUES
-// Date: 2026-05-29
+// index.php - Page d'accueil avec gestion panier, pagination, promotions ET catégories dynamiques
+// VERSION CORRIGÉE - Avec catégories depuis BDD
+// Date: 2026-06-08
 
 require_once 'session_verification.php';
 
@@ -11,12 +11,26 @@ $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 if ($page < 1) $page = 1;
 $offset = ($page - 1) * $produits_par_page;
 
+// Configuration pagination catégories
+$categories_par_page = 6;
+$page_categories = isset($_GET['page_cat']) ? (int)$_GET['page_cat'] : 1;
+if ($page_categories < 1) $page_categories = 1;
+$offset_categories = ($page_categories - 1) * $categories_par_page;
+
 $pdo = getPDOConnection();
 $produits = [];
 $total_produits = 0;
 $total_pages = 1;
 $erreur_bdd = false;
 $message_erreur = '';
+
+// ==============================================
+// CONFIGURATION DE LA MODAL (MESSAGE MODIFIABLE)
+// ==============================================
+$modal_titre = "Bienvenue chez HEURE DU CADEAU !";
+$modal_message = "Vous pouvez utiliser ce site dans toute sa puissance. Effectuer des achats sans paiement réel. Des identifiants de paiement, vous seront fournis lorsque vous effectuerez un paiement fictif.";
+$modal_afficher = true;
+$modal_icone = "fa-gift";
 
 // ==============================================
 // FONCTIONS DE GESTION DES PROMOTIONS
@@ -114,89 +128,167 @@ function calculateDiscountedPrice($original_price, $promotion) {
 }
 
 // ==============================================
+// FONCTION POUR RÉCUPÉRER LES CATÉGORIES
+// ==============================================
+
+function getCategoryIcon($slug, $nom) {
+    $category_icons = [
+        'anniversaire' => 'fa-birthday-cake',
+        'anniversaries' => 'fa-birthday-cake',
+        'saint-valentin' => 'fa-heart',
+        'mariage' => 'fa-glass-cheers',
+        'naissance' => 'fa-baby',
+        'diplomes' => 'fa-graduation-cap',
+        'diplômés' => 'fa-graduation-cap',
+        'noel' => 'fa-christmas-tree',
+        'cadeaux-entreprise' => 'fa-building',
+        'retraite' => 'fa-user-check',
+        'tous-les-cadeaux' => 'fa-gift',
+        'default' => 'fa-tag'
+    ];
+    
+    if (isset($category_icons[$slug])) {
+        return $category_icons[$slug];
+    }
+    
+    $nom_lower = strtolower($nom);
+    if (strpos($nom_lower, 'anniversaire') !== false) return 'fa-birthday-cake';
+    if (strpos($nom_lower, 'valentin') !== false) return 'fa-heart';
+    if (strpos($nom_lower, 'mariage') !== false) return 'fa-glass-cheers';
+    if (strpos($nom_lower, 'naissance') !== false) return 'fa-baby';
+    if (strpos($nom_lower, 'diplô') !== false) return 'fa-graduation-cap';
+    if (strpos($nom_lower, 'noël') !== false || strpos($nom_lower, 'noel') !== false) return 'fa-christmas-tree';
+    if (strpos($nom_lower, 'entreprise') !== false) return 'fa-building';
+    if (strpos($nom_lower, 'retraite') !== false) return 'fa-user-check';
+    
+    return 'fa-tag';
+}
+
+// ==============================================
+// RÉCUPÉRATION DES CATÉGORIES DEPUIS LA BDD
+// ==============================================
+
+$categories = [];
+$total_categories = 0;
+$total_pages_categories = 1;
+
+if ($pdo) {
+    try {
+        // Récupérer le nombre total de catégories actives
+        $stmt_total_cat = $pdo->prepare("SELECT COUNT(*) as total FROM categories WHERE active = 1 AND parent_id IS NULL");
+        $stmt_total_cat->execute();
+        $total_categories = $stmt_total_cat->fetch(PDO::FETCH_ASSOC)['total'];
+        $total_pages_categories = ceil($total_categories / $categories_par_page);
+        
+        // Récupérer les catégories avec pagination
+        $sql_categories = "SELECT id_categorie, nom, slug, description, image 
+                          FROM categories 
+                          WHERE active = 1 AND parent_id IS NULL 
+                          ORDER BY ordre ASC, nom ASC 
+                          LIMIT :limit OFFSET :offset";
+        
+        $stmt_categories = $pdo->prepare($sql_categories);
+        $stmt_categories->bindValue(':limit', $categories_par_page, PDO::PARAM_INT);
+        $stmt_categories->bindValue(':offset', $offset_categories, PDO::PARAM_INT);
+        $stmt_categories->execute();
+        $categories = $stmt_categories->fetchAll(PDO::FETCH_ASSOC);
+        
+    } catch (Exception $e) {
+        error_log("Erreur récupération catégories: " . $e->getMessage());
+    }
+}
+
+// ==============================================
 // RÉCUPÉRATION DES PRODUITS
 // ==============================================
 
 if ($pdo) {
     try {
-        $stmt_count = $pdo->query("SELECT COUNT(*) FROM produits WHERE statut = 'actif'");
-        $total_produits = $stmt_count->fetchColumn();
-        $total_pages = ceil($total_produits / $produits_par_page);
-        
-        if ($total_pages > 0 && $page > $total_pages) {
-            $page = $total_pages;
-            $offset = ($page - 1) * $produits_par_page;
-        }
-        
-        $sql = "SELECT DISTINCT p.*, c.nom as categorie_nom
-                FROM produits p
-                LEFT JOIN categories c ON p.id_categorie = c.id_categorie
-                WHERE p.statut = 'actif'
-                ORDER BY p.date_creation DESC, p.id_produit DESC
-                LIMIT :limit OFFSET :offset";
+        $sql = "SELECT id_produit, nom, prix_ht, tva, quantite_stock 
+                FROM produits 
+                WHERE statut = 'actif' 
+                ORDER BY id_produit";
         
         $stmt = $pdo->prepare($sql);
-        $stmt->bindValue(':limit', $produits_par_page, PDO::PARAM_INT);
-        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
-        $produits = $stmt->fetchAll();
+        $resultats = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
-        $images = [];
-        
-        if (!empty($produits)) {
-            $ids = array_unique(array_column($produits, 'id_produit'));
-            if (!empty($ids)) {
-                $placeholders = implode(',', array_fill(0, count($ids), '?'));
-                $stmt_imgs = $pdo->prepare("
-                    SELECT id_produit, url_image, principale 
-                    FROM images_produits 
-                    WHERE id_produit IN ($placeholders)
-                    ORDER BY principale DESC, ordre ASC, id_image ASC
-                ");
-                $stmt_imgs->execute($ids);
-                
-                while ($img = $stmt_imgs->fetch()) {
-                    if (!isset($images[$img['id_produit']])) {
-                        $images[$img['id_produit']] = $img['url_image'];
-                    }
-                }
-            }
-            
-            foreach ($produits as &$p) {
-                $promo = getBestActivePromotionForProduct($pdo, $p['id_produit']);
-                if ($promo) {
-                    $price_info = calculateDiscountedPrice(floatval($p['prix_ttc']), $promo);
-                    $p['has_promotion'] = $price_info['has_promotion'];
-                    $p['reduction_percent'] = $price_info['reduction_percent'];
-                    $p['prix_promo'] = $price_info['price'];
-                    $p['prix_original'] = $price_info['original_price'];
-                    $p['reduction_amount'] = $price_info['reduction_amount'];
-                    $p['promo_code'] = $price_info['code'];
-                } else {
-                    $p['has_promotion'] = false;
-                    $p['reduction_percent'] = 0;
-                    $p['prix_promo'] = $p['prix_ttc'];
-                    $p['prix_original'] = $p['prix_ttc'];
-                    $p['reduction_amount'] = 0;
-                    $p['promo_code'] = null;
-                }
+        $produits_temp = [];
+        foreach ($resultats as $row) {
+            if (!isset($produits_temp[$row['id_produit']])) {
+                $produits_temp[$row['id_produit']] = $row;
             }
         }
+        $produits = array_values($produits_temp);
+        
+        $total_produits = count($produits);
+        $total_pages = ceil($total_produits / $produits_par_page);
+        
+        $produits = array_slice($produits, $offset, $produits_par_page);
+        
+        $images = [];
+        if (!empty($produits)) {
+            $ids = array_column($produits, 'id_produit');
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $stmt_img = $pdo->prepare("SELECT id_produit, url_image FROM images_produits WHERE id_produit IN ($placeholders) AND principale = 1");
+            $stmt_img->execute($ids);
+            while ($img = $stmt_img->fetch(PDO::FETCH_ASSOC)) {
+                $images[$img['id_produit']] = $img['url_image'];
+            }
+        }
+        
+        $produits_final = [];
+        foreach ($produits as $p) {
+            $prix_ttc = round($p['prix_ht'] * (1 + $p['tva'] / 100), 2);
+            
+            $promo = getBestActivePromotionForProduct($pdo, $p['id_produit']);
+            
+            if ($promo) {
+                $price_info = calculateDiscountedPrice($prix_ttc, $promo);
+                $has_promotion = $price_info['has_promotion'];
+                $reduction_percent = $price_info['reduction_percent'];
+                $prix_promo = $price_info['price'];
+                $prix_original = $price_info['original_price'];
+                $promo_code = $price_info['code'];
+            } else {
+                $has_promotion = false;
+                $reduction_percent = 0;
+                $prix_promo = $prix_ttc;
+                $prix_original = $prix_ttc;
+                $promo_code = null;
+            }
+            
+            $produits_final[] = [
+                'id_produit' => $p['id_produit'],
+                'nom' => $p['nom'],
+                'prix_ht' => $p['prix_ht'],
+                'tva' => $p['tva'],
+                'prix_ttc' => $prix_ttc,
+                'quantite_stock' => $p['quantite_stock'],
+                'has_promotion' => $has_promotion,
+                'reduction_percent' => $reduction_percent,
+                'prix_promo' => $prix_promo,
+                'prix_original' => $prix_original,
+                'promo_code' => $promo_code
+            ];
+        }
+        $produits = $produits_final;
         
         $produits_js = [];
         foreach ($produits as $p) {
-            $image_url = isset($images[$p['id_produit']]) ? $images[$p['id_produit']] : 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
+            $image_url = isset($images[$p['id_produit']]) ? $images[$p['id_produit']] : 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=' . urlencode($p['nom']);
             
             $produits_js[$p['id_produit']] = [
                 'id' => $p['id_produit'],
                 'nom' => $p['nom'],
-                'reference' => $p['reference'],
+                'reference' => 'REF' . $p['id_produit'],
                 'prix_ttc' => floatval($p['prix_promo']),
                 'prix_original' => floatval($p['prix_original']),
                 'reduction_percent' => $p['reduction_percent'],
                 'has_promotion' => $p['has_promotion'],
-                'description_courte' => $p['description_courte'],
-                'image' => $image_url
+                'description_courte' => '',
+                'image' => $image_url,
+                'quantite_stock' => intval($p['quantite_stock'])
             ];
         }
         
@@ -221,7 +313,7 @@ $nb_articles = countCartItems();
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         /* ============================================
-           STYLES SIMPLIFIÉS - SANS ANIMATIONS PROBLÉMATIQUES
+           STYLES COMPLETS - AVEC TOUS LES ACQUIS
            ============================================ */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -436,6 +528,7 @@ $nb_articles = countCartItems();
             margin-bottom: 40px;
         }
         
+        /* CATEGORIES GRID - STYLES AMÉLIORÉS */
         .categories-grid,
         .services-grid,
         .testimonials-grid {
@@ -452,7 +545,7 @@ $nb_articles = countCartItems();
             padding: 30px;
             border-radius: 16px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-            transition: transform 0.3s;
+            transition: transform 0.3s, box-shadow 0.3s;
             text-align: center;
         }
         
@@ -473,6 +566,11 @@ $nb_articles = countCartItems();
             align-items: center;
             justify-content: center;
             margin: 0 auto 25px;
+            transition: transform 0.3s ease;
+        }
+        
+        .category-card:hover .category-icon {
+            transform: scale(1.05);
         }
         
         .category-icon i,
@@ -495,6 +593,27 @@ $nb_articles = countCartItems();
         }
         
         .category-link:hover { gap: 10px; color: #2980b9; }
+        .category-link i { transition: transform 0.3s ease; }
+        .category-link:hover i { transform: translateX(5px); }
+        
+        .categories-empty {
+            text-align: center;
+            padding: 60px 20px;
+            background: white;
+            border-radius: 16px;
+            grid-column: 1 / -1;
+        }
+        
+        .categories-empty i {
+            font-size: 3rem;
+            color: #95a5a6;
+            margin-bottom: 20px;
+        }
+        
+        .categories-empty h3 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
         
         .testimonial-rating { margin-bottom: 15px; }
         .testimonial-rating i { color: #f1c40f; margin: 0 2px; }
@@ -520,7 +639,7 @@ $nb_articles = countCartItems();
         
         .featured-products { background: #f8f9fa; }
         
-        /* GRILLE PRODUITS - STYLE SIMPLE SANS ANIMATION */
+        /* GRILLE PRODUITS */
         .products-info {
             display: flex;
             justify-content: space-between;
@@ -617,14 +736,6 @@ $nb_articles = countCartItems();
         
         .product-info { padding: 20px; }
         
-        .product-category {
-            display: inline-block;
-            color: #7f8c8d;
-            font-size: 0.85rem;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-        }
-        
         .product-info h3 {
             font-size: 1.2rem;
             color: #2c3e50;
@@ -634,6 +745,29 @@ $nb_articles = countCartItems();
             display: -webkit-box;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
+        }
+        
+        .stock {
+            display: inline-block;
+            font-size: 0.85rem;
+            padding: 5px 12px;
+            border-radius: 20px;
+            margin: 10px 0;
+        }
+        
+        .stock.in-stock {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .stock.low-stock {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .stock.out-of-stock {
+            background: #f8d7da;
+            color: #721c24;
         }
         
         .product-rating { display: flex; align-items: center; gap: 5px; margin: 10px 0; }
@@ -660,6 +794,7 @@ $nb_articles = countCartItems();
         
         .btn-add-to-cart:hover:not(:disabled) { background: linear-gradient(135deg, #219653, #1e8449); transform: translateY(-2px); }
         .btn-add-to-cart:disabled { background: #95a5a6; cursor: not-allowed; }
+        .btn-add-to-cart.loading { opacity: 0.7; cursor: wait; }
         
         .btn-view {
             background: linear-gradient(135deg, #3498db, #2980b9);
@@ -687,6 +822,10 @@ $nb_articles = countCartItems();
             flex-wrap: wrap;
         }
         
+        .categories-pagination {
+            margin-top: 40px;
+        }
+        
         .pagination-btn {
             background: white;
             border: 1px solid #ddd;
@@ -696,6 +835,7 @@ $nb_articles = countCartItems();
             text-decoration: none;
             font-weight: 500;
             transition: all 0.3s;
+            cursor: pointer;
         }
         
         .pagination-btn:hover:not(:disabled) { background: #3498db; color: white; border-color: #3498db; }
@@ -769,7 +909,7 @@ $nb_articles = countCartItems();
         .footer-content i { margin: 0 5px; font-size: 1.5rem; color: #bdc3c7; transition: color 0.3s; }
         .footer-content i:hover { color: #e74c3c; }
         
-        /* MODAL */
+        /* MODAL PANIER */
         .cart-modal {
             display: none;
             position: fixed;
@@ -856,36 +996,127 @@ $nb_articles = countCartItems();
             cursor: pointer;
         }
         
-        /* NOTIFICATIONS */
-        .notification {
+        /* MODAL BIENVENUE */
+        .welcome-modal {
+            display: none;
             position: fixed;
-            top: 30px;
-            right: 30px;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            z-index: 3000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            backdrop-filter: blur(3px);
+        }
+        
+        .welcome-modal.show { display: flex; }
+        
+        .welcome-modal-content {
+            background: white;
+            border-radius: 24px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.3);
+            animation: modalFadeIn 0.4s ease;
+        }
+        
+        @keyframes modalFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.9) translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+        
+        .welcome-modal-header {
+            background: linear-gradient(135deg, #2c3e50, #3498db);
+            color: white;
+            padding: 25px;
+            text-align: center;
+            border-radius: 24px 24px 0 0;
+        }
+        
+        .welcome-modal-header i {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            display: inline-block;
+        }
+        
+        .welcome-modal-header h2 {
+            font-size: 1.8rem;
+            margin: 0;
+        }
+        
+        .welcome-modal-body {
+            padding: 30px;
+            text-align: center;
+            font-size: 1.1rem;
+            line-height: 1.6;
+            color: #555;
+        }
+        
+        .welcome-modal-footer {
+            padding: 20px 30px 30px;
+            text-align: center;
+            border-top: 1px solid #eee;
+        }
+        
+        .welcome-modal-footer .btn {
+            background: linear-gradient(135deg, #27ae60, #219653);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 50px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .welcome-modal-footer .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(39,174,96,0.3);
+        }
+        
+        /* NOTIFICATIONS */
+        .toast-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
             background: #27ae60;
             color: white;
-            padding: 18px 25px;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            z-index: 9999;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
             display: flex;
             align-items: center;
-            gap: 15px;
-            animation: slideInRight 0.5s ease, fadeOut 0.5s ease 2.5s forwards;
-            min-width: 300px;
+            gap: 10px;
+            z-index: 9999;
+            animation: slideInRight 0.3s ease;
+            min-width: 280px;
             max-width: 400px;
         }
+        
+        .toast-notification.error { background: #e74c3c; }
+        .toast-notification.warning { background: #f39c12; }
         
         @keyframes slideInRight {
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
         }
         
-        @keyframes fadeOut {
-            to { opacity: 0; transform: translateX(100%); }
+        @keyframes slideOutRight {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
         }
-        
-        .notification.error { background: #e74c3c; }
-        .notification i { font-size: 1.5rem; }
         
         .cart-count.pulse { animation: pulse 0.6s ease; }
         @keyframes pulse {
@@ -954,9 +1185,11 @@ $nb_articles = countCartItems();
             .newsletter-form { flex-direction: column; width: 100%; }
             .newsletter-form input,
             .newsletter-form button { width: 100%; }
-            .notification { min-width: 280px; max-width: 280px; right: 20px; left: 20px; margin: 0 auto; }
+            .toast-notification { min-width: 280px; max-width: 280px; right: 20px; left: 20px; margin: 0 auto; }
             .pagination { gap: 5px; }
             .pagination-btn { padding: 8px 12px; }
+            .welcome-modal-header h2 { font-size: 1.4rem; }
+            .welcome-modal-body { padding: 20px; font-size: 1rem; }
         }
         
         @media (max-width: 480px) {
@@ -970,6 +1203,8 @@ $nb_articles = countCartItems();
             .cart-modal-footer { flex-direction: column; }
             .pagination-numbers { order: -1; width: 100%; justify-content: center; margin-bottom: 10px; }
             .page-number { min-width: 35px; height: 35px; }
+            .welcome-modal-header i { font-size: 2rem; }
+            .welcome-modal-header h2 { font-size: 1.2rem; }
         }
     </style>
 </head>
@@ -1002,6 +1237,24 @@ $nb_articles = countCartItems();
         </div>
     </header>
 
+    <!-- MODAL BIENVENUE -->
+    <?php if ($modal_afficher): ?>
+    <div class="welcome-modal" id="welcomeModal">
+        <div class="welcome-modal-content">
+            <div class="welcome-modal-header">
+                <i class="fas <?= htmlspecialchars($modal_icone) ?>"></i>
+                <h2><?= htmlspecialchars($modal_titre) ?></h2>
+            </div>
+            <div class="welcome-modal-body">
+                <p><?= nl2br(htmlspecialchars($modal_message)) ?></p>
+            </div>
+            <div class="welcome-modal-footer">
+                <button class="btn" id="closeWelcomeModal"><i class="fas fa-check-circle"></i> Commencer</button>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <section class="hero">
         <div class="container hero-container">
             <div class="hero-content">
@@ -1018,18 +1271,92 @@ $nb_articles = countCartItems();
         </div>
     </section>
 
+    <!-- SECTION CATÉGORIES DYNAMIQUE DEPUIS LA BDD -->
     <section class="categories" id="categories">
         <div class="container">
             <h2 class="section-title">Nos catégories de cadeaux</h2>
             <p class="section-subtitle">Trouvez le cadeau parfait selon l'occasion</p>
-            <div class="categories-grid">
-                <div class="category-card"><div class="category-icon"><i class="fas fa-birthday-cake"></i></div><h3>Anniversaires</h3><p>Cadeaux uniques pour célébrer les anniversaires</p><a href="catalogue.php?categorie=2" class="category-link">Voir les produits →</a></div>
-                <div class="category-card"><div class="category-icon"><i class="fas fa-heart"></i></div><h3>Saint-Valentin</h3><p>Romantique et mémorable</p><a href="catalogue.php?categorie=3" class="category-link">Voir les produits →</a></div>
-                <div class="category-card"><div class="category-icon"><i class="fas fa-glass-cheers"></i></div><h3>Mariage</h3><p>Cadeaux de mariage élégants</p><a href="catalogue.php?categorie=4" class="category-link">Voir les produits →</a></div>
-                <div class="category-card"><div class="category-icon"><i class="fas fa-baby"></i></div><h3>Naissance</h3><p>Pour accueillir bébé</p><a href="catalogue.php?categorie=5" class="category-link">Voir les produits →</a></div>
-                <div class="category-card"><div class="category-icon"><i class="fas fa-graduation-cap"></i></div><h3>Diplômés</h3><p>Pour célébrer la réussite</p><a href="catalogue.php?categorie=6" class="category-link">Voir les produits →</a></div>
-                <div class="category-card"><div class="category-icon"><i class="fas fa-christmas-tree"></i></div><h3>Noël</h3><p>Magie des fêtes de fin d'année</p><a href="catalogue.php?categorie=7" class="category-link">Voir les produits →</a></div>
-            </div>
+            
+            <?php if (!empty($categories)): ?>
+                <div class="categories-grid">
+                    <?php foreach ($categories as $categorie): 
+                        $icon = getCategoryIcon($categorie['slug'], $categorie['nom']);
+                    ?>
+                    <div class="category-card">
+                        <div class="category-icon">
+                            <?php if (!empty($categorie['image'])): ?>
+                                <img src="<?= htmlspecialchars($categorie['image']) ?>" alt="<?= htmlspecialchars($categorie['nom']) ?>" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+                            <?php else: ?>
+                                <i class="fas <?= $icon ?>"></i>
+                            <?php endif; ?>
+                        </div>
+                        <h3><?= htmlspecialchars($categorie['nom']) ?></h3>
+                        <p><?= htmlspecialchars($categorie['description'] ?? 'Découvrez notre sélection de ' . strtolower($categorie['nom'])) ?></p>
+                        <a href="catalogue.php?categorie=<?= $categorie['id_categorie'] ?>" class="category-link">
+                            Voir les produits <i class="fas fa-arrow-right"></i>
+                        </a>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                
+                <!-- Pagination des catégories -->
+                <?php if ($total_pages_categories > 1): ?>
+                <div class="pagination categories-pagination">
+                    <?php if ($page_categories > 1): ?>
+                        <a href="?page_cat=<?= $page_categories - 1 ?>#categories" class="pagination-btn">
+                            <i class="fas fa-chevron-left"></i> Précédent
+                        </a>
+                    <?php else: ?>
+                        <button class="pagination-btn" disabled>
+                            <i class="fas fa-chevron-left"></i> Précédent
+                        </button>
+                    <?php endif; ?>
+                    
+                    <div class="pagination-numbers">
+                        <?php
+                        if ($page_categories > 3) {
+                            echo '<a href="?page_cat=1#categories" class="page-number">1</a>';
+                            if ($page_categories > 4) echo '<span class="page-dots">...</span>';
+                        }
+                        
+                        $start = max(1, $page_categories - 2);
+                        $end = min($total_pages_categories, $page_categories + 2);
+                        
+                        for ($i = $start; $i <= $end; $i++): ?>
+                            <a href="?page_cat=<?= $i ?>#categories" 
+                               class="page-number <?= $i == $page_categories ? 'active' : '' ?>">
+                                <?= $i ?>
+                            </a>
+                        <?php endfor;
+                        
+                        if ($page_categories < $total_pages_categories - 2) {
+                            if ($page_categories < $total_pages_categories - 3) {
+                                echo '<span class="page-dots">...</span>';
+                            }
+                            echo '<a href="?page_cat=' . $total_pages_categories . '#categories" class="page-number">' . $total_pages_categories . '</a>';
+                        }
+                        ?>
+                    </div>
+                    
+                    <?php if ($page_categories < $total_pages_categories): ?>
+                        <a href="?page_cat=<?= $page_categories + 1 ?>#categories" class="pagination-btn">
+                            Suivant <i class="fas fa-chevron-right"></i>
+                        </a>
+                    <?php else: ?>
+                        <button class="pagination-btn" disabled>
+                            Suivant <i class="fas fa-chevron-right"></i>
+                        </button>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+                
+            <?php else: ?>
+                <div class="categories-empty">
+                    <i class="fas fa-folder-open"></i>
+                    <h3>Aucune catégorie disponible</h3>
+                    <p>Les catégories seront bientôt ajoutées.</p>
+                </div>
+            <?php endif; ?>
         </div>
     </section>
 
@@ -1054,17 +1381,23 @@ $nb_articles = countCartItems();
                         $has_promotion = $produit['has_promotion'] ?? false;
                         $prix_affiche = number_format($prix_promo, 2, ',', ' ');
                         $prix_original_affiche = number_format($prix_original, 2, ',', ' ');
-                        $image_url = isset($images[$produit['id_produit']]) ? $images[$produit['id_produit']] : 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit';
+                        $image_url = isset($images[$produit['id_produit']]) ? $images[$produit['id_produit']] : 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=' . urlencode($produit['nom']);
+                        $stock = $produit['quantite_stock'];
+                        $stock_class = $stock > 10 ? 'in-stock' : ($stock > 0 ? 'low-stock' : 'out-of-stock');
+                        $stock_text = $stock > 10 ? 'En stock' : ($stock > 0 ? 'Stock faible : ' . $stock : 'Rupture de stock');
                     ?>
                     <div class="product-card" data-id="<?= $produit['id_produit'] ?>">
                         <?php if ($has_promotion && $reduction_percent > 0): ?><span class="discount-badge">-<?= round($reduction_percent) ?>%</span><?php endif; ?>
                         <div class="product-image">
-                            <img src="<?= htmlspecialchars($image_url) ?>" alt="<?= htmlspecialchars($produit['nom'] ?? 'Produit') ?>" loading="lazy" onerror="this.src='https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit'">
+                            <img src="<?= htmlspecialchars($image_url) ?>" alt="<?= htmlspecialchars($produit['nom']) ?>" loading="lazy" onerror="this.src='https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit'">
                             <div class="product-overlay"><i class="fas fa-eye"></i></div>
                         </div>
                         <div class="product-info">
-                            <span class="product-category"><?= htmlspecialchars($produit['categorie_nom'] ?? 'Cadeau') ?></span>
-                            <h3><?= htmlspecialchars($produit['nom'] ?? 'Produit sans nom') ?></h3>
+                            <h3><?= htmlspecialchars($produit['nom']) ?></h3>
+                            <div class="stock <?= $stock_class ?>">
+                                <i class="fas <?= $stock > 10 ? 'fa-check-circle' : ($stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle') ?>"></i>
+                                <?= $stock_text ?>
+                            </div>
                             <?php if ($has_promotion && $prix_promo < $prix_original): ?>
                                 <div class="product-price-wrapper"><span class="old-price"><?= $prix_original_affiche ?> €</span><span class="new-price"><?= $prix_affiche ?> €</span></div>
                             <?php else: ?>
@@ -1072,7 +1405,14 @@ $nb_articles = countCartItems();
                             <?php endif; ?>
                             <div class="product-rating"><?php for($i = 1; $i <= 5; $i++): ?><i class="fas fa-star"></i><?php endfor; ?><span class="rating-count">(<?= rand(5, 50) ?>)</span></div>
                             <div class="product-actions">
-                                <button class="btn-add-to-cart" data-id="<?= $produit['id_produit'] ?>" data-nom="<?= htmlspecialchars($produit['nom']) ?>" data-prix="<?= $prix_promo ?>" data-image="<?= $image_url ?>"><i class="fas fa-cart-plus"></i> Ajouter</button>
+                                <button class="btn-add-to-cart" 
+                                        data-id="<?= $produit['id_produit'] ?>"
+                                        data-nom="<?= htmlspecialchars($produit['nom']) ?>"
+                                        data-prix="<?= $prix_promo ?>"
+                                        data-image="<?= htmlspecialchars($image_url) ?>"
+                                        <?= $stock <= 0 ? 'disabled' : '' ?>>
+                                    <i class="fas fa-cart-plus"></i> <?= $stock > 0 ? 'Ajouter au panier' : 'Indisponible' ?>
+                                </button>
                                 <a href="produit.php?id=<?= $produit['id_produit'] ?>" class="btn-view"><i class="fas fa-eye"></i> Voir</a>
                             </div>
                         </div>
@@ -1144,11 +1484,18 @@ $nb_articles = countCartItems();
         </div>
     </footer>
 
+    <!-- Modal panier -->
     <div class="cart-modal" id="cartModal">
         <div class="cart-modal-content">
-            <div class="cart-modal-header"><h3>Article ajouté au panier</h3><button class="cart-modal-close" id="closeCartModal">&times;</button></div>
+            <div class="cart-modal-header">
+                <h3><i class="fas fa-check-circle" style="color:#27ae60"></i> Article ajouté</h3>
+                <button class="cart-modal-close" id="closeCartModal">&times;</button>
+            </div>
             <div class="cart-modal-body" id="cartModalBody"></div>
-            <div class="cart-modal-footer"><a href="panier.html" class="btn btn-primary">Voir le panier</a><button class="btn btn-secondary" id="continueShopping">Continuer mes achats</button></div>
+            <div class="cart-modal-footer">
+                <a href="panier.html" class="btn btn-primary"><i class="fas fa-shopping-cart"></i> Voir le panier</a>
+                <button class="btn btn-secondary" id="continueShopping"><i class="fas fa-arrow-left"></i> Continuer</button>
+            </div>
         </div>
     </div>
 
@@ -1156,7 +1503,227 @@ $nb_articles = countCartItems();
         const produitsData = <?= json_encode($produits_js ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) ?>;
         const API_PANIER_URL = "panier.php";
 
+        class PanierManager {
+            constructor() {
+                this.apiUrl = API_PANIER_URL;
+                this.cartModal = document.getElementById("cartModal");
+                this.cartModalBody = document.getElementById("cartModalBody");
+                this.cartCountElements = document.querySelectorAll(".cart-count");
+                this.updateInProgress = false;
+                this.produitsData = produitsData;
+                this.initEvents();
+                this.updateCartCount();
+            }
+
+            initEvents() {
+                document.getElementById("closeCartModal")?.addEventListener("click", () => this.closeModal());
+                document.getElementById("continueShopping")?.addEventListener("click", () => this.closeModal());
+                this.cartModal?.addEventListener("click", (e) => { if (e.target === this.cartModal) this.closeModal(); });
+                document.addEventListener("click", async (e) => {
+                    const addToCartBtn = e.target.closest(".btn-add-to-cart");
+                    if (addToCartBtn && !addToCartBtn.disabled && !addToCartBtn.classList.contains("loading")) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const id_produit = addToCartBtn.dataset.id ? parseInt(addToCartBtn.dataset.id) : null;
+                        if (id_produit) await this.ajouterAuPanier(id_produit, 1, addToCartBtn);
+                    }
+                });
+            }
+
+            closeModal() {
+                this.cartModal?.classList.remove("show");
+            }
+
+            async ajouterAuPanier(id_produit, quantite = 1, button = null) {
+                if (!id_produit || id_produit <= 0) {
+                    this.showNotification("Erreur: Produit invalide", "error");
+                    return false;
+                }
+
+                const produitInfo = this.produitsData[id_produit];
+                if (produitInfo && produitInfo.quantite_stock <= 0) {
+                    this.showNotification("Produit en rupture de stock", "error");
+                    return false;
+                }
+
+                let finalInfo = produitInfo;
+                
+                if (!produitInfo && button) {
+                    finalInfo = {
+                        id: id_produit,
+                        nom: button.dataset.nom || 'Produit',
+                        reference: 'REF' + id_produit,
+                        prix_ttc: parseFloat(button.dataset.prix) || 0,
+                        image: button.dataset.image || 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit'
+                    };
+                }
+                
+                if (!finalInfo) {
+                    this.showNotification("Erreur: Produit non trouvé", "error");
+                    return false;
+                }
+
+                let originalHTML = "", originalDisabled = false;
+                if (button) {
+                    originalHTML = button.innerHTML;
+                    originalDisabled = button.disabled;
+                    button.disabled = true;
+                    button.classList.add("loading");
+                    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ajout...';
+                }
+
+                try {
+                    const response = await fetch(this.apiUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "ajouter", id_produit: parseInt(id_produit), quantite: parseInt(quantite) })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        await this.updateCartCount();
+                        this.showCartModal(finalInfo);
+                        this.showNotification(`"${finalInfo.nom}" ajouté au panier !`);
+                        return true;
+                    } else {
+                        this.showNotification(data.message || "Erreur lors de l'ajout", "error");
+                        return false;
+                    }
+                } catch (error) {
+                    console.error("Erreur ajout panier:", error);
+                    this.showNotification("Erreur de connexion au serveur", "error");
+                    return false;
+                } finally {
+                    if (button) {
+                        setTimeout(() => {
+                            button.disabled = originalDisabled;
+                            button.innerHTML = originalHTML;
+                            button.classList.remove("loading");
+                        }, 800);
+                    }
+                }
+            }
+
+            showCartModal(product) {
+                if (!product || !this.cartModalBody) return;
+                
+                const prix = product.prix_ttc ? parseFloat(product.prix_ttc).toFixed(2).replace(".", ",") : "0,00";
+                
+                this.cartModalBody.innerHTML = `
+                    <div class="cart-modal-product">
+                        <div class="modal-product-image">
+                            <img src="${product.image}" alt="${product.nom}" 
+                                 onerror="this.src='https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit'">
+                        </div>
+                        <div class="modal-product-info">
+                            <h4>${this.escapeHtml(product.nom)}</h4>
+                            <p class="modal-product-ref">Réf: ${product.reference || 'REF' + product.id}</p>
+                            <p class="modal-product-price">${prix} €</p>
+                            <p class="modal-success-message">
+                                <i class="fas fa-check-circle"></i> Article ajouté avec succès !
+                            </p>
+                        </div>
+                    </div>
+                `;
+                this.cartModal.classList.add("show");
+            }
+
+            async updateCartCount() {
+                if (this.updateInProgress) return;
+                this.updateInProgress = true;
+                
+                try {
+                    const response = await fetch(`${this.apiUrl}?action=compter&_=${Date.now()}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success) {
+                            this.updateCartCountDisplay(data.total || 0);
+                            return data.total || 0;
+                        }
+                    }
+                    this.updateCartCountDisplay(0);
+                    return 0;
+                } catch (error) {
+                    console.error("Erreur mise à jour compteur:", error);
+                    this.updateCartCountDisplay(0);
+                    return 0;
+                } finally {
+                    this.updateInProgress = false;
+                }
+            }
+
+            updateCartCountDisplay(count) {
+                this.cartCountElements.forEach((element) => {
+                    if (count > 0) {
+                        element.textContent = count > 99 ? "99+" : count;
+                        element.style.display = "inline-flex";
+                        element.classList.add("pulse");
+                        setTimeout(() => element.classList.remove("pulse"), 600);
+                    } else {
+                        element.textContent = "0";
+                        element.style.display = "inline-flex";
+                    }
+                });
+            }
+
+            showNotification(message, type = "success") {
+                document.querySelectorAll(".toast-notification").forEach(toast => toast.remove());
+                
+                const notification = document.createElement("div");
+                notification.className = `toast-notification ${type}`;
+                
+                let icon = "check-circle";
+                if (type === "error") icon = "exclamation-triangle";
+                else if (type === "warning") icon = "info-circle";
+                
+                notification.innerHTML = `<i class="fas fa-${icon}"></i><span>${message}</span>`;
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    notification.style.animation = "slideOutRight 0.3s ease";
+                    setTimeout(() => notification.remove(), 300);
+                }, 3000);
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement("div");
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        }
+
+        function initWelcomeModal() {
+            const welcomeModal = document.getElementById("welcomeModal");
+            const closeWelcomeModal = document.getElementById("closeWelcomeModal");
+            
+            if (welcomeModal && closeWelcomeModal) {
+                const modalClosed = sessionStorage.getItem("welcomeModalClosed");
+                
+                if (!modalClosed) {
+                    setTimeout(() => {
+                        welcomeModal.classList.add("show");
+                    }, 500);
+                }
+                
+                closeWelcomeModal.addEventListener("click", () => {
+                    welcomeModal.classList.remove("show");
+                    sessionStorage.setItem("welcomeModalClosed", "true");
+                });
+                
+                welcomeModal.addEventListener("click", (e) => {
+                    if (e.target === welcomeModal) {
+                        welcomeModal.classList.remove("show");
+                        sessionStorage.setItem("welcomeModalClosed", "true");
+                    }
+                });
+            }
+        }
+
         document.addEventListener("DOMContentLoaded", function() {
+            window.panierManager = new PanierManager();
+            initWelcomeModal();
+            
             const menuToggle = document.getElementById("menuToggle");
             const navMobile = document.getElementById("navMobile");
             if (menuToggle && navMobile) {
@@ -1182,110 +1749,6 @@ $nb_articles = countCartItems();
                 });
             }
         });
-
-        class PanierManager {
-            constructor() {
-                this.apiUrl = API_PANIER_URL;
-                this.cartModal = document.getElementById("cartModal");
-                this.cartModalBody = document.getElementById("cartModalBody");
-                this.cartCountElements = document.querySelectorAll(".cart-count");
-                this.updateInProgress = false;
-                this.produitsData = produitsData;
-                this.initEvents();
-                this.updateCartCount();
-            }
-
-            initEvents() {
-                document.getElementById("closeCartModal")?.addEventListener("click", () => this.cartModal.classList.remove("show"));
-                document.getElementById("continueShopping")?.addEventListener("click", () => this.cartModal.classList.remove("show"));
-                this.cartModal?.addEventListener("click", (e) => { if (e.target === this.cartModal) this.cartModal.classList.remove("show"); });
-                document.addEventListener("click", async (e) => {
-                    const addToCartBtn = e.target.closest(".btn-add-to-cart");
-                    if (addToCartBtn && !addToCartBtn.disabled && !addToCartBtn.closest('.pagination') && !addToCartBtn.closest('.empty-state') && !addToCartBtn.closest('.cart-modal-footer')) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const id_produit = addToCartBtn.dataset.id ? parseInt(addToCartBtn.dataset.id) : null;
-                        if (id_produit) await this.ajouterAuPanier(id_produit, 1, addToCartBtn);
-                    }
-                });
-            }
-
-            async ajouterAuPanier(id_produit, quantite = 1, button = null) {
-                if (!id_produit || id_produit <= 0) { this.showNotification("Erreur: Produit invalide", "error"); return false; }
-                const produitInfo = this.produitsData[id_produit];
-                if (!produitInfo && button) {
-                    const fallback = { id: id_produit, nom: button.dataset.nom || 'Produit', reference: 'REF' + id_produit, prix_ttc: parseFloat(button.dataset.prix) || 0, image: button.dataset.image || 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit' };
-                    if (!produitInfo && !fallback) { this.showNotification("Erreur: Produit non trouvé", "error"); return false; }
-                }
-                const finalInfo = produitInfo || { id: id_produit, nom: button?.dataset.nom || 'Produit', reference: 'REF' + id_produit, prix_ttc: parseFloat(button?.dataset.prix) || 0, image: button?.dataset.image || 'https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit' };
-                let originalHTML = "", originalDisabled = false;
-                if (button) { originalHTML = button.innerHTML; originalDisabled = button.disabled; button.disabled = true; button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ajout...'; button.classList.add("loading"); }
-                try {
-                    const response = await fetch(this.apiUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "ajouter", id_produit: parseInt(id_produit), quantite: parseInt(quantite) }) });
-                    const data = await response.json();
-                    if (data.success) { await this.updateCartCount(); this.showCartModal(finalInfo); this.showNotification(`"${finalInfo.nom}" ajouté au panier !`); return true; }
-                    else { this.showNotification(data.message || "Erreur lors de l'ajout", "error"); return false; }
-                } catch (error) { console.error("Erreur ajout panier:", error); this.showNotification("Erreur de connexion au serveur", "error"); return false;
-                } finally { if (button) { setTimeout(() => { button.disabled = originalDisabled; button.innerHTML = originalHTML; button.classList.remove("loading"); }, 1000); } }
-            }
-
-            showCartModal(product) {
-                if (!product || !this.cartModalBody) return;
-                const prix = product.prix_ttc ? parseFloat(product.prix_ttc).toFixed(2).replace(".", ",") : "0,00";
-                this.cartModalBody.innerHTML = `<div class="cart-modal-product"><div class="modal-product-image"><img src="${product.image}" alt="${product.nom}" onerror="this.src='https://via.placeholder.com/300x300/95a5a6/ffffff?text=Produit'"></div><div class="modal-product-info"><h4>${product.nom}</h4><p class="modal-product-ref">Réf: ${product.reference || 'REF' + product.id}</p><p class="modal-product-price">${prix} €</p><p class="modal-success-message"><i class="fas fa-check-circle"></i> Article ajouté avec succès !</p></div></div>`;
-                this.cartModal.classList.add("show");
-            }
-
-            async updateCartCount() {
-                if (this.updateInProgress) return;
-                this.updateInProgress = true;
-                try {
-                    const response = await fetch(`${this.apiUrl}?action=compter&_=${Date.now()}`);
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.success) { this.updateCartCountDisplay(data.total || 0); return data.total || 0; }
-                    }
-                    this.updateCartCountDisplay(0);
-                    return 0;
-                } catch (error) { console.error("Erreur mise à jour compteur:", error); this.updateCartCountDisplay(0); return 0;
-                } finally { this.updateInProgress = false; }
-            }
-
-            updateCartCountDisplay(count) {
-                this.cartCountElements.forEach((element) => {
-                    if (count > 0) { element.textContent = count > 99 ? "99+" : count; element.style.display = "inline-flex"; element.classList.add("pulse"); setTimeout(() => element.classList.remove("pulse"), 600); }
-                    else { element.textContent = "0"; element.style.display = "inline-flex"; }
-                });
-            }
-
-            showNotification(message, type = "success") {
-                document.querySelectorAll(".notification").forEach(toast => toast.remove());
-                const notification = document.createElement("div");
-                notification.className = `notification ${type}`;
-                const icon = type === "success" ? "check-circle" : type === "error" ? "exclamation-triangle" : "info-circle";
-                notification.innerHTML = `<i class="fas fa-${icon}"></i><span>${message}</span>`;
-                document.body.appendChild(notification);
-                setTimeout(() => { if (notification.parentElement) notification.remove(); }, 3000);
-            }
-        }
-
-        document.addEventListener("DOMContentLoaded", async () => {
-            window.panierManager = new PanierManager();
-            document.addEventListener("click", async (e) => {
-                const addToCartBtn = e.target.closest(".btn-add-to-cart");
-                if (addToCartBtn && !addToCartBtn.disabled && !addToCartBtn.closest('.pagination') && !addToCartBtn.closest('.empty-state')) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const id_produit = addToCartBtn.dataset.id ? parseInt(addToCartBtn.dataset.id) : null;
-                    if (id_produit) await window.panierManager.ajouterAuPanier(id_produit, 1, addToCartBtn);
-                }
-            });
-        });
-
-        window.ajouterAuPanier = function(id_produit, quantite = 1, button = null) {
-            if (!window.panierManager) window.panierManager = new PanierManager();
-            return window.panierManager.ajouterAuPanier(id_produit, quantite, button);
-        };
     </script>
 </body>
 </html>
