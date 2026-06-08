@@ -1,7 +1,7 @@
 <?php
 // ============================================
 // CONFIRMATION PAIEMENT - VERSION CORRIGÉE
-// AVEC TÉLÉCHARGEMENT AUTO DIRECT (SANS REDIRECTION)
+// AVEC AFFICHAGE DES PRIX PROMOTIONNELS
 // ============================================
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -44,11 +44,11 @@ try {
 }
 
 // ============================================
-// FONCTIONS DE MESSAGE (définies avant utilisation)
+// FONCTIONS DE MESSAGE
 // ============================================
 
 /**
- * Génère la version HTML du message
+ * Génère la version HTML du message avec affichage des promotions
  */
 function genererMessageHTML($commande, $items) {
     $to_name = $commande['client_prenom'] . ' ' . $commande['client_nom'];
@@ -70,6 +70,8 @@ function genererMessageHTML($commande, $items) {
             td { padding: 12px; border-bottom: 1px solid #dee2e6; }
             .total { font-weight: bold; color: #e74c3c; font-size: 1.2em; margin-top: 20px; text-align: right; }
             .address { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0; }
+            .promo-badge { display: inline-block; background: #e74c3c; color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 8px; }
+            .old-price { text-decoration: line-through; color: #999; font-size: 11px; margin-right: 5px; }
             .footer { background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #7f8c8d; }
         </style>
     </head>
@@ -112,13 +114,41 @@ function genererMessageHTML($commande, $items) {
     foreach ($items as $item) {
         $prix_total = $item['quantite'] * $item['prix_unitaire_ttc'];
         $sous_total += $prix_total;
+        
+        // Vérifier si une promotion a été appliquée
+        $has_promotion = false;
+        $prix_original = $item['prix_unitaire_ttc'];
+        
+        if (isset($item['options']) && !empty($item['options'])) {
+            $options = json_decode($item['options'], true);
+            if (isset($options['prix_original']) && $options['prix_original'] > $item['prix_unitaire_ttc']) {
+                $has_promotion = true;
+                $prix_original = $options['prix_original'];
+            }
+        }
+        
         $html .= '
                     <tr>
-                        <td>' . htmlspecialchars($item['nom_produit']) . '</td>
+                        <td>' . htmlspecialchars($item['nom_produit']);
+        
+        if ($has_promotion) {
+            $html .= '<span class="promo-badge">Promo</span>';
+        }
+        
+        $html .= '</td>
                         <td>' . htmlspecialchars($item['reference_produit']) . '</td>
                         <td>' . $item['quantite'] . '</td>
-                        <td>' . number_format($item['prix_unitaire_ttc'], 2, ',', ' ') . ' €</td>
-                        <td>' . number_format($prix_total, 2, ',', ' ') . ' €</td>
+                        <td>';
+        
+        if ($has_promotion) {
+            $html .= '<span class="old-price">' . number_format($prix_original, 2, ',', ' ') . ' €</span><br>';
+            $html .= '<span style="color:#e74c3c; font-weight:bold;">' . number_format($item['prix_unitaire_ttc'], 2, ',', ' ') . ' €</span>';
+        } else {
+            $html .= number_format($item['prix_unitaire_ttc'], 2, ',', ' ') . ' €';
+        }
+        
+        $html .= '</td>
+                        <td><strong>' . number_format($prix_total, 2, ',', ' ') . ' €</strong></td>
                     </tr>';
     }
     
@@ -167,7 +197,7 @@ function genererMessageHTML($commande, $items) {
 }
 
 /**
- * Génère la version texte du message
+ * Génère la version texte du message avec affichage des promotions
  */
 function genererMessageTexte($commande, $items) {
     $to_name = $commande['client_prenom'] . ' ' . $commande['client_nom'];
@@ -182,7 +212,25 @@ function genererMessageTexte($commande, $items) {
     $text .= "Articles:\n";
     foreach ($items as $item) {
         $prix_total = $item['quantite'] * $item['prix_unitaire_ttc'];
-        $text .= "- " . $item['nom_produit'] . " x" . $item['quantite'] . ": " . number_format($prix_total, 2) . " €\n";
+        
+        // Vérifier si une promotion a été appliquée
+        $has_promotion = false;
+        $prix_original = $item['prix_unitaire_ttc'];
+        
+        if (isset($item['options']) && !empty($item['options'])) {
+            $options = json_decode($item['options'], true);
+            if (isset($options['prix_original']) && $options['prix_original'] > $item['prix_unitaire_ttc']) {
+                $has_promotion = true;
+                $prix_original = $options['prix_original'];
+            }
+        }
+        
+        if ($has_promotion) {
+            $text .= "- " . $item['nom_produit'] . " [PROMO] x" . $item['quantite'] . ": ";
+            $text .= number_format($prix_original, 2) . "€ -> " . number_format($prix_total, 2) . " €\n";
+        } else {
+            $text .= "- " . $item['nom_produit'] . " x" . $item['quantite'] . ": " . number_format($prix_total, 2) . " €\n";
+        }
     }
     
     $text .= "\nTotal: " . number_format($commande['total_ttc'], 2) . " €\n\n";
@@ -195,36 +243,18 @@ function genererMessageTexte($commande, $items) {
 }
 
 /**
- * Envoie un email avec la facture en pièce jointe PDF - VERSION CORRIGÉE
- * Garantit que la pièce jointe PDF est correctement incluse
+ * Envoie un email avec la facture en pièce jointe PDF
  */
 function envoyerEmailAvecPDF($smtp_config, $commande, $items, $pdf_content, $pdf_filename) {
     $to = $commande['email'];
     $to_name = $commande['client_prenom'] . ' ' . $commande['client_nom'];
     $subject = "Votre commande " . $commande['numero_commande'] . " a été confirmée";
     
-    // ============================================
-    // CONSTRUCTION DU MESSAGE MULTIPART/MIXED
-    // ============================================
-    
     $boundary_mixed = md5(uniqid(mt_rand(), true));
     $boundary_alt = md5(uniqid(mt_rand(), true));
     
-    // ============================================
-    // VERSION HTML DU MESSAGE
-    // ============================================
-    
     $html_message = genererMessageHTML($commande, $items);
-    
-    // ============================================
-    // VERSION TEXTE DU MESSAGE
-    // ============================================
-    
     $text_message = genererMessageTexte($commande, $items);
-    
-    // ============================================
-    // PARTIE ALTERNATIVE (HTML + TEXTE)
-    // ============================================
     
     $alt_part = "Content-Type: multipart/alternative; boundary=\"$boundary_alt\"\r\n\r\n";
     
@@ -240,19 +270,10 @@ function envoyerEmailAvecPDF($smtp_config, $commande, $items, $pdf_content, $pdf
     
     $alt_part .= "--$boundary_alt--";
     
-    // ============================================
-    // CONSTRUCTION DU MESSAGE COMPLET (MIXED)
-    // ============================================
-    
     $message = "Ceci est un message au format MIME multipart/mixed contenant votre facture en pièce jointe.\r\n\r\n";
     $message .= "--$boundary_mixed\r\n";
-    
-    // On ajoute la partie alternative (le corps de l'email)
     $message .= $alt_part . "\r\n\r\n";
     
-    // ============================================
-    // AJOUT DE LA PIÈCE JOINTE PDF
-    // ============================================
     if ($pdf_content) {
         $pdf_attachment = chunk_split(base64_encode($pdf_content));
         
@@ -263,12 +284,8 @@ function envoyerEmailAvecPDF($smtp_config, $commande, $items, $pdf_content, $pdf
         $message .= $pdf_attachment . "\r\n\r\n";
     }
     
-    // Fermeture du mixed boundary
     $message .= "--$boundary_mixed--";
     
-    // ============================================
-    // HEADERS
-    // ============================================
     $headers = [
         'MIME-Version: 1.0',
         'Content-Type: multipart/mixed; boundary="' . $boundary_mixed . '"',
@@ -277,14 +294,7 @@ function envoyerEmailAvecPDF($smtp_config, $commande, $items, $pdf_content, $pdf
         'X-Mailer: PHP/' . phpversion()
     ];
     
-    // ============================================
-    // SUJET ENCODÉ
-    // ============================================
     $encoded_subject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
-    
-    // ============================================
-    // ENVOI VIA SMTP - VERSION CORRIGÉE AVEC GESTION DES ERREURS
-    // ============================================
     
     $errno = 0;
     $errstr = '';
@@ -295,7 +305,6 @@ function envoyerEmailAvecPDF($smtp_config, $commande, $items, $pdf_content, $pdf
         return false;
     }
     
-    // Fonction interne pour fermer le socket et retourner false
     $closeAndReturnFalse = function($error_message) use ($socket) {
         error_log($error_message);
         fclose($socket);
@@ -307,7 +316,6 @@ function envoyerEmailAvecPDF($smtp_config, $commande, $items, $pdf_content, $pdf
         return $closeAndReturnFalse("Réponse SMTP inattendue: $response");
     }
     
-    // EHLO
     fputs($socket, "EHLO " . ($_SERVER['HTTP_HOST'] ?? 'localhost') . "\r\n");
     $response = fgets($socket, 515);
     while (substr($response, 3, 1) == '-') {
@@ -317,19 +325,16 @@ function envoyerEmailAvecPDF($smtp_config, $commande, $items, $pdf_content, $pdf
         return $closeAndReturnFalse("EHLO échoué: $response");
     }
     
-    // STARTTLS
     fputs($socket, "STARTTLS\r\n");
     $response = fgets($socket, 515);
     if (substr($response, 0, 3) != '220') {
         return $closeAndReturnFalse("STARTTLS échoué: $response");
     }
     
-    // Activer TLS
     if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
         return $closeAndReturnFalse("Échec de l'activation TLS");
     }
     
-    // EHLO à nouveau après TLS
     fputs($socket, "EHLO " . ($_SERVER['HTTP_HOST'] ?? 'localhost') . "\r\n");
     $response = fgets($socket, 515);
     while (substr($response, 3, 1) == '-') {
@@ -339,49 +344,42 @@ function envoyerEmailAvecPDF($smtp_config, $commande, $items, $pdf_content, $pdf
         return $closeAndReturnFalse("EHLO après TLS échoué: $response");
     }
     
-    // Authentification
     fputs($socket, "AUTH LOGIN\r\n");
     $response = fgets($socket, 515);
     if (substr($response, 0, 3) != '334') {
         return $closeAndReturnFalse("AUTH LOGIN échoué: $response");
     }
     
-    // Envoyer username en base64
     fputs($socket, base64_encode($smtp_config['username']) . "\r\n");
     $response = fgets($socket, 515);
     if (substr($response, 0, 3) != '334') {
         return $closeAndReturnFalse("Username échoué: $response");
     }
     
-    // Envoyer password en base64
     fputs($socket, base64_encode($smtp_config['password']) . "\r\n");
     $response = fgets($socket, 515);
     if (substr($response, 0, 3) != '235') {
         return $closeAndReturnFalse("Authentification échouée: $response");
     }
     
-    // MAIL FROM
     fputs($socket, "MAIL FROM: <" . $smtp_config['from_email'] . ">\r\n");
     $response = fgets($socket, 515);
     if (substr($response, 0, 3) != '250') {
         return $closeAndReturnFalse("MAIL FROM échoué: $response");
     }
     
-    // RCPT TO
     fputs($socket, "RCPT TO: <$to>\r\n");
     $response = fgets($socket, 515);
     if (substr($response, 0, 3) != '250') {
         return $closeAndReturnFalse("RCPT TO échoué: $response");
     }
     
-    // DATA
     fputs($socket, "DATA\r\n");
     $response = fgets($socket, 515);
     if (substr($response, 0, 3) != '354') {
         return $closeAndReturnFalse("DATA échoué: $response");
     }
     
-    // Envoyer les headers, le sujet et le message
     fputs($socket, "Subject: $encoded_subject\r\n");
     foreach ($headers as $header) {
         fputs($socket, $header . "\r\n");
@@ -389,11 +387,9 @@ function envoyerEmailAvecPDF($smtp_config, $commande, $items, $pdf_content, $pdf
     fputs($socket, "\r\n");
     fputs($socket, $message . "\r\n");
     
-    // Fin du message
     fputs($socket, "\r\n.\r\n");
     $response = fgets($socket, 515);
     
-    // QUIT
     fputs($socket, "QUIT\r\n");
     fclose($socket);
     
@@ -447,8 +443,8 @@ try {
         throw new Exception("Commande #$commande_id non trouvée");
     }
     
-    // Récupérer les articles
-    $stmt_items = $pdo->prepare("SELECT * FROM commande_items WHERE id_commande = ?");
+    // Récupérer les articles AVEC la colonne options
+    $stmt_items = $pdo->prepare("SELECT *, options FROM commande_items WHERE id_commande = ?");
     $stmt_items->execute([$commande_id]);
     $items = $stmt_items->fetchAll();
     
@@ -503,7 +499,7 @@ try {
     }
     
     // ============================================
-    // ENVOI DE L'EMAIL EN ARRIÈRE-PLAN (NON BLOQUANT)
+    // ENVOI DE L'EMAIL
     // ============================================
     
     $email_envoye = false;
@@ -511,7 +507,6 @@ try {
     
     if ($pdf_genere) {
         try {
-            // Configuration SMTP Gmail
             $smtp_config = [
                 'host' => 'smtp.gmail.com',
                 'port' => 587,
@@ -522,7 +517,6 @@ try {
                 'from_name' => 'HEURE DU CADEAU'
             ];
             
-            // Envoyer l'email avec PDF en pièce jointe
             $email_envoye = envoyerEmailAvecPDF(
                 $smtp_config, 
                 $commande, 
@@ -533,26 +527,6 @@ try {
             
             if ($email_envoye) {
                 $email_message = "✅ Un email de confirmation avec votre facture en PDF a été envoyé à : " . htmlspecialchars($commande['email']);
-                
-                // Journaliser dans la base de données
-                try {
-                    $stmt_log = $pdo->prepare("
-                        INSERT INTO logs (type_log, niveau, message, utilisateur_id, metadata, date_log)
-                        VALUES ('info', 'info', 'Email avec facture PDF envoyé', ?, ?, NOW())
-                    ");
-                    $stmt_log->execute([
-                        $commande['id_client'],
-                        json_encode([
-                            'commande_id' => $commande_id,
-                            'email' => $commande['email'],
-                            'numero_commande' => $commande['numero_commande'],
-                            'pdf_genere' => true,
-                            'pdf_taille' => strlen($pdf_content)
-                        ])
-                    ]);
-                } catch (Exception $e) {
-                    // Ignorer les erreurs de log
-                }
             } else {
                 $email_message = "⚠️ L'email de confirmation n'a pas pu être envoyé, mais votre commande est bien confirmée.";
             }
@@ -560,8 +534,6 @@ try {
             $email_message = "❌ Erreur lors de l'envoi de l'email: " . $e->getMessage();
             error_log("Erreur envoi email commande #$commande_id: " . $e->getMessage());
         }
-    } else {
-        //$email_message = "⚠️ La facture n'a pas pu être générée, mais votre commande est confirmée.";
     }
     
 } catch (Exception $e) {
@@ -582,7 +554,6 @@ if (!$commande) {
 // GÉNÉRATION D'UN PDF SIMPLE EN CAS D'ÉCHEC
 // ============================================
 if (!$pdf_genere) {
-    // Générer un PDF simple en HTML pour le téléchargement
     ob_start();
     ?>
     <!DOCTYPE html>
@@ -599,8 +570,11 @@ if (!$pdf_genere) {
             table { width: 100%; border-collapse: collapse; margin: 30px 0; }
             th { background: #34495e; color: white; padding: 12px; text-align: left; }
             td { padding: 12px; border-bottom: 1px solid #ddd; }
+            .old-price { text-decoration: line-through; color: #999; font-size: 12px; margin-right: 5px; }
+            .promo-price { color: #e74c3c; font-weight: bold; }
             .total { font-weight: bold; font-size: 1.3em; text-align: right; margin-top: 30px; padding-top: 20px; border-top: 2px solid #333; }
             .footer { margin-top: 50px; text-align: center; font-size: 0.9em; color: #7f8c8d; border-top: 1px solid #ddd; padding-top: 20px; }
+            .promo-badge { display: inline-block; background: #e74c3c; color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 8px; vertical-align: middle; }
         </style>
     </head>
     <body>
@@ -648,13 +622,36 @@ if (!$pdf_genere) {
                 foreach ($items as $item): 
                     $prix_total = $item['quantite'] * $item['prix_unitaire_ttc'];
                     $total += $prix_total;
+                    
+                    $has_promotion = false;
+                    $prix_original = $item['prix_unitaire_ttc'];
+                    
+                    if (isset($item['options']) && !empty($item['options'])) {
+                        $options = json_decode($item['options'], true);
+                        if (isset($options['prix_original']) && $options['prix_original'] > $item['prix_unitaire_ttc']) {
+                            $has_promotion = true;
+                            $prix_original = $options['prix_original'];
+                        }
+                    }
                 ?>
                 <tr>
-                    <td><?= htmlspecialchars($item['nom_produit']) ?></td>
+                    <td>
+                        <?= htmlspecialchars($item['nom_produit']) ?>
+                        <?php if ($has_promotion): ?>
+                            <span class="promo-badge">-<?= $options['reduction_percent'] ?? round((1 - $item['prix_unitaire_ttc'] / $prix_original) * 100) ?>%</span>
+                        <?php endif; ?>
+                    </td>
                     <td><?= htmlspecialchars($item['reference_produit']) ?></td>
                     <td><?= $item['quantite'] ?></td>
-                    <td><?= number_format($item['prix_unitaire_ttc'], 2, ',', ' ') ?> €</td>
-                    <td><?= number_format($prix_total, 2, ',', ' ') ?> €</td>
+                    <td>
+                        <?php if ($has_promotion): ?>
+                            <span class="old-price"><?= number_format($prix_original, 2, ',', ' ') ?> €</span>
+                            <span class="promo-price"><?= number_format($item['prix_unitaire_ttc'], 2, ',', ' ') ?> €</span>
+                        <?php else: ?>
+                            <?= number_format($item['prix_unitaire_ttc'], 2, ',', ' ') ?> €
+                        <?php endif; ?>
+                    </td>
+                    <td><strong><?= number_format($prix_total, 2, ',', ' ') ?> €</strong></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -675,16 +672,13 @@ if (!$pdf_genere) {
     <?php
     $html_pdf = ob_get_clean();
     
-    // Convertir le HTML en PDF via une librairie ou utiliser Dompdf si disponible
-    // Pour simplifier, on va juste forcer le téléchargement du HTML avec une extension .pdf
-    // Le navigateur l'ouvrira quand même
     $pdf_content = $html_pdf;
     $pdf_genere = true;
     $pdf_filename = 'facture_' . $commande['numero_commande'] . '.html';
 }
 
 // ============================================
-// AFFICHAGE DE LA PAGE HTML (avec téléchargement JS)
+// AFFICHAGE DE LA PAGE HTML AVEC PRIX PROMOTIONNELS
 // ============================================
 ?>
 <!DOCTYPE html>
@@ -774,6 +768,32 @@ if (!$pdf_genere) {
             padding: 8px 0;
             font-size: 0.95rem;
         }
+        .item-row.promotion {
+            background: #fff3e0;
+            border-radius: 8px;
+            margin: 5px 0;
+            padding: 8px 12px;
+        }
+        .old-price {
+            text-decoration: line-through;
+            color: #999;
+            font-size: 0.85rem;
+            margin-right: 5px;
+        }
+        .promo-badge {
+            display: inline-block;
+            background: #e74c3c;
+            color: white;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 20px;
+            margin-left: 8px;
+            font-weight: normal;
+        }
+        .promo-price {
+            color: #e74c3c;
+            font-weight: bold;
+        }
         .total-row {
             display: flex;
             justify-content: space-between;
@@ -804,25 +824,6 @@ if (!$pdf_genere) {
             transform: translateY(-3px);
             box-shadow: 0 15px 30px rgba(39,174,96,0.3);
         }
-        .btn-download {
-            background: linear-gradient(135deg, #3498db, #2980b9);
-            color: white;
-            border: none;
-            display: inline-block;
-        }
-        .btn-download:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 15px 30px rgba(52,152,219,0.3);
-        }
-        .pdf-badge {
-            background: #d1ecf1;
-            border: 1px solid #bee5eb;
-            color: #0c5460;
-            padding: 15px;
-            border-radius: 10px;
-            margin: 20px 0;
-            font-size: 1rem;
-        }
         .auto-download-message {
             background: #d1ecf1;
             border: 1px solid #bee5eb;
@@ -830,11 +831,6 @@ if (!$pdf_genere) {
             padding: 15px;
             border-radius: 10px;
             margin: 20px 0;
-        }
-        .manual-download-link {
-            display: inline-block;
-            margin-top: 20px;
-            font-size: 0.9rem;
         }
     </style>
 </head>
@@ -853,7 +849,6 @@ if (!$pdf_genere) {
             </div>
             <?php endif; ?>
             
-            <!-- Affichage du message email sans htmlspecialchars car il contient du HTML sécurisé -->
             <div class="email-note">
                 <i class="fas <?= $email_envoye ? 'fa-envelope' : 'fa-exclamation-triangle' ?>"></i>
                 <?= $email_message ?>
@@ -878,20 +873,44 @@ if (!$pdf_genere) {
                 <?php if (!empty($items)): ?>
                 <div class="items-list">
                     <h3 style="margin-bottom: 15px; color: #2c3e50;">
-                        <i class="fas fa-box"></i> Détail des articles
+                        <i class="fas fa-tags"></i> Détail des articles
                     </h3>
                     <?php 
                     $total = 0;
                     foreach ($items as $item): 
                         $itemTotal = $item['quantite'] * $item['prix_unitaire_ttc'];
                         $total += $itemTotal;
+                        
+                        $has_promotion = false;
+                        $prix_original = $item['prix_unitaire_ttc'];
+                        $reduction_percent = 0;
+                        
+                        if (isset($item['options']) && !empty($item['options'])) {
+                            $options = json_decode($item['options'], true);
+                            if (isset($options['prix_original']) && $options['prix_original'] > $item['prix_unitaire_ttc']) {
+                                $has_promotion = true;
+                                $prix_original = $options['prix_original'];
+                                $reduction_percent = $options['reduction_percent'] ?? round((1 - $item['prix_unitaire_ttc'] / $prix_original) * 100);
+                            }
+                        }
                     ?>
-                    <div class="item-row">
+                    <div class="item-row <?= $has_promotion ? 'promotion' : '' ?>">
                         <span>
                             <?= htmlspecialchars($item['nom_produit']) ?> 
                             <small style="color: #7f8c8d;">x<?= $item['quantite'] ?></small>
+                            <?php if ($has_promotion): ?>
+                                <span class="promo-badge">-<?= $reduction_percent ?>%</span>
+                            <?php endif; ?>
                         </span>
-                        <span><?= number_format($itemTotal, 2, ',', ' ') ?> €</span>
+                        <span>
+                            <?php if ($has_promotion): ?>
+                                <span class="old-price"><?= number_format($prix_original, 2, ',', ' ') ?> €</span>
+                                <span class="promo-price"><?= number_format($item['prix_unitaire_ttc'], 2, ',', ' ') ?> €</span>
+                            <?php else: ?>
+                                <?= number_format($item['prix_unitaire_ttc'], 2, ',', ' ') ?> €
+                            <?php endif; ?>
+                            <strong>→ <?= number_format($itemTotal, 2, ',', ' ') ?> €</strong>
+                        </span>
                     </div>
                     <?php endforeach; ?>
                     
@@ -908,12 +927,6 @@ if (!$pdf_genere) {
                 <?php endif; ?>
             </div>
             
-            <!--<div style="margin: 20px 0;">
-                <a href="telecharger-facture.php?commande_id=<?= $commande_id ?>" class="btn btn-download" target="_blank" id="downloadLink">
-                    <i class="fas fa-file-pdf"></i> Télécharger ma facture (PDF)
-                </a>
-            </div>-->
-            
             <div style="margin-top: 30px;">
                 <a href="index.php" class="btn btn-primary">
                     <i class="fas fa-home"></i> Retour à l'accueil
@@ -926,11 +939,9 @@ if (!$pdf_genere) {
     (function() {
         'use strict';
         
-        // Fonction pour lancer le téléchargement du PDF
         function downloadPDF() {
             <?php if ($pdf_genere && $pdf_content): ?>
             try {
-                // Créer un blob à partir du contenu PDF
                 const byteCharacters = atob('<?= base64_encode($pdf_content) ?>');
                 const byteNumbers = new Array(byteCharacters.length);
                 for (let i = 0; i < byteCharacters.length; i++) {
@@ -939,7 +950,6 @@ if (!$pdf_genere) {
                 const byteArray = new Uint8Array(byteNumbers);
                 const blob = new Blob([byteArray], { type: 'application/pdf' });
                 
-                // Créer un lien de téléchargement
                 const url = window.URL.createObjectURL(blob);
                 const link = document.createElement('a');
                 link.href = url;
@@ -949,7 +959,6 @@ if (!$pdf_genere) {
                 document.body.removeChild(link);
                 window.URL.revokeObjectURL(url);
                 
-                // Mettre à jour le message
                 const msg = document.getElementById('autoDownloadMessage');
                 if (msg) {
                     msg.innerHTML = '<i class="fas fa-check-circle"></i> Téléchargement terminé !';
@@ -959,23 +968,13 @@ if (!$pdf_genere) {
                 }
             } catch (e) {
                 console.error('Erreur téléchargement:', e);
-                // Fallback vers le lien traditionnel
-                const link = document.getElementById('downloadLink');
-                if (link) {
-                    link.click();
-                }
             }
             <?php endif; ?>
         }
         
-        // Lancer le téléchargement après le chargement de la page
         window.addEventListener('load', function() {
-            // Petit délai pour que la page s'affiche d'abord
             setTimeout(downloadPDF, 500);
         });
-        
-        // Si le téléchargement automatique ne fonctionne pas,
-        // l'utilisateur peut cliquer sur le lien manuellement
     })();
     </script>
 </body>

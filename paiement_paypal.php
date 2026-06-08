@@ -1,6 +1,7 @@
 <?php
 // ============================================
 // PAIEMENT PAYPAL - VERSION CORRIGÉE AVEC ENVOI FACTURE
+// ET SAUVEGARDE DES PRIX PROMOTIONNELS
 // ============================================
 
 error_reporting(E_ALL);
@@ -294,22 +295,25 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'paypal') {
                 throw new \Exception("Produit ID " . $item['id_produit'] . " introuvable");
             }
             
-            $prix_unitaire = floatval($produit['prix_ttc'] ?? 0);
+            // Prix avec promotion déjà calculé
+            $prix_unitaire_ttc = floatval($item['prix'] ?? $produit['prix_ttc'] ?? 0);
+            $prix_original_ttc = floatval($produit['prix_ttc'] ?? $prix_unitaire_ttc);
             $quantite = intval($item['quantite'] ?? 1);
             
             if (($produit['quantite_stock'] ?? 0) < $quantite) {
                 throw new \Exception("Stock insuffisant pour: " . ($produit['nom'] ?? ''));
             }
             
-            $sous_total += $prix_unitaire * $quantite;
+            $sous_total += $prix_unitaire_ttc * $quantite;
             
             $items_data[] = [
                 'id_produit' => $item['id_produit'],
                 'reference' => $produit['reference'] ?? 'REF' . $item['id_produit'],
                 'nom' => $produit['nom'] ?? 'Produit',
                 'quantite' => $quantite,
-                'prix_unitaire_ttc' => $prix_unitaire,
-                'prix_unitaire_ht' => round($prix_unitaire / 1.2, 2),
+                'prix_unitaire_ttc' => $prix_unitaire_ttc,
+                'prix_original_ttc' => $prix_original_ttc,
+                'prix_unitaire_ht' => round($prix_unitaire_ttc / 1.2, 2),
                 'tva' => 20.00
             ];
         }
@@ -379,15 +383,25 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'paypal') {
             throw new \Exception("ID commande non généré");
         }
         
-        // ========== INSERTION DES ARTICLES ==========
+        // ========== INSERTION DES ARTICLES AVEC OPTIONS PROMOTIONS ==========
         $stmt_item = $pdo->prepare("
             INSERT INTO commande_items (
                 id_commande, id_produit, reference_produit, nom_produit,
-                quantite, prix_unitaire_ht, prix_unitaire_ttc, tva
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                quantite, prix_unitaire_ht, prix_unitaire_ttc, tva, options
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         
         foreach ($items_data as $item) {
+            // Préparer les options avec info promotion
+            $options = [];
+            if ($item['prix_original_ttc'] > $item['prix_unitaire_ttc']) {
+                $options['prix_original'] = $item['prix_original_ttc'];
+                $options['reduction_percent'] = round((1 - $item['prix_unitaire_ttc'] / $item['prix_original_ttc']) * 100);
+                $options['promotion_appliquee'] = true;
+            }
+            
+            $options_json = !empty($options) ? json_encode($options, JSON_UNESCAPED_UNICODE) : null;
+            
             $result_item = $stmt_item->execute([
                 $id_commande,
                 $item['id_produit'],
@@ -396,7 +410,8 @@ function creerCommandeDepuisPanier($pdo, $mode_paiement = 'paypal') {
                 $item['quantite'],
                 $item['prix_unitaire_ht'],
                 $item['prix_unitaire_ttc'],
-                $item['tva']
+                $item['tva'],
+                $options_json
             ]);
             
             if (!$result_item) {
@@ -466,7 +481,7 @@ function ajouterTransactionPayPal($pdo, $commande_id, $client_id, $montant, $pay
             'capture_id' => $capture_id,
             'payer_email' => $paypal_email,
             'full_response' => $capture_result
-        ]);
+        ], JSON_UNESCAPED_UNICODE);
         
         return $stmt_trans->execute([
             $numero_transaction,

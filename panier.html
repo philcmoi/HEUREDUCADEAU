@@ -381,6 +381,17 @@
         font-weight: 600;
       }
 
+      .promo-badge {
+        display: inline-block;
+        background: #e74c3c;
+        color: white;
+        font-size: 0.7rem;
+        padding: 2px 8px;
+        border-radius: 20px;
+        margin-left: 8px;
+        vertical-align: middle;
+      }
+
       .cart-item-reference {
         color: #7f8c8d;
         font-size: 0.9rem;
@@ -489,6 +500,18 @@
         font-weight: 700;
         font-size: 1.2rem;
         color: #2c3e50;
+      }
+
+      .old-price {
+        text-decoration: line-through;
+        color: #999;
+        font-size: 0.9rem;
+        margin-right: 5px;
+      }
+
+      .promo-price {
+        color: #e74c3c;
+        font-weight: bold;
       }
 
       .cart-item-total {
@@ -1049,7 +1072,7 @@
 
     <script>
       // ==============================================
-      // GESTIONNAIRE DE PANIER OPTIMISÉ - PLUS DE CLIGNOTEMENT
+      // GESTIONNAIRE DE PANIER OPTIMISÉ - AVEC PROMOTIONS
       // ==============================================
 
       class CartManager {
@@ -1242,21 +1265,26 @@
           `;
         }
 
-        // Rendu d'un article
+        // Rendu d'un article (version corrigée avec promotions)
         renderCartItem(item) {
           const image = item.image || this.getDefaultImage(item.id_produit);
           const prixUnitaire = parseFloat(item.prix_unitaire || 0);
+          const prixOriginal = parseFloat(item.prix_original || prixUnitaire);
           const prixTotal = parseFloat(item.prix_total || 0);
+          const hasPromotion = item.has_promotion || false;
+          const reductionPercent = item.reduction_percent || 0;
           const isAvailable = item.disponible !== false;
 
           return `
             <div class="cart-item" data-id="${item.id_produit}" data-item-id="${item.id_item}">
               <div class="cart-item-image">
-                <img src="${image}" alt="${item.nom}" 
+                <img src="${image}" alt="${this.escapeHtml(item.nom)}" 
                      onerror="this.src='${this.getDefaultImage()}'">
               </div>
               <div class="cart-item-info">
-                <h3>${this.escapeHtml(item.nom)}</h3>
+                <h3>${this.escapeHtml(item.nom)}
+                    ${hasPromotion ? `<span class="promo-badge">-${reductionPercent}%</span>` : ''}
+                </h3>
                 <div class="cart-item-reference">Réf: ${item.reference || "N/A"}</div>
                 ${!isAvailable ? '<div style="color:#e74c3c; font-size:0.9rem; margin-top:5px;">Stock insuffisant</div>' : ""}
               </div>
@@ -1276,7 +1304,12 @@
                   <i class="fas fa-plus"></i>
                 </button>
               </div>
-              <div class="cart-item-price">${this.formatPrice(prixUnitaire)}</div>
+              <div class="cart-item-price">
+                ${hasPromotion ? 
+                  `<span class="old-price">${this.formatPrice(prixOriginal)}</span>
+                   <span class="promo-price">${this.formatPrice(prixUnitaire)}</span>` : 
+                  this.formatPrice(prixUnitaire)}
+              </div>
               <div class="cart-item-total">${this.formatPrice(prixTotal)}</div>
               <div class="cart-item-remove">
                 <button onclick="cartManager.removeItem(${item.id_produit}, ${item.id_item}, this)" 
@@ -1298,9 +1331,7 @@
               </div>
             `;
           } else {
-            const remaining = (
-              this.SEUIL_LIVRAISON_GRATUITE - sousTotal
-            ).toFixed(2);
+            const remaining = (this.SEUIL_LIVRAISON_GRATUITE - sousTotal).toFixed(2);
             return `
               <div class="shipping-message">
                 <i class="fas fa-truck"></i> 
@@ -1524,6 +1555,8 @@
 
         getDefaultImage(productId) {
           const images = {
+            31: "/uploads/produits/69fec8e82a0c3_20260509_054056.jpg",
+            42: "/uploads/produits/6a190930be4a3_20260529_033408.png",
             1: "https://via.placeholder.com/300x300/2c3e50/ffffff?text=Bougie",
             2: "https://via.placeholder.com/300x300/27ae60/ffffff?text=Coffret",
             3: "https://via.placeholder.com/300x300/3498db/ffffff?text=Montre",

@@ -1,12 +1,14 @@
 <?php
 // ============================================
-// PAGE DE PAIEMENT - VERSION CORRIGÉE FINALE
+// PAGE DE PAIEMENT - VERSION CORRIGÉE
+// AFFICHE LES PRIX PROMOTIONNELS
 // ============================================
 
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 require_once __DIR__ . '/session_verification.php';
+require_once 'modal_paiement_test.php';
 
 // ============================================
 // DÉTECTION DU TYPE DE REQUÊTE (API ou HTML)
@@ -26,6 +28,104 @@ $pdo = getPDOConnection();
 // Synchroniser le panier
 if ($pdo) {
     synchroniserPanierSessionBDD($pdo, session_id());
+}
+
+// ============================================
+// FONCTION POUR OBTENIR LE PRIX PROMOTIONNEL
+// ============================================
+
+/**
+ * Calcule le prix promotionnel d'un produit
+ */
+function getBestActivePromotionForProduct($pdo, $product_id) {
+    $sql = "SELECT p.*, pp.reduction_personnalisee 
+            FROM promotions p
+            INNER JOIN promotions_produits pp ON p.id_promotion = pp.id_promotion
+            WHERE pp.id_produit = :product_id
+              AND p.actif = 1 
+              AND p.date_debut <= NOW() 
+              AND p.date_fin >= NOW()
+            ORDER BY 
+                CASE 
+                    WHEN p.type_promotion = 'pourcentage' AND pp.reduction_personnalisee IS NOT NULL 
+                        THEN pp.reduction_personnalisee
+                    WHEN p.type_promotion = 'pourcentage' THEN p.valeur
+                    WHEN p.type_promotion = 'montant_fixe' THEN 100
+                    ELSE 0
+                END DESC
+            LIMIT 1";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(['product_id' => $product_id]);
+    $promo = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($promo) {
+        return $promo;
+    }
+    
+    // Vérifier les promotions par catégorie
+    $sql = "SELECT p.* 
+            FROM promotions p
+            INNER JOIN promotions_categories pc ON p.id_promotion = pc.id_promotion
+            INNER JOIN produits pr ON pr.id_categorie = pc.id_categorie
+            WHERE pr.id_produit = :product_id
+              AND p.actif = 1 
+              AND p.date_debut <= NOW() 
+              AND p.date_fin >= NOW()
+              AND p.type_promotion != 'livraison_gratuite'
+            ORDER BY 
+                CASE 
+                    WHEN p.type_promotion = 'pourcentage' THEN p.valeur
+                    WHEN p.type_promotion = 'montant_fixe' THEN 100
+                    ELSE 0
+                END DESC
+            LIMIT 1";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(['product_id' => $product_id]);
+    $promo = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    return $promo ?: null;
+}
+
+function calculateDiscountedPrice($original_price, $promotion) {
+    if (!$promotion) {
+        return [
+            'price' => $original_price,
+            'original_price' => $original_price,
+            'reduction_amount' => 0,
+            'reduction_percent' => 0,
+            'has_promotion' => false
+        ];
+    }
+    
+    $discounted_price = $original_price;
+    $reduction_percent = 0;
+    $reduction_amount = 0;
+    
+    $reduction_value = $promotion['reduction_personnalisee'] ?? $promotion['valeur'];
+    
+    if ($promotion['type_promotion'] == 'pourcentage') {
+        $reduction_percent = floatval($reduction_value);
+        $reduction_amount = $original_price * ($reduction_percent / 100);
+        $discounted_price = $original_price - $reduction_amount;
+        $discounted_price = round($discounted_price, 2);
+    } elseif ($promotion['type_promotion'] == 'montant_fixe') {
+        $reduction_amount = floatval($reduction_value);
+        $discounted_price = max(0, $original_price - $reduction_amount);
+        $reduction_percent = ($reduction_amount / $original_price) * 100;
+        $discounted_price = round($discounted_price, 2);
+    }
+    
+    return [
+        'price' => $discounted_price,
+        'original_price' => $original_price,
+        'reduction_amount' => $reduction_amount,
+        'reduction_percent' => round($reduction_percent),
+        'has_promotion' => true,
+        'type' => $promotion['type_promotion'],
+        'code' => $promotion['code_promotion']
+    ];
 }
 
 // ============================================
@@ -67,13 +167,19 @@ if ($is_api_request) {
             break;
             
         case 'get_commande':
-            // Récupérer les données de la commande en cours
+            // Récupérer les données de la commande en cours avec prix promotionnels
             $panier_details = [];
             $sous_total = 0;
             
             foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
                 $produit = getProductDetails($item['id_produit'], $pdo);
-                $prix_unitaire = floatval($produit['prix_ttc'] ?? $item['prix'] ?? 0);
+                $prix_original_ttc = floatval($produit['prix_ttc'] ?? $item['prix'] ?? 0);
+                
+                // Vérifier la promotion
+                $promo = getBestActivePromotionForProduct($pdo, $item['id_produit']);
+                $discount = calculateDiscountedPrice($prix_original_ttc, $promo);
+                $prix_unitaire = $discount['price'];
+                
                 $quantite = intval($item['quantite'] ?? 1);
                 $prix_total = $quantite * $prix_unitaire;
                 $sous_total += $prix_total;
@@ -83,7 +189,10 @@ if ($is_api_request) {
                     'quantite' => $quantite,
                     'nom' => $produit['nom'] ?? 'Produit',
                     'prix_unitaire' => $prix_unitaire,
+                    'prix_original' => $prix_original_ttc,
                     'prix_total' => $prix_total,
+                    'has_promotion' => $discount['has_promotion'],
+                    'reduction_percent' => $discount['reduction_percent'],
                     'reference' => $produit['reference'] ?? '',
                     'image' => $produit['image'] ?? 'img/default-product.jpg'
                 ];
@@ -107,7 +216,8 @@ if ($is_api_request) {
                     'items_count' => $totaux['total_items'],
                     'sous_total' => $totaux['sous_total']
                 ],
-                'totaux' => $totaux
+                'totaux' => $totaux,
+                'items' => $panier_details
             ]);
             break;
             
@@ -131,18 +241,32 @@ cleanPayPalFlags();
 $messages = getSessionMessages();
 $nb_articles = countCartItems();
 
-// Récupérer les détails du panier
+// Récupérer les détails du panier AVEC prix promotionnels
 $panier_details = [];
+$sous_total = 0;
+
 foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
     $produit = getProductDetails($item['id_produit'], $pdo);
-    $prix_unitaire = floatval($produit['prix_ttc'] ?? $item['prix'] ?? 0);
+    $prix_original_ttc = floatval($produit['prix_ttc'] ?? $item['prix'] ?? 0);
+    
+    // Vérifier la promotion
+    $promo = getBestActivePromotionForProduct($pdo, $item['id_produit']);
+    $discount = calculateDiscountedPrice($prix_original_ttc, $promo);
+    $prix_unitaire = $discount['price'];
+    
     $quantite = intval($item['quantite'] ?? 1);
+    $prix_total = $quantite * $prix_unitaire;
+    $sous_total += $prix_total;
+    
     $panier_details[] = [
         'id_produit' => $item['id_produit'],
         'quantite' => $quantite,
         'nom' => $produit['nom'] ?? 'Produit',
         'prix_unitaire' => $prix_unitaire,
-        'prix_total' => $quantite * $prix_unitaire,
+        'prix_original' => $prix_original_ttc,
+        'prix_total' => $prix_total,
+        'has_promotion' => $discount['has_promotion'],
+        'reduction_percent' => $discount['reduction_percent'],
         'reference' => $produit['reference'] ?? '',
         'image' => $produit['image'] ?? 'img/default-product.jpg'
     ];
@@ -150,8 +274,6 @@ foreach ($_SESSION[SESSION_KEY_PANIER] as $item) {
 
 $totaux = calculerTotauxPanier($panier_details, $_SESSION[SESSION_KEY_CHECKOUT] ?? []);
 $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
-
-// Le reste du HTML...
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -334,6 +456,8 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
             height: 60px;
             border-radius: 8px;
             overflow: hidden;
+            background: #f8f9fa;
+            flex-shrink: 0;
         }
         .mini-image img {
             width: 100%;
@@ -345,6 +469,25 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
             font-size: 1rem;
             margin-bottom: 5px;
             color: #2c3e50;
+        }
+        .promo-badge {
+            display: inline-block;
+            background: #e74c3c;
+            color: white;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 20px;
+            margin-left: 8px;
+        }
+        .old-price {
+            text-decoration: line-through;
+            color: #999;
+            font-size: 0.8rem;
+            margin-right: 5px;
+        }
+        .promo-price {
+            color: #e74c3c;
+            font-weight: bold;
         }
         .mini-price {
             font-weight: 700;
@@ -437,6 +580,16 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
     </style>
 </head>
 <body>
+    <!-- Votre formulaire de paiement existant -->
+    <div style="text-align: center; margin-top: 50px;">
+        <h2>Formulaire de paiement</h2>
+    
+    <!-- Bouton pour afficher la modal d'aide -->
+        <button type="button" onclick="ouvrirModalPaiement()" style="background-color: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">
+            📋 Afficher les coordonnées de test
+        </button>
+    
+    </div>
     <header>
         <div class="container">
             <div class="header-content">
@@ -490,13 +643,18 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
     const API_BASE_URL = window.location.href.split('?')[0];
     let paiementManager = null;
 
+    // Données PHP passées au JS (avec prix promotionnels)
+    const phpPanierDetails = <?= json_encode($panier_details) ?>;
+    const phpTotaux = <?= json_encode($totaux) ?>;
+    const phpAdresse = <?= json_encode($adresse) ?>;
+
     class PaiementManager {
         constructor() {
             this.apiUrl = API_BASE_URL;
             this.panierData = null;
-            this.totaux = <?= json_encode($totaux) ?>;
-            this.adresse = <?= json_encode($adresse) ?>;
-            this.panierDetails = <?= json_encode($panier_details) ?>;
+            this.totaux = phpTotaux;
+            this.adresse = phpAdresse;
+            this.panierDetails = phpPanierDetails;
             this.paiementMethod = "paypal";
             this.init();
         }
@@ -516,13 +674,13 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
             if (this.adresse && Object.keys(this.adresse).length > 0) {
                 html += `<div class="adresse-card">`;
                 html += `<h3 style="margin-bottom: 10px;"><i class="fas fa-map-marker-alt"></i> Adresse de livraison</h3>`;
-                html += `<p><strong>${this.adresse.prenom || ''} ${this.adresse.nom || ''}</strong></p>`;
-                html += `<p>${this.adresse.adresse || ''}</p>`;
-                if (this.adresse.complement) html += `<p>${this.adresse.complement}</p>`;
-                html += `<p>${this.adresse.code_postal || ''} ${this.adresse.ville || ''}</p>`;
-                html += `<p>${this.adresse.pays || 'France'}</p>`;
-                html += `<p style="margin-top: 10px;"><i class="fas fa-envelope"></i> ${this.adresse.email || ''}</p>`;
-                if (this.adresse.telephone) html += `<p><i class="fas fa-phone"></i> ${this.adresse.telephone}</p>`;
+                html += `<p><strong>${this.escapeHtml(this.adresse.prenom || '')} ${this.escapeHtml(this.adresse.nom || '')}</strong></p>`;
+                html += `<p>${this.escapeHtml(this.adresse.adresse || '')}</p>`;
+                if (this.adresse.complement) html += `<p>${this.escapeHtml(this.adresse.complement)}</p>`;
+                html += `<p>${this.escapeHtml(this.adresse.code_postal || '')} ${this.escapeHtml(this.adresse.ville || '')}</p>`;
+                html += `<p>${this.escapeHtml(this.adresse.pays || 'France')}</p>`;
+                html += `<p style="margin-top: 10px;"><i class="fas fa-envelope"></i> ${this.escapeHtml(this.adresse.email || '')}</p>`;
+                if (this.adresse.telephone) html += `<p><i class="fas fa-phone"></i> ${this.escapeHtml(this.adresse.telephone)}</p>`;
                 
                 html += `<a href="livraison_form.php" style="color: #3498db; margin-top: 10px; display: inline-block;"><i class="fas fa-edit"></i> Modifier</a>`;
                 html += `</div>`;
@@ -565,15 +723,30 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
 
             this.panierDetails.forEach(item => {
                 const prixTotal = (item.prix_total || 0).toFixed(2).replace('.', ',');
+                const prixUnitaire = (item.prix_unitaire || 0).toFixed(2).replace('.', ',');
+                const prixOriginal = (item.prix_original || 0).toFixed(2).replace('.', ',');
+                const hasPromotion = item.has_promotion || false;
+                
                 html += `<div class="cart-item-mini">`;
                 html += `<div class="mini-image">`;
-                html += `<img src="${item.image || 'img/default-product.jpg'}" alt="${item.nom}" onerror="this.src='img/default-product.jpg'">`;
+                html += `<img src="${item.image || 'img/default-product.jpg'}" alt="${this.escapeHtml(item.nom)}" onerror="this.src='img/default-product.jpg'">`;
                 html += `</div>`;
                 html += `<div class="mini-details">`;
-                html += `<h4>${item.nom}</h4>`;
+                html += `<h4>${this.escapeHtml(item.nom)}`;
+                if (hasPromotion) {
+                    html += `<span class="promo-badge">-${item.reduction_percent}%</span>`;
+                }
+                html += `</h4>`;
                 html += `<div style="font-size: 0.9rem; color: #7f8c8d;">Réf: ${item.reference || ''}</div>`;
                 html += `<div style="display: flex; justify-content: space-between; margin-top: 5px;">`;
-                html += `<span>${item.quantite} x ${(item.prix_unitaire || 0).toFixed(2).replace('.', ',')} €</span>`;
+                html += `<span>${item.quantite} x `;
+                if (hasPromotion) {
+                    html += `<span class="old-price">${prixOriginal} €</span> `;
+                    html += `<span class="promo-price">${prixUnitaire} €</span>`;
+                } else {
+                    html += `${prixUnitaire} €`;
+                }
+                html += `</span>`;
                 html += `<span class="mini-price">${prixTotal} €</span>`;
                 html += `</div>`;
                 html += `</div>`;
@@ -604,7 +777,7 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
             html += `</div>`;
             html += `</div>`;
 
-            if (this.totaux?.sous_total < this.totaux?.seuil_livraison_gratuite) {
+            if (this.totaux?.sous_total < this.totaux?.seuil_livraison_gratuite && this.totaux?.seuil_livraison_gratuite) {
                 const reste = (this.totaux.seuil_livraison_gratuite - this.totaux.sous_total).toFixed(2).replace('.', ',');
                 html += `<div class="info-box">`;
                 html += `<i class="fas fa-truck"></i> Plus que <strong>${reste} €</strong> pour la livraison gratuite !`;
@@ -716,11 +889,24 @@ $adresse = $_SESSION[SESSION_KEY_CHECKOUT]['adresse_livraison'] ?? [];
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 3000);
         }
+
+        escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
     }
 
     document.addEventListener('DOMContentLoaded', function() {
         paiementManager = new PaiementManager();
     });
     </script>
+
+<?php
+    // Appel de la fonction qui génère la modal (en bas de page)
+    afficherModalCartesTest();
+?>
+
 </body>
 </html>
